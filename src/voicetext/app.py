@@ -58,6 +58,7 @@ class VoiceTextApp(rumps.App):
         self._hotkey_item = rumps.MenuItem(f"Hotkey: {hotkey_name}")
         self._hotkey_item.set_callback(None)
         self.menu = [self._status_item, self._hotkey_item, None]
+        self.quit_button.set_callback(self._on_quit_click)
 
     def _setup_logging(self) -> None:
         level = self._config["logging"]["level"]
@@ -114,8 +115,7 @@ class VoiceTextApp(rumps.App):
 
         threading.Thread(target=_do_transcribe, daemon=True).start()
 
-    @rumps.clicked("Quit")
-    def on_quit(self, _) -> None:
+    def _on_quit_click(self, _) -> None:
         if self._hotkey_listener:
             self._hotkey_listener.stop()
         rumps.quit_application()
