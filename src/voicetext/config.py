@@ -26,9 +26,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "backend": "funasr",
         "use_vad": True,
         "use_punc": True,
-        "language": None,
+        "language": "zh",
         "model": None,
         "preset": None,
+        "temperature": 0.0,
     },
     "output": {
         "method": "auto",

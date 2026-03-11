@@ -66,6 +66,7 @@ class VoiceTextApp(rumps.App):
             use_punc=asr_cfg.get("use_punc", True),
             language=asr_cfg.get("language"),
             model=asr_cfg.get("model"),
+            temperature=asr_cfg.get("temperature"),
         )
 
         self._output_method = self._config["output"]["method"]
@@ -251,6 +252,7 @@ class VoiceTextApp(rumps.App):
                     use_punc=asr_cfg.get("use_punc", True),
                     language=preset.language or asr_cfg.get("language"),
                     model=preset.model,
+                    temperature=asr_cfg.get("temperature"),
                 )
                 new_transcriber.initialize()
 
@@ -364,6 +366,7 @@ class VoiceTextApp(rumps.App):
                 use_punc=asr_cfg.get("use_punc", True),
                 language=old_preset.language or asr_cfg.get("language"),
                 model=old_preset.model,
+                temperature=asr_cfg.get("temperature"),
             )
             restored.initialize()
             self._transcriber = restored

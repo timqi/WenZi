@@ -22,10 +22,12 @@ class MLXWhisperTranscriber(BaseTranscriber):
         language: Optional[str] = None,
         model: Optional[str] = None,
         use_punc: bool = False,
+        temperature: Optional[float] = None,
     ) -> None:
         self._model_name = model or DEFAULT_MODEL
         self._language = language
         self._use_punc = use_punc
+        self._temperature = temperature if temperature is not None else 0.0
         self._initialized = False
         self._mlx_whisper = None
         self._punc_restorer = None
@@ -121,6 +123,8 @@ class MLXWhisperTranscriber(BaseTranscriber):
             audio,
             path_or_hf_repo=self._model_name,
             language=self._language,
+            temperature=self._temperature,
+            condition_on_previous_text=False,
         )
 
         text = result.get("text", "")

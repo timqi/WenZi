@@ -37,6 +37,7 @@ def create_transcriber(
     use_punc: bool = True,
     language: Optional[str] = None,
     model: Optional[str] = None,
+    temperature: Optional[float] = None,
 ) -> BaseTranscriber:
     """Create a transcriber for the given backend.
 
@@ -46,6 +47,7 @@ def create_transcriber(
         use_punc: Enable punctuation restoration.
         language: Language hint (mlx-whisper only, e.g. "zh", "en").
         model: Override default model name/path.
+        temperature: Decoding temperature (mlx-whisper only, 0.0 disables fallback).
     """
     backend = backend.lower().replace("_", "-")
 
@@ -55,6 +57,8 @@ def create_transcriber(
 
     if backend in ("mlx-whisper", "mlx", "whisper"):
         from .transcriber_mlx import MLXWhisperTranscriber
-        return MLXWhisperTranscriber(language=language, model=model, use_punc=use_punc)
+        return MLXWhisperTranscriber(
+            language=language, model=model, use_punc=use_punc, temperature=temperature,
+        )
 
     raise ValueError(f"Unknown ASR backend: {backend!r}. Use 'funasr' or 'mlx-whisper'.")
