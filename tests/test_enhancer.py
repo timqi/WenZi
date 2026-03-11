@@ -418,6 +418,7 @@ models:
             "https://api.openai.com/v1",
             "sk-test",
             ["gpt-4o", "gpt-4o-mini"],
+            {},
         )
 
     def test_single_model(self):
@@ -459,6 +460,30 @@ api_key: key"""
         result = self._parse(text)
         assert isinstance(result, str)
         assert "model" in result
+
+    def test_extra_body(self):
+        text = """\
+name: qwen
+base_url: http://localhost:8000/v1
+api_key: sk-test
+models:
+  qwen3:8b
+extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
+        result = self._parse(text)
+        assert isinstance(result, tuple)
+        assert result[4] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+    def test_invalid_extra_body(self):
+        text = """\
+name: test
+base_url: http://localhost/v1
+api_key: key
+models:
+  model
+extra_body: not-json"""
+        result = self._parse(text)
+        assert isinstance(result, str)
+        assert "extra_body" in result
 
     def test_empty_text(self):
         result = self._parse("")
@@ -513,7 +538,7 @@ class TestTextEnhancerEnhance:
         with patch("voicetext.enhancer.TextEnhancer._init_providers"):
             enhancer = TextEnhancer(_make_config(enabled=True, mode="proofread"))
             enhancer._providers = {
-                "ollama": (mock_client, ["qwen2.5:7b"]),
+                "ollama": (mock_client, ["qwen2.5:7b"], {}),
             }
             enhancer._active_provider = "ollama"
             enhancer._active_model = "qwen2.5:7b"
@@ -528,7 +553,7 @@ class TestTextEnhancerEnhance:
         with patch("voicetext.enhancer.TextEnhancer._init_providers"):
             enhancer = TextEnhancer(_make_config(enabled=True, mode="proofread"))
             enhancer._providers = {
-                "ollama": (mock_client, ["qwen2.5:7b"]),
+                "ollama": (mock_client, ["qwen2.5:7b"], {}),
             }
             enhancer._active_provider = "ollama"
 
@@ -542,7 +567,7 @@ class TestTextEnhancerEnhance:
         with patch("voicetext.enhancer.TextEnhancer._init_providers"):
             enhancer = TextEnhancer(_make_config(enabled=True, mode="proofread"))
             enhancer._providers = {
-                "ollama": (mock_client, ["qwen2.5:7b"]),
+                "ollama": (mock_client, ["qwen2.5:7b"], {}),
             }
             enhancer._active_provider = "ollama"
 

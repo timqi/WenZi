@@ -45,6 +45,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                 "base_url": "http://localhost:11434/v1",
                 "api_key": "ollama",
                 "models": ["qwen2.5:7b"],
+                "extra_body": {
+                    "chat_template_kwargs": {"enable_thinking": False},
+                },
             },
         },
         "timeout": 30,

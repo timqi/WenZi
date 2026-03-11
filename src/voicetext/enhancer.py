@@ -59,8 +59,8 @@ class TextEnhancer:
         self._mode = EnhanceMode(config.get("mode", "proofread"))
         self._timeout = config.get("timeout", 30)
 
-        # Multi-provider support: name -> (AsyncOpenAI client, models list)
-        self._providers: Dict[str, Tuple[Any, List[str]]] = {}
+        # Multi-provider support: name -> (AsyncOpenAI client, models list, extra_body)
+        self._providers: Dict[str, Tuple[Any, List[str], Dict[str, Any]]] = {}
         self._active_provider: str = config.get("default_provider", "")
         self._active_model: str = config.get("default_model", "")
 
@@ -88,9 +88,10 @@ class TextEnhancer:
             base_url = pcfg.get("base_url", "http://localhost:11434/v1")
             api_key = pcfg.get("api_key", "ollama")
             models = pcfg.get("models", [])
+            extra_body = pcfg.get("extra_body", {})
 
             client = AsyncOpenAI(base_url=base_url, api_key=api_key)
-            self._providers[name] = (client, models)
+            self._providers[name] = (client, models, extra_body)
             logger.info(
                 "AI provider initialized: %s (models=%s, base_url=%s)",
                 name,
@@ -149,7 +150,12 @@ class TextEnhancer:
         return []
 
     async def verify_provider(
-        self, base_url: str, api_key: str, model: str, timeout: int = 10
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        timeout: int = 10,
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         """Verify a provider by sending a test request.
 
@@ -159,12 +165,15 @@ class TextEnhancer:
             from openai import AsyncOpenAI
 
             client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+            kwargs: Dict[str, Any] = {
+                "model": model,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 1,
+            }
+            if extra_body:
+                kwargs["extra_body"] = extra_body
             await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": "hi"}],
-                    max_tokens=1,
-                ),
+                client.chat.completions.create(**kwargs),
                 timeout=timeout,
             )
             return None
@@ -174,7 +183,12 @@ class TextEnhancer:
             return str(e)
 
     def add_provider(
-        self, name: str, base_url: str, api_key: str, models: List[str]
+        self,
+        name: str,
+        base_url: str,
+        api_key: str,
+        models: List[str],
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Add a new provider and initialize it.
 
@@ -182,7 +196,13 @@ class TextEnhancer:
         """
         if not name or not models:
             return False
-        pcfg = {"base_url": base_url, "api_key": api_key, "models": models}
+        pcfg: Dict[str, Any] = {
+            "base_url": base_url,
+            "api_key": api_key,
+            "models": models,
+        }
+        if extra_body:
+            pcfg["extra_body"] = extra_body
         self._providers_config[name] = pcfg
         self._init_single_provider(name, pcfg)
         if name not in self._providers:
@@ -227,15 +247,18 @@ class TextEnhancer:
             return text
 
         try:
-            client = self._providers[self._active_provider][0]
+            client, _, extra_body = self._providers[self._active_provider]
+            kwargs: Dict[str, Any] = {
+                "model": self._active_model,
+                "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": text.strip()},
+                ],
+            }
+            if extra_body:
+                kwargs["extra_body"] = extra_body
             response = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=self._active_model,
-                    messages=[
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": text.strip()},
-                    ],
-                ),
+                client.chat.completions.create(**kwargs),
                 timeout=self._timeout,
             )
             enhanced = response.choices[0].message.content

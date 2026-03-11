@@ -491,7 +491,8 @@ base_url: https://api.openai.com/v1
 api_key: sk-xxx
 models:
   gpt-4o
-  gpt-4o-mini"""
+  gpt-4o-mini
+extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
 
     _PROVIDER_DRAFT_FILENAME = ".provider_draft"
 
@@ -569,7 +570,7 @@ models:
                 self._save_provider_draft(resp.text)
                 continue
 
-            name, base_url, api_key, models = parsed
+            name, base_url, api_key, models, extra_body = parsed
 
             if name in self._enhancer.provider_names:
                 self._activate_for_dialog()
@@ -586,7 +587,9 @@ models:
             loop = asyncio.new_event_loop()
             try:
                 err = loop.run_until_complete(
-                    self._enhancer.verify_provider(base_url, api_key, models[0])
+                    self._enhancer.verify_provider(
+                        base_url, api_key, models[0], extra_body=extra_body or None
+                    )
                 )
             finally:
                 loop.close()
@@ -624,7 +627,9 @@ models:
                 return
 
             # Save
-            success = self._enhancer.add_provider(name, base_url, api_key, models)
+            success = self._enhancer.add_provider(
+                name, base_url, api_key, models, extra_body=extra_body or None
+            )
             if not success:
                 self._activate_for_dialog()
                 rumps.alert(
@@ -636,11 +641,14 @@ models:
 
             self._config.setdefault("ai_enhance", {})
             providers_cfg = self._config["ai_enhance"].setdefault("providers", {})
-            providers_cfg[name] = {
+            pcfg_save: Dict[str, Any] = {
                 "base_url": base_url,
                 "api_key": api_key,
                 "models": models,
             }
+            if extra_body:
+                pcfg_save["extra_body"] = extra_body
+            providers_cfg[name] = pcfg_save
             save_config(self._config, self._config_path)
             self._remove_provider_draft()
 
@@ -658,9 +666,11 @@ models:
     def _parse_provider_text(text: str):
         """Parse the provider config text.
 
-        Returns (name, base_url, api_key, models) on success,
+        Returns (name, base_url, api_key, models, extra_body) on success,
         or a string error message on failure.
         """
+        import json as _json
+
         lines = text.strip().splitlines()
         fields = {}
         in_models = False
@@ -692,6 +702,16 @@ models:
         name = fields.get("name", "").strip()
         base_url = fields.get("base_url", "").strip()
         api_key = fields.get("api_key", "").strip()
+        extra_body_raw = fields.get("extra_body", "").strip()
+
+        extra_body = {}
+        if extra_body_raw:
+            try:
+                extra_body = _json.loads(extra_body_raw)
+                if not isinstance(extra_body, dict):
+                    return "extra_body must be a JSON object"
+            except _json.JSONDecodeError as e:
+                return f"extra_body is not valid JSON: {e}"
 
         errors = []
         if not name:
@@ -706,7 +726,7 @@ models:
         if errors:
             return "\n".join(errors)
 
-        return name, base_url, api_key, models
+        return name, base_url, api_key, models, extra_body
 
     def _on_enhance_remove_provider(self, sender) -> None:
         """Remove an AI provider after confirmation."""
