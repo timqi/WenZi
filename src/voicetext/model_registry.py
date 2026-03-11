@@ -73,25 +73,23 @@ _backend_available: Dict[str, bool] = {}
 
 
 def is_backend_available(backend: str) -> bool:
-    """Check if a backend's required packages are importable."""
+    """Check if a backend's required packages are installed.
+
+    Uses importlib.util.find_spec for a lightweight check that avoids
+    triggering heavy initialization (e.g. Metal/GPU setup for mlx).
+    """
     if backend in _backend_available:
         return _backend_available[backend]
 
-    available = False
-    if backend == "funasr":
-        try:
-            import funasr_onnx  # noqa: F401
+    import importlib.util
 
-            available = True
-        except ImportError:
-            pass
-    elif backend == "mlx-whisper":
-        try:
-            import mlx_whisper  # noqa: F401
+    _BACKEND_MODULES = {
+        "funasr": "funasr_onnx",
+        "mlx-whisper": "mlx_whisper",
+    }
 
-            available = True
-        except ImportError:
-            pass
+    module_name = _BACKEND_MODULES.get(backend)
+    available = module_name is not None and importlib.util.find_spec(module_name) is not None
 
     _backend_available[backend] = available
     return available
