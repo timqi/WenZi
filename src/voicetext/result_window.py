@@ -85,6 +85,9 @@ class ResultPreviewPanel:
         self._stt_current_index: int = 0
         self._llm_current_index: int = 0
         self._source: str = "voice"
+        self._punc_checkbox = None
+        self._punc_checkbox_target = None
+        self._on_punc_toggle: Optional[Callable[[bool], None]] = None
 
     def show(
         self,
@@ -105,6 +108,8 @@ class ResultPreviewPanel:
         llm_current_index: int = 0,
         on_llm_model_change: Optional[Callable[[int], None]] = None,
         source: str = "voice",
+        punc_enabled: bool = True,
+        on_punc_toggle: Optional[Callable[[bool], None]] = None,
     ) -> None:
         """Show the preview panel with ASR text.
 
@@ -126,12 +131,16 @@ class ResultPreviewPanel:
             llm_current_index: Currently selected LLM model index.
             on_llm_model_change: Callback when user changes LLM model popup.
             source: Source of text - "voice" (default) or "clipboard".
+            punc_enabled: Whether punctuation restoration is enabled.
+            on_punc_toggle: Callback when user toggles the Punc checkbox.
         """
         self._on_confirm = on_confirm
         self._on_cancel = on_cancel
         self._on_mode_change = on_mode_change
         self._on_stt_model_change = on_stt_model_change
         self._on_llm_model_change = on_llm_model_change
+        self._on_punc_toggle = on_punc_toggle
+        self._punc_enabled = punc_enabled
         self._user_edited = False
         self._show_enhance = show_enhance
         self._asr_text = asr_text
@@ -309,6 +318,12 @@ class ResultPreviewPanel:
 
         AppHelper.callAfter(_update)
 
+    def _on_punc_toggled(self, state: bool) -> None:
+        """Handle punctuation checkbox toggle."""
+        self._punc_enabled = state
+        if self._on_punc_toggle is not None:
+            self._on_punc_toggle(state)
+
     def _on_stt_popup_changed(self, index: int) -> None:
         """Handle STT popup selection change."""
         if self._on_stt_model_change is not None:
@@ -414,6 +429,7 @@ class ResultPreviewPanel:
             NSBezelBorder,
             NSButton,
             NSClosableWindowMask,
+            NSSwitchButton,
             NSStatusWindowLevel,
             NSFont,
             NSLineBreakByWordWrapping,
@@ -716,6 +732,34 @@ class ResultPreviewPanel:
             self._stt_popup_target = None
             self._asr_info_label = None
 
+        # "Punc" checkbox for punctuation restoration toggle
+        if self._source != "clipboard":
+            punc_cb_width = 56
+            punc_cb_right = self._PANEL_WIDTH - self._PADDING
+            if self._asr_wav_data:
+                punc_cb_right -= play_btn_width + 2 + save_btn_width + 4
+            punc_cb = NSButton.alloc().initWithFrame_(
+                NSMakeRect(
+                    punc_cb_right - punc_cb_width,
+                    label_y,
+                    punc_cb_width,
+                    self._LABEL_HEIGHT,
+                )
+            )
+            punc_cb.setButtonType_(NSSwitchButton)
+            punc_cb.setTitle_("Punc")
+            punc_cb.setFont_(NSFont.systemFontOfSize_(11))
+            punc_cb.setState_(1 if self._punc_enabled else 0)
+            self._punc_checkbox_target = _PuncCheckboxTarget.alloc().init()
+            self._punc_checkbox_target._panel_ref = self
+            punc_cb.setTarget_(self._punc_checkbox_target)
+            punc_cb.setAction_(b"puncToggled:")
+            content_view.addSubview_(punc_cb)
+            self._punc_checkbox = punc_cb
+        else:
+            self._punc_checkbox = None
+            self._punc_checkbox_target = None
+
         # "Play ▶" and "Save ⤓" buttons for recorded audio
         if self._asr_wav_data:
             save_btn_width = 50
@@ -1011,7 +1055,25 @@ def _create_llm_popup_target_class():
     return LlmPopupTarget
 
 
+def _create_punc_checkbox_target_class():
+    """Create an NSObject subclass to handle Punc checkbox actions."""
+    from Foundation import NSObject
+
+    class PuncCheckboxTarget(NSObject):
+        """Action target for Punc NSButton checkbox."""
+
+        _panel_ref = None
+
+        def puncToggled_(self, sender):
+            if self._panel_ref is not None:
+                state = sender.state() == 1
+                self._panel_ref._on_punc_toggled(state)
+
+    return PuncCheckboxTarget
+
+
 _TextFieldEditDelegate = _create_text_field_delegate_class()
 _SegmentActionTarget = _create_segment_action_target_class()
 _SttPopupTarget = _create_stt_popup_target_class()
 _LlmPopupTarget = _create_llm_popup_target_class()
+_PuncCheckboxTarget = _create_punc_checkbox_target_class()

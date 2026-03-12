@@ -121,6 +121,60 @@ class TestWavDurationSeconds:
         assert BaseTranscriber.wav_duration_seconds(b"") == 0.0
 
 
+class TestSkipPunc:
+    def test_skip_punc_default_false(self):
+        t = FunASRTranscriber(use_vad=False, use_punc=True)
+        assert t.skip_punc is False
+
+    def test_skip_punc_toggleable(self):
+        t = FunASRTranscriber(use_vad=False, use_punc=True)
+        t.skip_punc = True
+        assert t.skip_punc is True
+        t.skip_punc = False
+        assert t.skip_punc is False
+
+    def test_funasr_skips_punc_when_flag_set(self):
+        """When skip_punc=True, punctuation restoration should be skipped."""
+        t = FunASRTranscriber(use_vad=False, use_punc=True)
+        t._initialized = True
+        t._asr_model = lambda paths: [{"text": "hello world"}]
+        # Create a mock punc restorer that would modify text
+        class MockPunc:
+            def restore(self, text):
+                return text + "。"
+        t._punc_restorer = MockPunc()
+
+        import io, wave, struct
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(struct.pack("<160h", *([0] * 160)))
+        wav_data = buf.getvalue()
+
+        # Without skip_punc: punctuation should be applied
+        t.skip_punc = False
+        result = t.transcribe(wav_data)
+        assert result == "hello world。"
+
+        # With skip_punc: punctuation should be skipped
+        t.skip_punc = True
+        result = t.transcribe(wav_data)
+        assert result == "hello world"
+
+    def test_mlx_skip_punc_attribute(self):
+        try:
+            from voicetext.transcriber_mlx import MLXWhisperTranscriber
+        except ImportError:
+            pytest.skip("mlx-whisper not installed")
+
+        t = MLXWhisperTranscriber(use_punc=True)
+        assert t.skip_punc is False
+        t.skip_punc = True
+        assert t.skip_punc is True
+
+
 class TestCleanup:
     def test_funasr_cleanup(self):
         t = FunASRTranscriber(use_vad=False, use_punc=False)

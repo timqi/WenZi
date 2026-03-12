@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 class BaseTranscriber(abc.ABC):
     """Base interface for speech-to-text backends."""
 
+    skip_punc: bool = False
+
     @property
     @abc.abstractmethod
     def initialized(self) -> bool:

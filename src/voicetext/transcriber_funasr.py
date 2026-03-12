@@ -129,7 +129,7 @@ class FunASRTranscriber(BaseTranscriber):
 
             # Punctuation restoration (optional)
             final_text = raw_text
-            if self._punc_restorer and raw_text.strip():
+            if self._punc_restorer and raw_text.strip() and not self.skip_punc:
                 final_text = self._punc_restorer.restore(raw_text)
 
             self._transcription_count += 1

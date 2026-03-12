@@ -137,7 +137,7 @@ class MLXWhisperTranscriber(BaseTranscriber):
 
         text = result.get("text", "")
 
-        if self._punc_restorer and text.strip():
+        if self._punc_restorer and text.strip() and not self.skip_punc:
             text = self._punc_restorer.restore(text)
 
         logger.info("Transcription result: %s", text[:100])

@@ -1314,3 +1314,42 @@ class TestASRLoadingAndResult:
 
         panel._asr_request_id = 5
         assert panel.asr_request_id == 5
+
+
+class TestPuncCheckbox:
+    """Test punctuation checkbox toggle behavior."""
+
+    def test_punc_toggle_callback_fires(self):
+        from voicetext.result_window import ResultPreviewPanel
+
+        panel = ResultPreviewPanel()
+        toggled = []
+
+        panel._on_punc_toggle = lambda enabled: toggled.append(enabled)
+
+        # Simulate toggling off
+        panel._on_punc_toggled(False)
+        assert toggled == [False]
+        assert panel._punc_enabled is False
+
+        # Simulate toggling on
+        panel._on_punc_toggled(True)
+        assert toggled == [False, True]
+        assert panel._punc_enabled is True
+
+    def test_punc_toggle_no_callback(self):
+        from voicetext.result_window import ResultPreviewPanel
+
+        panel = ResultPreviewPanel()
+        panel._on_punc_toggle = None
+
+        # Should not raise
+        panel._on_punc_toggled(False)
+        assert panel._punc_enabled is False
+
+    def test_punc_default_state(self):
+        from voicetext.result_window import ResultPreviewPanel
+
+        panel = ResultPreviewPanel()
+        # Default punc_enabled should not be set until show() is called
+        assert not hasattr(panel, "_punc_enabled") or panel._punc_enabled is not False

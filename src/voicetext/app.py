@@ -394,6 +394,9 @@ class VoiceTextApp(rumps.App):
                 from .transcriber import BaseTranscriber
 
                 audio_duration = BaseTranscriber.wav_duration_seconds(wav_data)
+                self._transcriber.skip_punc = bool(
+                    self._enhancer and self._enhancer.is_active
+                )
                 text = self._transcriber.transcribe(wav_data)
                 if text and text.strip():
                     asr_text = text.strip()
@@ -608,6 +611,8 @@ class VoiceTextApp(rumps.App):
                 llm_models=llm_models if llm_models else None,
                 llm_current_index=llm_current_index,
                 on_llm_model_change=self._on_preview_llm_change if llm_models else None,
+                punc_enabled=not self._transcriber.skip_punc,
+                on_punc_toggle=self._on_preview_punc_toggle if wav_data else None,
             )
             # Start enhancement after show() so request_id is not reset
             if use_enhance:
@@ -959,6 +964,9 @@ class VoiceTextApp(rumps.App):
                 new_transcriber.initialize()
 
                 # Re-transcribe using wav_data
+                new_transcriber.skip_punc = bool(
+                    self._enhancer and self._enhancer.is_active
+                )
                 new_text = new_transcriber.transcribe(wav_data)
 
                 # Build new ASR info (duration only since model is in popup)
@@ -1056,6 +1064,55 @@ class VoiceTextApp(rumps.App):
             self._run_enhance_in_background(
                 asr_text, self._preview_panel.enhance_request_id
             )
+
+    def _on_preview_punc_toggle(self, enabled: bool) -> None:
+        """Handle Punc checkbox toggle from the preview panel."""
+        from PyObjCTools import AppHelper
+
+        self._transcriber.skip_punc = not enabled
+        logger.info("Punctuation restoration %s (from preview)", "enabled" if enabled else "disabled")
+
+        # Re-transcribe with updated punc setting
+        wav_data = self._preview_panel._asr_wav_data
+        if not wav_data:
+            return
+
+        self._preview_panel.set_asr_loading()
+        request_id = self._preview_panel.asr_request_id
+
+        def _do_retranscribe():
+            try:
+                new_text = self._transcriber.transcribe(wav_data)
+                audio_duration = getattr(self, "_preview_audio_duration", 0.0)
+                new_asr_info = f"{audio_duration:.1f}s" if audio_duration > 0 else ""
+
+                def _on_done():
+                    self._preview_panel.set_asr_result(
+                        new_text, asr_info=new_asr_info, request_id=request_id,
+                    )
+                    self._current_preview_asr_text = new_text
+
+                    # Re-run enhance if mode is not Off
+                    if self._enhance_mode != MODE_OFF and self._enhancer:
+                        self._preview_panel.set_enhance_loading()
+                        self._preview_panel.enhance_request_id += 1
+                        self._run_enhance_in_background(
+                            new_text, self._preview_panel.enhance_request_id
+                        )
+
+                AppHelper.callAfter(_on_done)
+            except Exception as e:
+                logger.error("Punc toggle re-transcribe failed: %s", e)
+
+                def _on_fail():
+                    asr_text = getattr(self, "_current_preview_asr_text", "")
+                    self._preview_panel.set_asr_result(
+                        asr_text, request_id=request_id,
+                    )
+
+                AppHelper.callAfter(_on_fail)
+
+        threading.Thread(target=_do_retranscribe, daemon=True).start()
 
     def _on_enhance_mode_select(self, sender) -> None:
         """Handle AI enhance mode menu item click."""
