@@ -151,8 +151,13 @@ class VocabBuildProgressPanel:
 
         def _close():
             if self._panel is not None:
+                # Clear delegate before closing to prevent windowWillClose: re-entry
+                self._panel.setDelegate_(None)
+                self._close_delegate = None
                 self._panel.orderOut_(None)
                 self._panel = None
+            # Clear callback to prevent double-firing
+            self._on_cancel = None
             # Restore accessory activation policy (statusbar-only)
             from AppKit import NSApp
             NSApp.setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
@@ -198,6 +203,12 @@ class VocabBuildProgressPanel:
         panel.setFloatingPanel_(True)
         panel.setHidesOnDeactivate_(False)
         panel.center()
+
+        # Set delegate to handle close button (X) as cancel
+        delegate_cls = _get_panel_close_delegate_class()
+        self._close_delegate = delegate_cls.alloc().init()
+        self._close_delegate._panel_ref = self
+        panel.setDelegate_(self._close_delegate)
 
         content_view = panel.contentView()
         inner_width = self._PANEL_WIDTH - 2 * self._PADDING
@@ -284,5 +295,29 @@ class VocabBuildProgressPanel:
 
     def cancelClicked_(self, sender) -> None:
         """Handle cancel button click."""
-        if self._on_cancel is not None:
-            self._on_cancel()
+        callback = self._on_cancel
+        self.close()
+        if callback is not None:
+            callback()
+
+
+_PanelCloseDelegate = None
+
+
+def _get_panel_close_delegate_class():
+    """Lazily create and cache the NSObject subclass for NSWindowDelegate."""
+    global _PanelCloseDelegate
+    if _PanelCloseDelegate is None:
+        from Foundation import NSObject
+
+        class PanelCloseDelegate(NSObject):
+            """NSWindowDelegate that triggers cancel when the panel close button is clicked."""
+
+            _panel_ref = None
+
+            def windowWillClose_(self, notification):
+                if self._panel_ref is not None:
+                    self._panel_ref.cancelClicked_(None)
+
+        _PanelCloseDelegate = PanelCloseDelegate
+    return _PanelCloseDelegate

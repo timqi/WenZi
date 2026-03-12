@@ -36,6 +36,16 @@ def _mock_appkit(monkeypatch):
     mock_foundation.NSMakeRect = make_rect
     mock_foundation.NSAttributedString = MagicMock()
 
+    # Reset the lazily-cached delegate class so mock Foundation is used
+    import voicetext.vocab_build_window as _vbw
+    _vbw._PanelCloseDelegate = None
+
+    # Provide a simple mock delegate class that _get_panel_close_delegate_class returns
+    mock_delegate_instance = MagicMock()
+    mock_delegate_cls = MagicMock()
+    mock_delegate_cls.alloc.return_value.init.return_value = mock_delegate_instance
+    monkeypatch.setattr(_vbw, "_get_panel_close_delegate_class", lambda: mock_delegate_cls)
+
     return mock_appkit, mock_foundation, mock_apphelper
 
 
@@ -113,3 +123,33 @@ class TestVocabBuildProgressPanel:
         panel = self._make_panel()
         # Should not raise when panel not shown
         panel.clear_stream_text()
+
+    def test_close_button_triggers_cancel(self, _mock_appkit):
+        """Clicking the X button should trigger the cancel callback."""
+        panel = self._make_panel()
+        cancelled = []
+        panel.show(on_cancel=lambda: cancelled.append(True))
+
+        # Simulate close button via cancelClicked_ (same as windowWillClose: delegate)
+        panel.cancelClicked_(None)
+        assert cancelled == [True]
+
+    def test_cancel_via_close_only_fires_once(self, _mock_appkit):
+        """Cancel callback should not fire twice on repeated calls."""
+        panel = self._make_panel()
+        cancel_count = []
+        panel.show(on_cancel=lambda: cancel_count.append(1))
+
+        panel.cancelClicked_(None)
+        panel.cancelClicked_(None)
+        assert len(cancel_count) == 1
+
+    def test_close_clears_delegate(self, _mock_appkit):
+        """close() should clear the delegate to prevent re-entry."""
+        panel = self._make_panel()
+        panel.show(on_cancel=MagicMock())
+
+        assert panel._close_delegate is not None
+        panel.close()
+        assert panel._close_delegate is None
+        assert panel._on_cancel is None

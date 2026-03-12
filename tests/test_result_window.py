@@ -1353,3 +1353,61 @@ class TestPuncCheckbox:
         panel = ResultPreviewPanel()
         # Default punc_enabled should not be set until show() is called
         assert not hasattr(panel, "_punc_enabled") or panel._punc_enabled is not False
+
+
+class TestPanelCloseDelegate:
+    """Test that clicking the panel close button (X) triggers cancel."""
+
+    def test_window_close_triggers_cancel(self):
+        from voicetext.result_window import ResultPreviewPanel
+
+        panel = _setup_panel_with_final_field(ResultPreviewPanel())
+        cancelled = []
+
+        panel.show(
+            asr_text="hello",
+            show_enhance=False,
+            on_confirm=lambda t, c: None,
+            on_cancel=lambda: cancelled.append(True),
+        )
+
+        # Simulate windowWillClose: (close button click)
+        panel.cancelClicked_(None)
+        assert cancelled == [True]
+
+    def test_close_clears_delegate_to_prevent_reentry(self):
+        from voicetext.result_window import ResultPreviewPanel
+
+        panel = _setup_panel_with_final_field(ResultPreviewPanel())
+        cancel_count = []
+
+        panel.show(
+            asr_text="hello",
+            show_enhance=False,
+            on_confirm=lambda t, c: None,
+            on_cancel=lambda: cancel_count.append(1),
+        )
+
+        # close() should clear the delegate
+        panel.close()
+        assert panel._panel is None
+        assert panel._close_delegate is None
+
+    def test_cancel_via_close_button_only_fires_once(self):
+        from voicetext.result_window import ResultPreviewPanel
+
+        panel = _setup_panel_with_final_field(ResultPreviewPanel())
+        cancel_count = []
+
+        panel.show(
+            asr_text="hello",
+            show_enhance=False,
+            on_confirm=lambda t, c: None,
+            on_cancel=lambda: cancel_count.append(1),
+        )
+
+        # cancelClicked_ calls close() which clears delegate,
+        # so a second call should not fire on_cancel again
+        panel.cancelClicked_(None)
+        panel.cancelClicked_(None)
+        assert len(cancel_count) == 1

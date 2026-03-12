@@ -366,8 +366,14 @@ class ResultPreviewPanel:
         self._stop_playback()
         self._remove_event_monitor()
         if self._panel is not None:
+            # Clear delegate before closing to prevent windowWillClose: re-entry
+            self._panel.setDelegate_(None)
+            self._close_delegate = None
             self._panel.orderOut_(None)
             self._panel = None
+        # Clear callbacks to prevent double-firing
+        self._on_confirm = None
+        self._on_cancel = None
 
     def _handle_key_event(self, event):
         """Handle key events for ⌘1~⌘9 mode switching."""
@@ -475,6 +481,11 @@ class ResultPreviewPanel:
         panel.setFloatingPanel_(True)
         panel.setHidesOnDeactivate_(False)
         panel.center()
+
+        # Set delegate to handle close button (X) as cancel
+        self._close_delegate = _PanelCloseDelegate.alloc().init()
+        self._close_delegate._panel_ref = self
+        panel.setDelegate_(self._close_delegate)
 
         content_view = panel.contentView()
         inner_width = self._PANEL_WIDTH - 2 * self._PADDING
@@ -866,14 +877,16 @@ class ResultPreviewPanel:
                     "enhanced_text": enhanced,
                     "final_text": text,
                 }
+            callback = self._on_confirm
             self.close()
-            self._on_confirm(text, correction_info)
+            callback(text, correction_info)
 
     def cancelClicked_(self, sender) -> None:
         """Handle cancel button click."""
+        callback = self._on_cancel
         self.close()
-        if self._on_cancel is not None:
-            self._on_cancel()
+        if callback is not None:
+            callback()
 
     def playAudioClicked_(self, sender) -> None:
         """Handle Play ▶ button click — play back the recorded WAV audio."""
@@ -1072,8 +1085,25 @@ def _create_punc_checkbox_target_class():
     return PuncCheckboxTarget
 
 
+def _create_panel_close_delegate_class():
+    """Create an NSObject subclass for NSWindowDelegate to handle panel close."""
+    from Foundation import NSObject
+
+    class PanelCloseDelegate(NSObject):
+        """NSWindowDelegate that triggers cancel when the panel close button is clicked."""
+
+        _panel_ref = None
+
+        def windowWillClose_(self, notification):
+            if self._panel_ref is not None:
+                self._panel_ref.cancelClicked_(None)
+
+    return PanelCloseDelegate
+
+
 _TextFieldEditDelegate = _create_text_field_delegate_class()
 _SegmentActionTarget = _create_segment_action_target_class()
 _SttPopupTarget = _create_stt_popup_target_class()
 _LlmPopupTarget = _create_llm_popup_target_class()
 _PuncCheckboxTarget = _create_punc_checkbox_target_class()
+_PanelCloseDelegate = _create_panel_close_delegate_class()
