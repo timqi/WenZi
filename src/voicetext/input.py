@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import logging
-import os
 import subprocess
 import threading
 import time
 
+from AppKit import NSPasteboard, NSPasteboardTypeString, NSString
 
 logger = logging.getLogger(__name__)
-
-# Ensure subprocess calls use UTF-8 regardless of the app's launch environment.
-# When launched from Finder, LANG may not be set, causing pbcopy to misinterpret UTF-8.
-_UTF8_ENV = {**os.environ, "LANG": "en_US.UTF-8"}
 
 
 def type_text(text: str, append_newline: bool = False, method: str = "auto") -> None:
@@ -48,23 +44,46 @@ def type_text(text: str, append_newline: bool = False, method: str = "auto") -> 
     logger.error("All text injection methods failed")
 
 
+def _get_pasteboard_string() -> str | None:
+    """Read the current plain-text content from the system pasteboard."""
+    pb = NSPasteboard.generalPasteboard()
+    return pb.stringForType_(NSPasteboardTypeString)
+
+
+def _set_pasteboard_concealed(text: str) -> bool:
+    """Write *text* to the pasteboard with concealed/transient markers.
+
+    Clipboard history managers (Paste, Maccy, Raycast, etc.) honour
+    ``org.nspasteboard.ConcealedType`` and ``com.nspasteboard.TransientType``
+    and will skip entries that carry these types.
+    """
+    pb = NSPasteboard.generalPasteboard()
+    pb.clearContents()
+    ns_str = NSString.stringWithString_(text)
+    ok = pb.setString_forType_(ns_str, NSPasteboardTypeString)
+    if not ok:
+        return False
+    # Marker types – the value is irrelevant; their presence is the signal.
+    pb.setString_forType_("", "org.nspasteboard.ConcealedType")
+    pb.setString_forType_("", "com.nspasteboard.TransientType")
+    return True
+
+
+def _set_pasteboard_string(text: str) -> None:
+    """Write *text* to the pasteboard without concealed markers (for restore)."""
+    pb = NSPasteboard.generalPasteboard()
+    pb.clearContents()
+    ns_str = NSString.stringWithString_(text)
+    pb.setString_forType_(ns_str, NSPasteboardTypeString)
+
+
 def _type_via_clipboard(payload: str) -> bool:
     """Copy to clipboard then simulate Cmd+V."""
-    try:
-        old_clip = subprocess.run(
-            ["pbpaste"], capture_output=True, encoding="utf-8",
-            env=_UTF8_ENV, timeout=2,
-        ).stdout
-    except Exception:
-        old_clip = None
+    old_clip = _get_pasteboard_string()
 
     try:
-        proc = subprocess.run(
-            ["pbcopy"], input=payload, encoding="utf-8",
-            env=_UTF8_ENV, timeout=2,
-        )
-        if proc.returncode != 0:
-            logger.warning("pbcopy failed with returncode %d", proc.returncode)
+        if not _set_pasteboard_concealed(payload):
+            logger.warning("NSPasteboard setString failed")
             return False
 
         # Small delay to ensure clipboard is ready
@@ -90,10 +109,7 @@ def _type_via_clipboard(payload: str) -> bool:
             def _restore():
                 time.sleep(1.0)
                 try:
-                    subprocess.run(
-                        ["pbcopy"], input=old_clip, encoding="utf-8",
-                        env=_UTF8_ENV, timeout=2,
-                    )
+                    _set_pasteboard_string(old_clip)
                 except Exception:
                     pass
             threading.Thread(target=_restore, daemon=True).start()
