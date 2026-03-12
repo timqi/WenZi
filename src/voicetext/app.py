@@ -10,7 +10,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import rumps
 from ApplicationServices import AXIsProcessTrusted, AXIsProcessTrustedWithOptions
@@ -29,6 +29,8 @@ from .model_registry import (
     PRESET_BY_ID,
     PRESETS,
     ModelPreset,
+    RemoteASRModel,
+    build_remote_asr_models,
     get_model_cache_dir,
     is_backend_available,
     is_model_cached,
@@ -67,16 +69,48 @@ class VoiceTextApp(rumps.App):
         )
 
         asr_cfg = self._config["asr"]
-        self._transcriber = create_transcriber(
-            backend=asr_cfg.get("backend", "funasr"),
-            use_vad=asr_cfg.get("use_vad", True),
-            use_punc=asr_cfg.get("use_punc", True),
-            language=asr_cfg.get("language"),
-            model=asr_cfg.get("model"),
-            temperature=asr_cfg.get("temperature"),
-            base_url=asr_cfg.get("base_url"),
-            api_key=asr_cfg.get("api_key"),
-        )
+
+        # Migrate old flat base_url/api_key to provider format
+        self._migrate_asr_config(asr_cfg)
+
+        # Remote ASR state: (provider_name, model_name) or None
+        self._current_remote_asr: Optional[Tuple[str, str]] = None
+        default_provider = asr_cfg.get("default_provider")
+        default_model = asr_cfg.get("default_model")
+
+        if default_provider and default_model:
+            # Start with remote model
+            providers = asr_cfg.get("providers", {})
+            pcfg = providers.get(default_provider, {})
+            if pcfg and default_model in pcfg.get("models", []):
+                self._current_remote_asr = (default_provider, default_model)
+                self._transcriber = create_transcriber(
+                    backend="whisper-api",
+                    base_url=pcfg["base_url"],
+                    api_key=pcfg["api_key"],
+                    model=default_model,
+                    language=asr_cfg.get("language"),
+                    temperature=asr_cfg.get("temperature"),
+                )
+            else:
+                # Provider/model not found, fall back to local
+                self._transcriber = create_transcriber(
+                    backend=asr_cfg.get("backend", "funasr"),
+                    use_vad=asr_cfg.get("use_vad", True),
+                    use_punc=asr_cfg.get("use_punc", True),
+                    language=asr_cfg.get("language"),
+                    model=asr_cfg.get("model"),
+                    temperature=asr_cfg.get("temperature"),
+                )
+        else:
+            self._transcriber = create_transcriber(
+                backend=asr_cfg.get("backend", "funasr"),
+                use_vad=asr_cfg.get("use_vad", True),
+                use_punc=asr_cfg.get("use_punc", True),
+                language=asr_cfg.get("language"),
+                model=asr_cfg.get("model"),
+                temperature=asr_cfg.get("temperature"),
+            )
 
         self._output_method = self._config["output"]["method"]
         self._append_newline = self._config["output"]["append_newline"]
@@ -88,13 +122,15 @@ class VoiceTextApp(rumps.App):
         self._conversation_history = ConversationHistory()
         self._usage_stats = UsageStats()
 
-        # Resolve current preset
-        self._current_preset_id = asr_cfg.get("preset")
-        if not self._current_preset_id:
-            self._current_preset_id = resolve_preset_from_config(
-                asr_cfg.get("backend", "funasr"),
-                asr_cfg.get("model"),
-            )
+        # Resolve current preset (None if using remote)
+        self._current_preset_id: Optional[str] = None
+        if not self._current_remote_asr:
+            self._current_preset_id = asr_cfg.get("preset")
+            if not self._current_preset_id:
+                self._current_preset_id = resolve_preset_from_config(
+                    asr_cfg.get("backend", "funasr"),
+                    asr_cfg.get("model"),
+                )
 
         # Menu items
         self._status_item = rumps.MenuItem("Ready")
@@ -103,26 +139,16 @@ class VoiceTextApp(rumps.App):
         self._hotkey_item = rumps.MenuItem(f"Hotkey: {hotkey_name}")
         self._hotkey_item.set_callback(None)
 
-        # Model submenu
-        self._model_menu = rumps.MenuItem("Model")
+        # STT Model submenu
+        self._model_menu = rumps.MenuItem("STT Model")
         self._model_menu_items: Dict[str, rumps.MenuItem] = {}
-        for preset in PRESETS:
-            backend_ok = is_backend_available(preset.backend)
-            if backend_ok:
-                title = preset.display_name
-            else:
-                title = f"{preset.display_name} (N/A)"
-            item = rumps.MenuItem(title)
-            # Tag the item with preset id
-            item._preset_id = preset.id
-            if backend_ok:
-                item.set_callback(self._on_model_select)
-            else:
-                item.set_callback(None)
-            if preset.id == self._current_preset_id:
-                item.state = 1
-            self._model_menu_items[preset.id] = item
-            self._model_menu.add(item)
+        self._remote_asr_menu_items: Dict[Tuple[str, str], rumps.MenuItem] = {}
+        self._asr_add_provider_item = rumps.MenuItem(
+            "Add ASR Provider...", callback=self._on_asr_add_provider
+        )
+        self._asr_remove_provider_menu = rumps.MenuItem("Remove ASR Provider")
+        self._asr_remove_provider_items: Dict[str, rumps.MenuItem] = {}
+        self._build_model_menu()
 
         # AI Enhance
         self._enhancer = create_enhancer(self._config)
@@ -1038,6 +1064,432 @@ Output only the processed text without any explanation."""
             self._enhance_provider_items[pname] = item
             self._enhance_provider_menu.add(item)
 
+    # ── Remote ASR provider management ────────────────────────────────
+
+    def _build_model_menu(self) -> None:
+        """Build or rebuild the entire STT Model submenu."""
+        if self._model_menu._menu is not None:
+            self._model_menu.clear()
+        self._model_menu_items.clear()
+        self._remote_asr_menu_items.clear()
+
+        # Local presets
+        for preset in PRESETS:
+            backend_ok = is_backend_available(preset.backend)
+            if backend_ok:
+                title = preset.display_name
+            else:
+                title = f"{preset.display_name} (N/A)"
+            item = rumps.MenuItem(title)
+            item._preset_id = preset.id
+            if backend_ok:
+                item.set_callback(self._on_model_select)
+            else:
+                item.set_callback(None)
+            if preset.id == self._current_preset_id:
+                item.state = 1
+            self._model_menu_items[preset.id] = item
+            self._model_menu.add(item)
+
+        # Remote ASR models
+        asr_cfg = self._config.get("asr", {})
+        providers = asr_cfg.get("providers", {})
+        remote_models = build_remote_asr_models(providers)
+
+        if remote_models:
+            self._model_menu.add(None)  # separator
+            for rm in remote_models:
+                key = (rm.provider, rm.model)
+                item = rumps.MenuItem(rm.display_name)
+                item._remote_asr = rm
+                item.set_callback(self._on_remote_asr_select)
+                if key == self._current_remote_asr:
+                    item.state = 1
+                self._remote_asr_menu_items[key] = item
+                self._model_menu.add(item)
+
+        # Management items
+        self._model_menu.add(None)  # separator
+        self._model_menu.add(self._asr_add_provider_item)
+
+        # Rebuild remove submenu
+        if self._asr_remove_provider_menu._menu is not None:
+            self._asr_remove_provider_menu.clear()
+        self._asr_remove_provider_items.clear()
+        for pname in providers:
+            item = rumps.MenuItem(pname)
+            item._provider_name = pname
+            item.set_callback(self._on_asr_remove_provider)
+            self._asr_remove_provider_items[pname] = item
+            self._asr_remove_provider_menu.add(item)
+
+        if providers:
+            self._model_menu.add(self._asr_remove_provider_menu)
+
+    def _on_remote_asr_select(self, sender) -> None:
+        """Handle remote ASR model menu item click."""
+        rm: RemoteASRModel = sender._remote_asr
+        key = (rm.provider, rm.model)
+
+        if key == self._current_remote_asr:
+            return
+
+        if self._busy:
+            rumps.notification(
+                "VoiceText",
+                "Cannot switch model",
+                "Please wait for current operation to finish.",
+            )
+            return
+
+        self._busy = True
+        old_transcriber = self._transcriber
+
+        def _do_switch():
+            try:
+                self._set_status("Switching...")
+                old_transcriber.cleanup()
+
+                asr_cfg = self._config["asr"]
+                new_transcriber = create_transcriber(
+                    backend="whisper-api",
+                    base_url=rm.base_url,
+                    api_key=rm.api_key,
+                    model=rm.model,
+                    language=asr_cfg.get("language"),
+                    temperature=asr_cfg.get("temperature"),
+                )
+                new_transcriber.initialize()
+
+                self._transcriber = new_transcriber
+                self._current_remote_asr = key
+                self._current_preset_id = None
+                self._update_model_checkmarks()
+
+                # Persist to config
+                self._config["asr"]["default_provider"] = rm.provider
+                self._config["asr"]["default_model"] = rm.model
+                save_config(self._config, self._config_path)
+
+                self._set_status("VT")
+                logger.info("Switched to remote ASR: %s", rm.display_name)
+                try:
+                    rumps.notification(
+                        "VoiceText",
+                        "Model switched",
+                        f"Now using: {rm.display_name}",
+                    )
+                except Exception:
+                    logger.debug("Notification unavailable, skipping")
+
+            except Exception as e:
+                logger.error("Remote ASR switch failed: %s", e)
+                self._set_status("Error")
+                try:
+                    rumps.notification(
+                        "VoiceText",
+                        "Model switch failed",
+                        str(e)[:100],
+                    )
+                except Exception:
+                    logger.debug("Notification unavailable, skipping")
+            finally:
+                self._busy = False
+
+        threading.Thread(target=_do_switch, daemon=True).start()
+
+    _ADD_ASR_PROVIDER_TEMPLATE = """\
+name: my-provider
+base_url: https://api.groq.com/openai/v1
+api_key: gsk-xxx
+models:
+  whisper-large-v3-turbo"""
+
+    _ASR_PROVIDER_DRAFT_FILENAME = ".asr_provider_draft"
+
+    def _get_asr_provider_draft_path(self) -> str:
+        from .config import DEFAULT_CONFIG_DIR
+        config_dir = self._config_path or DEFAULT_CONFIG_DIR
+        parent = os.path.dirname(os.path.expanduser(config_dir))
+        return os.path.join(parent, self._ASR_PROVIDER_DRAFT_FILENAME)
+
+    def _load_asr_provider_draft(self) -> str:
+        draft_path = self._get_asr_provider_draft_path()
+        try:
+            with open(draft_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if content.strip():
+                return content
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.debug("Could not read ASR provider draft: %s", e)
+        return self._ADD_ASR_PROVIDER_TEMPLATE
+
+    def _save_asr_provider_draft(self, text: str) -> None:
+        draft_path = self._get_asr_provider_draft_path()
+        try:
+            os.makedirs(os.path.dirname(draft_path), exist_ok=True)
+            with open(draft_path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except Exception as e:
+            logger.debug("Could not save ASR provider draft: %s", e)
+
+    def _remove_asr_provider_draft(self) -> None:
+        draft_path = self._get_asr_provider_draft_path()
+        try:
+            os.remove(draft_path)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.debug("Could not remove ASR provider draft: %s", e)
+
+    def _on_asr_add_provider(self, _) -> None:
+        """Add a new ASR provider via multi-step dialog."""
+        try:
+            self._do_add_asr_provider()
+        except Exception as e:
+            logger.error("Add ASR provider failed: %s", e, exc_info=True)
+        finally:
+            self._restore_accessory()
+
+    def _do_add_asr_provider(self) -> None:
+        """Internal implementation for adding an ASR provider."""
+        template = self._load_asr_provider_draft()
+        while True:
+            resp = self._run_multiline_window(
+                title="Add ASR Provider",
+                message=(
+                    "Fill in the provider config below, then click Verify.\n"
+                    "Models: one per line under 'models:'."
+                ),
+                default_text=template,
+                ok="Verify",
+                dimensions=(380, 140),
+            )
+            if resp is None:
+                self._save_asr_provider_draft(template)
+                return
+
+            parsed = self._parse_asr_provider_text(resp.text)
+            if isinstance(parsed, str):
+                self._activate_for_dialog()
+                self._topmost_alert("Validation Error", parsed)
+                template = resp.text
+                self._save_asr_provider_draft(resp.text)
+                continue
+
+            name, base_url, api_key, models = parsed
+
+            # Check for duplicate
+            providers = self._config.get("asr", {}).get("providers", {})
+            if name in providers:
+                self._activate_for_dialog()
+                self._topmost_alert("Error", f"ASR provider '{name}' already exists.")
+                template = resp.text
+                self._save_asr_provider_draft(resp.text)
+                continue
+
+            # Verify connection
+            self._activate_for_dialog()
+            self._topmost_alert(
+                "Verifying...",
+                f"Testing connection to {base_url}\nModel: {models[0]}",
+            )
+
+            from .transcriber_whisper_api import WhisperAPITranscriber
+
+            err = WhisperAPITranscriber.verify_provider(base_url, api_key, models[0])
+
+            if err:
+                self._activate_for_dialog()
+                result = self._topmost_alert(
+                    title="Verification Failed",
+                    message=f"{err}\n\nEdit and retry?",
+                    ok="Edit",
+                    cancel="Cancel",
+                )
+                if result != 1:
+                    self._save_asr_provider_draft(resp.text)
+                    return
+                template = resp.text
+                self._save_asr_provider_draft(resp.text)
+                continue
+
+            # Verify passed — ask to save
+            self._activate_for_dialog()
+            result = self._topmost_alert(
+                title="Verification Passed",
+                message=(
+                    f"Provider: {name}\n"
+                    f"URL: {base_url}\n"
+                    f"Models: {', '.join(models)}\n\n"
+                    "Save this provider?"
+                ),
+                ok="Save",
+                cancel="Cancel",
+            )
+            if result != 1:
+                self._save_asr_provider_draft(resp.text)
+                return
+
+            # Save to config
+            self._config.setdefault("asr", {})
+            providers_cfg = self._config["asr"].setdefault("providers", {})
+            providers_cfg[name] = {
+                "base_url": base_url,
+                "api_key": api_key,
+                "models": models,
+            }
+            save_config(self._config, self._config_path)
+            self._remove_asr_provider_draft()
+
+            self._build_model_menu()
+
+            rumps.notification(
+                "VoiceText", "ASR Provider added", f"{name} ({', '.join(models)})"
+            )
+            logger.info("Added ASR provider: %s", name)
+            return
+
+    @staticmethod
+    def _parse_asr_provider_text(text: str):
+        """Parse ASR provider config text.
+
+        Returns (name, base_url, api_key, models) on success,
+        or a string error message on failure.
+        """
+        lines = text.strip().splitlines()
+        fields = {}
+        in_models = False
+        models = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("models:"):
+                in_models = True
+                inline = stripped[len("models:"):].strip()
+                if inline:
+                    models.append(inline)
+                continue
+            if in_models:
+                is_indented = line.startswith(" ") or line.startswith("\t")
+                if not is_indented and ":" in stripped:
+                    in_models = False
+                else:
+                    models.append(stripped)
+                    continue
+            if ":" in stripped:
+                key, _, val = stripped.partition(":")
+                fields[key.strip().lower()] = val.strip()
+
+        name = fields.get("name", "").strip()
+        base_url = fields.get("base_url", "").strip()
+        api_key = fields.get("api_key", "").strip()
+
+        errors = []
+        if not name:
+            errors.append("name is required")
+        if not base_url:
+            errors.append("base_url is required")
+        if not api_key:
+            errors.append("api_key is required")
+        if not models:
+            errors.append("at least one model is required")
+
+        if errors:
+            return "\n".join(errors)
+
+        return name, base_url, api_key, models
+
+    def _on_asr_remove_provider(self, sender) -> None:
+        """Remove an ASR provider after confirmation."""
+        try:
+            pname = sender._provider_name
+
+            self._activate_for_dialog()
+            result = self._topmost_alert(
+                title="Remove ASR Provider",
+                message=f"Remove ASR provider '{pname}' and all its models?",
+                ok="Remove",
+                cancel="Cancel",
+            )
+            if result != 1:
+                return
+
+            # If currently using a model from this provider, switch to default
+            if self._current_remote_asr and self._current_remote_asr[0] == pname:
+                self._transcriber.cleanup()
+                asr_cfg = self._config["asr"]
+                self._transcriber = create_transcriber(
+                    backend=asr_cfg.get("backend", "funasr"),
+                    use_vad=asr_cfg.get("use_vad", True),
+                    use_punc=asr_cfg.get("use_punc", True),
+                    language=asr_cfg.get("language"),
+                    model=asr_cfg.get("model"),
+                    temperature=asr_cfg.get("temperature"),
+                )
+                self._current_remote_asr = None
+                self._current_preset_id = resolve_preset_from_config(
+                    asr_cfg.get("backend", "funasr"),
+                    asr_cfg.get("model"),
+                )
+                self._config["asr"]["default_provider"] = None
+                self._config["asr"]["default_model"] = None
+
+            # Remove from config
+            providers_cfg = self._config.get("asr", {}).get("providers", {})
+            providers_cfg.pop(pname, None)
+            save_config(self._config, self._config_path)
+
+            self._build_model_menu()
+            self._update_model_checkmarks()
+
+            rumps.notification("VoiceText", "ASR Provider removed", pname)
+            logger.info("Removed ASR provider: %s", pname)
+        except Exception as e:
+            logger.error("Remove ASR provider failed: %s", e, exc_info=True)
+        finally:
+            self._restore_accessory()
+
+    @staticmethod
+    def _migrate_asr_config(asr_cfg: Dict[str, Any]) -> None:
+        """Migrate old flat base_url/api_key to provider format."""
+        base_url = asr_cfg.pop("base_url", None)
+        api_key = asr_cfg.pop("api_key", None)
+
+        if not base_url or not api_key:
+            return
+
+        providers = asr_cfg.setdefault("providers", {})
+        if providers:
+            # Already has providers, don't overwrite
+            return
+
+        # Infer provider name from URL
+        if "groq.com" in base_url:
+            name = "groq"
+            models = ["whisper-large-v3-turbo"]
+        else:
+            name = "migrated"
+            model = asr_cfg.get("model") or "whisper-large-v3-turbo"
+            models = [model]
+
+        providers[name] = {
+            "base_url": base_url,
+            "api_key": api_key,
+            "models": models,
+        }
+
+        # If the current backend was whisper-api, set as default
+        if asr_cfg.get("backend") == "whisper-api":
+            asr_cfg["default_provider"] = name
+            asr_cfg["default_model"] = models[0]
+
+        logger.info("Migrated ASR config: base_url/api_key → provider '%s'", name)
+
     @staticmethod
     def _activate_for_dialog():
         """Set activation policy so modal dialogs can show from non-bundled process."""
@@ -1509,11 +1961,11 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
         logger.info("Debug print request body: %s", bool(sender.state))
 
     def _on_model_select(self, sender) -> None:
-        """Handle model menu item click."""
+        """Handle local model menu item click."""
         preset_id = sender._preset_id
 
         # Ignore if already active
-        if preset_id == self._current_preset_id:
+        if preset_id == self._current_preset_id and not self._current_remote_asr:
             return
 
         # Reject if busy (transcribing or switching)
@@ -1530,6 +1982,8 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
 
         # Disable all model menu callbacks during switch
         for item in self._model_menu_items.values():
+            item.set_callback(None)
+        for item in self._remote_asr_menu_items.values():
             item.set_callback(None)
 
         old_preset_id = self._current_preset_id
@@ -1565,8 +2019,6 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
                     language=preset.language or asr_cfg.get("language"),
                     model=preset.model,
                     temperature=asr_cfg.get("temperature"),
-                    base_url=preset.base_url or asr_cfg.get("base_url"),
-                    api_key=asr_cfg.get("api_key"),
                 )
                 new_transcriber.initialize()
 
@@ -1578,15 +2030,16 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
                 # Success: update state
                 self._transcriber = new_transcriber
                 self._current_preset_id = preset_id
-                self._update_model_checkmark(preset_id)
+                self._current_remote_asr = None
+                self._update_model_checkmarks()
 
                 # Persist to config
                 self._config["asr"]["preset"] = preset_id
                 self._config["asr"]["backend"] = preset.backend
                 self._config["asr"]["model"] = preset.model
                 self._config["asr"]["language"] = preset.language
-                if preset.base_url:
-                    self._config["asr"]["base_url"] = preset.base_url
+                self._config["asr"]["default_provider"] = None
+                self._config["asr"]["default_model"] = None
                 save_config(self._config, self._config_path)
 
                 self._set_status("VT")
@@ -1625,6 +2078,8 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
                     p = PRESET_BY_ID[pid]
                     if is_backend_available(p.backend):
                         item.set_callback(self._on_model_select)
+                for item in self._remote_asr_menu_items.values():
+                    item.set_callback(self._on_remote_asr_select)
                 self._busy = False
 
         threading.Thread(target=_do_switch, daemon=True).start()
@@ -1667,10 +2122,12 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
 
         return None
 
-    def _update_model_checkmark(self, preset_id: str) -> None:
-        """Update checkmark state on model menu items."""
+    def _update_model_checkmarks(self) -> None:
+        """Update checkmark state on all model menu items (local + remote)."""
         for pid, item in self._model_menu_items.items():
-            item.state = 1 if pid == preset_id else 0
+            item.state = 1 if pid == self._current_preset_id else 0
+        for key, item in self._remote_asr_menu_items.items():
+            item.state = 1 if key == self._current_remote_asr else 0
 
     def _try_restore_previous_model(self, old_preset_id: Optional[str]) -> None:
         """Attempt to restore the previous model after a failed switch."""
@@ -1689,13 +2146,11 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
                 language=old_preset.language or asr_cfg.get("language"),
                 model=old_preset.model,
                 temperature=asr_cfg.get("temperature"),
-                base_url=asr_cfg.get("base_url"),
-                api_key=asr_cfg.get("api_key"),
             )
             restored.initialize()
             self._transcriber = restored
             self._current_preset_id = old_preset_id
-            self._update_model_checkmark(old_preset_id)
+            self._update_model_checkmarks()
             self._set_status("VT")
             logger.info("Previous model restored")
         except Exception as e2:
@@ -1705,8 +2160,12 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
     def _build_config_info(self) -> str:
         """Build a summary string of current configuration."""
         # ASR Model
-        preset = PRESET_BY_ID.get(self._current_preset_id)
-        asr_model = preset.display_name if preset else self._current_preset_id or "N/A"
+        if self._current_remote_asr:
+            pname, mname = self._current_remote_asr
+            asr_model = f"{pname} / {mname} (remote)"
+        else:
+            preset = PRESET_BY_ID.get(self._current_preset_id)
+            asr_model = preset.display_name if preset else self._current_preset_id or "N/A"
 
         # AI Enhance mode
         enhance_mode = self._enhance_mode if self._enhance_mode else "Off"

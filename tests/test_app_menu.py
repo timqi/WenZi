@@ -13,6 +13,7 @@ from voicetext.enhancer import MODE_OFF
 def _make_mock_app():
     """Create a minimal mock of VoiceTextApp for testing _build_config_info."""
     app = MagicMock(spec=[])
+    app._current_remote_asr = None
     app._current_preset_id = "funasr-zh"
     app._enhance_mode = "proofread"
     app._preview_enabled = True
@@ -101,9 +102,17 @@ class TestBuildConfigInfo:
 
     def test_unknown_preset(self):
         app = _make_mock_app()
+        app._current_remote_asr = None
         app._current_preset_id = "unknown-preset"
 
         with patch("voicetext.app.PRESET_BY_ID", {}):
             info = VoiceTextApp._build_config_info(app)
 
         assert "unknown-preset" in info
+
+    def test_remote_asr_active(self):
+        app = _make_mock_app()
+        app._current_remote_asr = ("groq", "whisper-large-v3-turbo")
+        info = _get_info(app)
+
+        assert "groq / whisper-large-v3-turbo (remote)" in info

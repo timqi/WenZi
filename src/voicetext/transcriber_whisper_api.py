@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import logging
-import os
 from typing import Optional
 
 from openai import OpenAI
@@ -13,9 +12,6 @@ from .transcriber import BaseTranscriber
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = "whisper-large-v3-turbo"
-
 
 class WhisperAPITranscriber(BaseTranscriber):
     """Speech-to-text via OpenAI-compatible audio transcription API."""
@@ -23,15 +19,15 @@ class WhisperAPITranscriber(BaseTranscriber):
     def __init__(
         self,
         *,
-        base_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        base_url: str,
+        api_key: str,
+        model: str,
         language: Optional[str] = None,
         temperature: Optional[float] = None,
     ) -> None:
-        self._base_url = base_url or DEFAULT_BASE_URL
-        self._api_key = api_key or os.environ.get("GROQ_API_KEY", "")
-        self._model = model or DEFAULT_MODEL
+        self._base_url = base_url
+        self._api_key = api_key
+        self._model = model
         self._language = language
         self._temperature = temperature if temperature is not None else 0.0
         self._client: Optional[OpenAI] = None
@@ -77,3 +73,32 @@ class WhisperAPITranscriber(BaseTranscriber):
 
         logger.info("Transcription result: %s", text[:100])
         return text
+
+    @staticmethod
+    def verify_provider(base_url: str, api_key: str, model: str) -> Optional[str]:
+        """Test an ASR provider connection with a silent WAV file.
+
+        Returns None on success or an error message string on failure.
+        """
+        import struct
+        import wave
+
+        # Generate a short silent WAV (0.5s, 16kHz, 16-bit mono)
+        sample_rate = 16000
+        num_samples = sample_rate // 2
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(struct.pack(f"<{num_samples}h", *([0] * num_samples)))
+        wav_data = buf.getvalue()
+
+        try:
+            client = OpenAI(base_url=base_url, api_key=api_key)
+            audio_file = io.BytesIO(wav_data)
+            audio_file.name = "test.wav"
+            client.audio.transcriptions.create(model=model, file=audio_file)
+            return None
+        except Exception as e:
+            return str(e)
