@@ -37,6 +37,10 @@ class TextEnhancer:
         self._timeout = config.get("timeout", 30)
         self._thinking = config.get("thinking", False)
 
+        # Debug flags
+        self._debug_print_prompt = False
+        self._debug_print_request_body = False
+
         # Load enhancement modes from external files
         ensure_default_modes()
         self._modes: Dict[str, ModeDefinition] = load_modes()
@@ -147,6 +151,24 @@ class TextEnhancer:
     @property
     def vocab_index(self) -> Optional[VocabularyIndex]:
         return self._vocab_index
+
+    @property
+    def debug_print_prompt(self) -> bool:
+        return self._debug_print_prompt
+
+    @debug_print_prompt.setter
+    def debug_print_prompt(self, value: bool) -> None:
+        self._debug_print_prompt = value
+        logger.info("Debug print prompt: %s", value)
+
+    @property
+    def debug_print_request_body(self) -> bool:
+        return self._debug_print_request_body
+
+    @debug_print_request_body.setter
+    def debug_print_request_body(self, value: bool) -> None:
+        self._debug_print_request_body = value
+        logger.info("Debug print request body: %s", value)
 
     @property
     def provider_name(self) -> str:
@@ -323,6 +345,21 @@ class TextEnhancer:
             }
             if extra_body:
                 kwargs["extra_body"] = extra_body
+
+            if self._debug_print_prompt:
+                logger.info(
+                    "[DEBUG] System prompt:\n%s", system_content
+                )
+                logger.info(
+                    "[DEBUG] User message:\n%s", text.strip()
+                )
+            if self._debug_print_request_body:
+                import json as _json
+                logger.info(
+                    "[DEBUG] Request body:\n%s",
+                    _json.dumps(kwargs, ensure_ascii=False, default=str, indent=2),
+                )
+
             response = await asyncio.wait_for(
                 client.chat.completions.create(**kwargs),
                 timeout=self._timeout,

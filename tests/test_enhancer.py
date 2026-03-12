@@ -890,3 +890,91 @@ class TestVocabularyIntegration:
         call_kwargs = mock_client.chat.completions.create.call_args
         system_msg = call_kwargs.kwargs["messages"][0]["content"]
         assert "从用户个人词库中检索到的" not in system_msg
+
+
+# --- Debug flags tests ---
+
+
+class TestDebugFlags:
+    def test_debug_print_prompt_defaults_false(self):
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config())
+        assert enhancer.debug_print_prompt is False
+
+    def test_debug_print_request_body_defaults_false(self):
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config())
+        assert enhancer.debug_print_request_body is False
+
+    def test_debug_print_prompt_toggle(self):
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config())
+        enhancer.debug_print_prompt = True
+        assert enhancer.debug_print_prompt is True
+        enhancer.debug_print_prompt = False
+        assert enhancer.debug_print_prompt is False
+
+    def test_debug_print_request_body_toggle(self):
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config())
+        enhancer.debug_print_request_body = True
+        assert enhancer.debug_print_request_body is True
+        enhancer.debug_print_request_body = False
+        assert enhancer.debug_print_request_body is False
+
+    def test_enhance_logs_prompt_when_enabled(self):
+        mock_client = _make_mock_client("enhanced")
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(enabled=True, mode="proofread"))
+            enhancer._providers = {
+                "ollama": (mock_client, ["qwen2.5:7b"], {}),
+            }
+            enhancer._active_provider = "ollama"
+            enhancer._active_model = "qwen2.5:7b"
+            enhancer.debug_print_prompt = True
+
+        with patch("voicetext.enhancer.logger") as mock_logger:
+            asyncio.get_event_loop().run_until_complete(
+                enhancer.enhance("test input")
+            )
+            info_calls = [c for c in mock_logger.info.call_args_list
+                          if "[DEBUG] System prompt:" in str(c) or
+                          "[DEBUG] User message:" in str(c)]
+            assert len(info_calls) == 2
+
+    def test_enhance_logs_request_body_when_enabled(self):
+        mock_client = _make_mock_client("enhanced")
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(enabled=True, mode="proofread"))
+            enhancer._providers = {
+                "ollama": (mock_client, ["qwen2.5:7b"], {}),
+            }
+            enhancer._active_provider = "ollama"
+            enhancer._active_model = "qwen2.5:7b"
+            enhancer.debug_print_request_body = True
+
+        with patch("voicetext.enhancer.logger") as mock_logger:
+            asyncio.get_event_loop().run_until_complete(
+                enhancer.enhance("test input")
+            )
+            info_calls = [c for c in mock_logger.info.call_args_list
+                          if "[DEBUG] Request body:" in str(c)]
+            assert len(info_calls) == 1
+
+    def test_enhance_no_debug_logs_when_disabled(self):
+        mock_client = _make_mock_client("enhanced")
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(enabled=True, mode="proofread"))
+            enhancer._providers = {
+                "ollama": (mock_client, ["qwen2.5:7b"], {}),
+            }
+            enhancer._active_provider = "ollama"
+            enhancer._active_model = "qwen2.5:7b"
+
+        with patch("voicetext.enhancer.logger") as mock_logger:
+            asyncio.get_event_loop().run_until_complete(
+                enhancer.enhance("test input")
+            )
+            info_calls = [c for c in mock_logger.info.call_args_list
+                          if "[DEBUG]" in str(c)]
+            assert len(info_calls) == 0

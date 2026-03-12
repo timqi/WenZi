@@ -139,7 +139,7 @@ class ResultPreviewPanel:
             NSBezelBorder,
             NSButton,
             NSClosableWindowMask,
-            NSFloatingWindowLevel,
+            NSStatusWindowLevel,
             NSFont,
             NSLineBreakByWordWrapping,
             NSPanel,
@@ -170,8 +170,9 @@ class ResultPreviewPanel:
             False,
         )
         panel.setTitle_("Preview")
-        panel.setLevel_(NSFloatingWindowLevel)
+        panel.setLevel_(NSStatusWindowLevel)
         panel.setFloatingPanel_(True)
+        panel.setHidesOnDeactivate_(False)
         panel.center()
 
         content_view = panel.contentView()

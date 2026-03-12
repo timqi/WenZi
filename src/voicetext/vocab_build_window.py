@@ -118,7 +118,7 @@ class VocabBuildProgressPanel:
             NSButton,
             NSClosableWindowMask,
             NSColor,
-            NSFloatingWindowLevel,
+            NSStatusWindowLevel,
             NSFont,
             NSPanel,
             NSScrollView,
@@ -143,8 +143,9 @@ class VocabBuildProgressPanel:
             False,
         )
         panel.setTitle_("Build Vocabulary")
-        panel.setLevel_(NSFloatingWindowLevel)
+        panel.setLevel_(NSStatusWindowLevel)
         panel.setFloatingPanel_(True)
+        panel.setHidesOnDeactivate_(False)
         panel.center()
 
         content_view = panel.contentView()

@@ -215,10 +215,6 @@ class VoiceTextApp(rumps.App):
         )
         self._enhance_menu.add(self._enhance_edit_config_item)
 
-        self._show_preview_item = rumps.MenuItem(
-            "Show Preview", callback=self._on_show_preview
-        )
-
         self._preview_item = rumps.MenuItem(
             "Preview", callback=self._on_preview_toggle
         )
@@ -228,15 +224,44 @@ class VoiceTextApp(rumps.App):
             "Copy Log Path", callback=self._on_copy_log_path
         )
 
+        # Debug submenu
+        self._debug_menu = rumps.MenuItem("Debug")
+
+        # Log level submenu
+        self._debug_level_menu = rumps.MenuItem("Log Level")
+        self._debug_level_items: Dict[str, rumps.MenuItem] = {}
+        current_level = self._config["logging"]["level"]
+        for level_name in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            item = rumps.MenuItem(level_name)
+            item._log_level = level_name
+            item.set_callback(self._on_debug_level_select)
+            if level_name == current_level:
+                item.state = 1
+            self._debug_level_items[level_name] = item
+            self._debug_level_menu.add(item)
+        self._debug_menu.add(self._debug_level_menu)
+
+        # Print Prompt toggle
+        self._debug_print_prompt_item = rumps.MenuItem(
+            "Print Prompt", callback=self._on_debug_print_prompt_toggle
+        )
+        self._debug_menu.add(self._debug_print_prompt_item)
+
+        # Print Request Body toggle
+        self._debug_print_request_body_item = rumps.MenuItem(
+            "Print Request Body", callback=self._on_debug_print_request_body_toggle
+        )
+        self._debug_menu.add(self._debug_print_request_body_item)
+
         self.menu = [
             self._status_item,
             self._hotkey_item,
-            self._show_preview_item,
             None,
             self._model_menu,
             self._enhance_menu,
             self._preview_item,
             self._copy_log_item,
+            self._debug_menu,
             None,
         ]
         self.quit_button.set_callback(self._on_quit_click)
@@ -481,7 +506,7 @@ Output only the processed text without any explanation."""
         mode_id = name_resp.text.strip()
         if not mode_id or not re.match(r"^[A-Za-z0-9_-]+$", mode_id):
             self._activate_for_dialog()
-            rumps.alert(
+            self._topmost_alert(
                 "Invalid ID",
                 "Mode ID must contain only letters, numbers, hyphens, or underscores.",
             )
@@ -493,7 +518,7 @@ Output only the processed text without any explanation."""
 
         if os.path.exists(file_path):
             self._activate_for_dialog()
-            rumps.alert(
+            self._topmost_alert(
                 "Already Exists",
                 f"A mode file '{mode_id}.md' already exists.\n"
                 "Edit it directly or choose a different ID.",
@@ -516,7 +541,7 @@ Output only the processed text without any explanation."""
 
         if mode_def is None or not mode_def.prompt.strip():
             self._activate_for_dialog()
-            rumps.alert("Invalid Content", "The mode file has no prompt content.")
+            self._topmost_alert("Invalid Content", "The mode file has no prompt content.")
             return
 
         # Save the file
@@ -532,7 +557,7 @@ Output only the processed text without any explanation."""
             self._rebuild_enhance_mode_menu()
 
         self._activate_for_dialog()
-        rumps.alert("Mode Added", f"Enhancement mode '{mode_id}' has been added.")
+        self._topmost_alert("Mode Added", f"Enhancement mode '{mode_id}' has been added.")
 
     def _rebuild_enhance_mode_menu(self) -> None:
         """Rebuild mode menu items from current enhancer modes."""
@@ -629,7 +654,7 @@ Output only the processed text without any explanation."""
     def _on_vocab_build(self, _sender) -> None:
         """Build vocabulary from correction logs in a background thread."""
         if not self._enhancer:
-            rumps.alert("AI Enhance is not configured.")
+            self._topmost_alert("AI Enhance is not configured.")
             return
 
         logger.info("Starting vocabulary build...")
@@ -772,15 +797,41 @@ Output only the processed text without any explanation."""
         NSApp.setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
 
     @staticmethod
+    def _topmost_alert(title=None, message="", ok=None, cancel=None):
+        """Show an NSAlert at NSStatusWindowLevel so it stays on top."""
+        from AppKit import NSAlert, NSStatusWindowLevel
+
+        VoiceTextApp._activate_for_dialog()
+
+        alert = NSAlert.alloc().init()
+        if title is not None:
+            alert.setMessageText_(str(title))
+        if message:
+            alert.setInformativeText_(str(message))
+        alert.addButtonWithTitle_(ok or "OK")
+        if cancel:
+            cancel_text = cancel if isinstance(cancel, str) else "Cancel"
+            alert.addButtonWithTitle_(cancel_text)
+        alert.setAlertStyle_(0)  # informational
+        alert.window().setLevel_(NSStatusWindowLevel)
+
+        # NSAlertFirstButtonReturn = 1000, NSAlertSecondButtonReturn = 1001
+        result = alert.runModal()
+        return 1 if result == 1000 else 0
+
+    @staticmethod
     def _run_window(title: str, message: str, default_text: str = "",
                     ok: str = "OK", cancel: str = "Cancel",
                     dimensions: tuple = (320, 22), secure: bool = False):
         """Run a rumps.Window with proper app activation. Returns Response or None on cancel."""
+        from AppKit import NSStatusWindowLevel
+
         VoiceTextApp._activate_for_dialog()
         w = rumps.Window(
             title=title, message=message, default_text=default_text,
             ok=ok, cancel=cancel, dimensions=dimensions, secure=secure,
         )
+        w._alert.window().setLevel_(NSStatusWindowLevel)
         resp = w.run()
         if resp.clicked != 1:
             return None
@@ -794,7 +845,10 @@ Output only the processed text without any explanation."""
 
         Returns a Response-like object with .clicked and .text, or None on cancel.
         """
-        from AppKit import NSApp, NSAlert, NSScrollView, NSTextView, NSBezelBorder
+        from AppKit import (
+            NSApp, NSAlert, NSScrollView, NSTextView, NSBezelBorder,
+            NSStatusWindowLevel,
+        )
         from Foundation import NSMakeRect
 
         VoiceTextApp._activate_for_dialog()
@@ -829,6 +883,7 @@ Output only the processed text without any explanation."""
 
         alert.setAccessoryView_(scroll_view)
         alert.window().setInitialFirstResponder_(text_view)
+        alert.window().setLevel_(NSStatusWindowLevel)
 
         # NSAlertFirstButtonReturn = 1000
         result = alert.runModal()
@@ -911,7 +966,7 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
         """Internal implementation for adding a provider."""
         if not self._enhancer:
             self._activate_for_dialog()
-            rumps.alert("Error", "AI enhancer is not initialized.")
+            self._topmost_alert("Error", "AI enhancer is not initialized.")
             return
 
         template = self._load_provider_draft()
@@ -935,7 +990,7 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
             if isinstance(parsed, str):
                 # Validation error
                 self._activate_for_dialog()
-                rumps.alert("Validation Error", parsed)
+                self._topmost_alert("Validation Error", parsed)
                 template = resp.text
                 self._save_provider_draft(resp.text)
                 continue
@@ -944,14 +999,14 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
 
             if name in self._enhancer.provider_names:
                 self._activate_for_dialog()
-                rumps.alert("Error", f"Provider '{name}' already exists.")
+                self._topmost_alert("Error", f"Provider '{name}' already exists.")
                 template = resp.text
                 self._save_provider_draft(resp.text)
                 continue
 
             # Verify connection
             self._activate_for_dialog()
-            rumps.alert("Verifying...", f"Testing connection to {base_url}\nModel: {models[0]}")
+            self._topmost_alert("Verifying...", f"Testing connection to {base_url}\nModel: {models[0]}")
 
             import asyncio
             loop = asyncio.new_event_loop()
@@ -966,7 +1021,7 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
 
             if err:
                 self._activate_for_dialog()
-                result = rumps.alert(
+                result = self._topmost_alert(
                     title="Verification Failed",
                     message=f"{err}\n\nEdit and retry?",
                     ok="Edit",
@@ -981,7 +1036,7 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
 
             # Verify passed — ask to save
             self._activate_for_dialog()
-            result = rumps.alert(
+            result = self._topmost_alert(
                 title="Verification Passed",
                 message=(
                     f"Provider: {name}\n"
@@ -1002,7 +1057,7 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
             )
             if not success:
                 self._activate_for_dialog()
-                rumps.alert(
+                self._topmost_alert(
                     "Error",
                     "Failed to initialize provider. "
                     "Check that the openai package is installed.",
@@ -1107,7 +1162,7 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
 
             self._activate_for_dialog()
 
-            result = rumps.alert(
+            result = self._topmost_alert(
                 title="Remove Provider",
                 message=f"Remove provider '{pname}' and all its models?",
                 ok="Remove",
@@ -1138,10 +1193,6 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
         finally:
             self._restore_accessory()
 
-    def _on_show_preview(self, _) -> None:
-        """Bring the preview panel to the front."""
-        self._preview_panel.bring_to_front()
-
     def _on_preview_toggle(self, sender) -> None:
         """Toggle preview window on/off."""
         self._preview_enabled = not self._preview_enabled
@@ -1167,6 +1218,40 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
         path_str = str(LOG_FILE)
         subprocess.run(["pbcopy"], input=path_str.encode(), check=True)
         rumps.notification("VoiceText", "Log path copied", path_str)
+
+    def _on_debug_level_select(self, sender) -> None:
+        """Handle debug log level selection."""
+        level_name = sender._log_level
+        log_level = getattr(logging, level_name, logging.INFO)
+
+        # Update all loggers
+        logging.getLogger().setLevel(log_level)
+        for handler in logging.getLogger().handlers:
+            handler.setLevel(log_level)
+
+        # Update checkmarks
+        for item in self._debug_level_items.values():
+            item.state = 0
+        sender.state = 1
+
+        # Persist to config
+        self._config["logging"]["level"] = level_name
+        save_config(self._config, self._config_path)
+        logger.info("Log level changed to: %s", level_name)
+
+    def _on_debug_print_prompt_toggle(self, sender) -> None:
+        """Toggle printing prompts to log."""
+        sender.state = not sender.state
+        if self._enhancer:
+            self._enhancer.debug_print_prompt = bool(sender.state)
+        logger.info("Debug print prompt: %s", bool(sender.state))
+
+    def _on_debug_print_request_body_toggle(self, sender) -> None:
+        """Toggle printing AI request body to log."""
+        sender.state = not sender.state
+        if self._enhancer:
+            self._enhancer.debug_print_request_body = bool(sender.state)
+        logger.info("Debug print request body: %s", bool(sender.state))
 
     def _on_model_select(self, sender) -> None:
         """Handle model menu item click."""
