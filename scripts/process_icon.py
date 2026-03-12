@@ -102,7 +102,7 @@ def create_icns(png_path: str, icns_path: str):
 
 
 def main():
-    src = Path("resources/gemini_generated.png")
+    src = Path("resources/Gemini_Generated_Image_bfmqacbfmqacbfmq.png")
     out_png = Path("resources/icon.png")
     out_icns = Path("resources/icon.icns")
 
@@ -112,13 +112,18 @@ def main():
     # Remove fake checkerboard background
     clean = remove_checkerboard_bg(img)
 
-    # Crop to icon content
+    # Crop to icon content with no extra padding
     cropped = crop_to_content(clean)
     print(f"Cropped: {cropped.size}")
 
     # Make square and resize to 1024x1024
     squared = make_square(cropped)
-    final = squared.resize((1024, 1024), Image.LANCZOS)
+
+    # Resize to 1024x1024 and flatten onto white background
+    target_size = 1024
+    resized = squared.resize((target_size, target_size), Image.LANCZOS)
+    final = Image.new("RGBA", (target_size, target_size), (255, 255, 255, 255))
+    final = Image.alpha_composite(final, resized)
 
     final.save(out_png, "PNG")
     print(f"Saved {out_png} (1024x1024)")
