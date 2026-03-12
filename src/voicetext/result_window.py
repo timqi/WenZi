@@ -675,12 +675,10 @@ class ResultPreviewPanel:
         content_height += self._EDIT_HEIGHT + self._PADDING  # final edit
         content_height += self._LABEL_HEIGHT  # final label
         if show_enhance_section:
-            content_height += self._SEPARATOR_TOTAL  # separator B: AI ↔ Final
             content_height += self._TEXT_HEIGHT + self._PADDING  # enhance text
             content_height += self._LABEL_HEIGHT  # enhance label
         if has_modes:
             content_height += self._SEGMENT_HEIGHT + self._PADDING  # segmented control
-            content_height += self._SEPARATOR_TOTAL  # separator A: Mode ↔ ASR
         content_height += self._TEXT_HEIGHT + self._PADDING  # asr text
         content_height += self._LABEL_HEIGHT  # asr label
         content_height += self._PADDING  # top padding
@@ -778,10 +776,6 @@ class ResultPreviewPanel:
 
         # AI Enhancement section
         if show_enhance_section:
-            # Separator B: between AI Enhancement and Final Result
-            sep_b = self._make_separator(y, self._PANEL_WIDTH, self._PADDING)
-            content_view.addSubview_(sep_b)
-            y += self._SEPARATOR_TOTAL
             has_llm_popup = len(self._llm_models) > 0
             enhance_label_y = y + self._TEXT_HEIGHT
             # Popup frame
@@ -789,7 +783,7 @@ class ResultPreviewPanel:
             _popup_y = enhance_label_y - 3
             # Text labels are top-aligned in NSTextField; lower them to match
             # the popup's visually-centered text baseline
-            _lbl_y = enhance_label_y - 3
+            _lbl_y = enhance_label_y - 2
             prompt_btn_width = 72
             thinking_btn_width = 24
             thinking_cb_width = 22
@@ -968,11 +962,6 @@ class ResultPreviewPanel:
             self._mode_segment = segment
 
             y += self._SEGMENT_HEIGHT + self._PADDING
-
-            # Separator A: between Mode Switcher and ASR section
-            sep_a = self._make_separator(y, self._PANEL_WIDTH, self._PADDING)
-            content_view.addSubview_(sep_a)
-            y += self._SEPARATOR_TOTAL
         else:
             self._mode_segment = None
             self._segment_target = None
@@ -987,7 +976,7 @@ class ResultPreviewPanel:
         _asr_popup_h = self._LABEL_HEIGHT + 4
         _asr_popup_y = label_y - 3
         # Text labels: lower y to match popup's visual text baseline
-        _asr_lbl_y = label_y - 3
+        _asr_lbl_y = label_y - 2
         x_cursor = self._PADDING
 
         asr_section_title = "Clipboard Text" if self._source == "clipboard" else "ASR"
