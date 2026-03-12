@@ -126,7 +126,7 @@ class VoiceTextApp(rumps.App):
         if self._enhancer and not ai_cfg.get("enabled", False):
             self._enhance_mode = MODE_OFF
 
-        # AI Enhance submenu
+        # AI Enhance submenu (mode selection only)
         self._enhance_menu = rumps.MenuItem("AI Enhance")
         self._enhance_menu_items: Dict[str, rumps.MenuItem] = {}
 
@@ -157,8 +157,23 @@ class VoiceTextApp(rumps.App):
         )
         self._enhance_menu.add(self._enhance_add_mode_item)
 
+        # Top-level toggle items (promoted from AI Enhance)
+        vocab_enabled = ai_cfg.get("vocabulary", {}).get("enabled", False)
+        self._enhance_vocab_item = rumps.MenuItem(
+            "Vocabulary", callback=self._on_vocab_toggle
+        )
+        self._enhance_vocab_item.state = 1 if vocab_enabled else 0
+
+        history_enabled = ai_cfg.get("conversation_history", {}).get("enabled", False)
+        self._enhance_history_item = rumps.MenuItem(
+            "Conversation History", callback=self._on_history_toggle
+        )
+        self._enhance_history_item.state = 1 if history_enabled else 0
+
+        # AI Settings submenu (low-frequency AI configuration)
+        self._ai_settings_menu = rumps.MenuItem("AI Settings")
+
         # Provider submenu
-        self._enhance_menu.add(rumps.separator)
         self._enhance_provider_menu = rumps.MenuItem("Provider")
         self._enhance_provider_items: Dict[str, rumps.MenuItem] = {}
         if self._enhancer:
@@ -170,13 +185,13 @@ class VoiceTextApp(rumps.App):
                     item.state = 1
                 self._enhance_provider_items[pname] = item
                 self._enhance_provider_menu.add(item)
-        self._enhance_menu.add(self._enhance_provider_menu)
+        self._ai_settings_menu.add(self._enhance_provider_menu)
 
         # Model submenu
         self._enhance_model_menu = rumps.MenuItem("Model")
         self._enhance_model_items: Dict[str, rumps.MenuItem] = {}
         self._build_enhance_model_menu()
-        self._enhance_menu.add(self._enhance_model_menu)
+        self._ai_settings_menu.add(self._enhance_model_menu)
 
         # Thinking toggle
         self._enhance_thinking_item = rumps.MenuItem(
@@ -184,55 +199,36 @@ class VoiceTextApp(rumps.App):
         )
         if self._enhancer and self._enhancer.thinking:
             self._enhance_thinking_item.state = 1
-        self._enhance_menu.add(self._enhance_thinking_item)
-
-        # Vocabulary toggle
-        vocab_enabled = ai_cfg.get("vocabulary", {}).get("enabled", False)
-        self._enhance_vocab_item = rumps.MenuItem(
-            "Vocabulary", callback=self._on_vocab_toggle
-        )
-        self._enhance_vocab_item.state = 1 if vocab_enabled else 0
-        self._enhance_menu.add(self._enhance_vocab_item)
+        self._ai_settings_menu.add(self._enhance_thinking_item)
 
         # Build vocabulary action
+        self._ai_settings_menu.add(rumps.separator)
         self._enhance_vocab_build_item = rumps.MenuItem(
             "Build Vocabulary...", callback=self._on_vocab_build
         )
-        self._enhance_menu.add(self._enhance_vocab_build_item)
+        self._ai_settings_menu.add(self._enhance_vocab_build_item)
 
-        # Conversation history toggle
-        history_enabled = ai_cfg.get("conversation_history", {}).get("enabled", False)
-        self._enhance_history_item = rumps.MenuItem(
-            "Conversation History", callback=self._on_history_toggle
-        )
-        self._enhance_history_item.state = 1 if history_enabled else 0
-        self._enhance_menu.add(self._enhance_history_item)
-
-        # Provider configuration items
-        self._enhance_menu.add(rumps.separator)
+        # Provider management items
+        self._ai_settings_menu.add(rumps.separator)
         self._enhance_add_provider_item = rumps.MenuItem(
             "Add Provider...", callback=self._on_enhance_add_provider
         )
-        self._enhance_menu.add(self._enhance_add_provider_item)
+        self._ai_settings_menu.add(self._enhance_add_provider_item)
 
         self._enhance_remove_provider_menu = rumps.MenuItem("Remove Provider")
         self._enhance_remove_provider_items: Dict[str, rumps.MenuItem] = {}
         self._build_enhance_remove_provider_menu()
-        self._enhance_menu.add(self._enhance_remove_provider_menu)
+        self._ai_settings_menu.add(self._enhance_remove_provider_menu)
 
         self._enhance_edit_config_item = rumps.MenuItem(
             "Edit Config...", callback=self._on_enhance_edit_config
         )
-        self._enhance_menu.add(self._enhance_edit_config_item)
+        self._ai_settings_menu.add(self._enhance_edit_config_item)
 
         self._preview_item = rumps.MenuItem(
             "Preview", callback=self._on_preview_toggle
         )
         self._preview_item.state = 1 if self._preview_enabled else 0
-
-        self._copy_log_item = rumps.MenuItem(
-            "Copy Log Path", callback=self._on_copy_log_path
-        )
 
         # Debug submenu
         self._debug_menu = rumps.MenuItem("Debug")
@@ -263,6 +259,18 @@ class VoiceTextApp(rumps.App):
         )
         self._debug_menu.add(self._debug_print_request_body_item)
 
+        # Copy Log Path (moved into Debug)
+        self._debug_menu.add(rumps.separator)
+        self._copy_log_item = rumps.MenuItem(
+            "Copy Log Path", callback=self._on_copy_log_path
+        )
+        self._debug_menu.add(self._copy_log_item)
+
+        # Show Config item
+        self._show_config_item = rumps.MenuItem(
+            "Show Config...", callback=self._on_show_config
+        )
+
         # About item
         self._about_item = rumps.MenuItem("About VoiceText", callback=self._on_about)
 
@@ -272,10 +280,15 @@ class VoiceTextApp(rumps.App):
             None,
             self._model_menu,
             self._enhance_menu,
+            None,
             self._preview_item,
-            self._copy_log_item,
+            self._enhance_vocab_item,
+            self._enhance_history_item,
+            None,
+            self._ai_settings_menu,
             self._debug_menu,
             None,
+            self._show_config_item,
             self._about_item,
         ]
         self.quit_button.set_callback(self._on_quit_click)
@@ -1549,6 +1562,80 @@ extra_body: {"chat_template_kwargs": {"enable_thinking": false}}"""
         except Exception as e2:
             logger.error("Failed to restore previous model: %s", e2)
             self._set_status("Error")
+
+    def _build_config_info(self) -> str:
+        """Build a summary string of current configuration."""
+        # ASR Model
+        preset = PRESET_BY_ID.get(self._current_preset_id)
+        asr_model = preset.display_name if preset else self._current_preset_id or "N/A"
+
+        # AI Enhance mode
+        enhance_mode = self._enhance_mode if self._enhance_mode else "Off"
+
+        _on = "\u2705"   # ✅
+        _off = "\u274C"  # ❌
+
+        # Provider / Model / Thinking
+        if self._enhancer:
+            provider = self._enhancer.provider_name or "N/A"
+            model = self._enhancer.model_name or "N/A"
+            thinking = _on if self._enhancer.thinking else _off
+        else:
+            provider = "N/A"
+            model = "N/A"
+            thinking = "N/A"
+
+        preview = _on if self._preview_enabled else _off
+        vocabulary = _on if self._enhance_vocab_item.state else _off
+        history = _on if self._enhance_history_item.state else _off
+        output = self._output_method
+        hotkey = self._config["hotkey"]
+        log_level = self._config["logging"]["level"]
+        from .config import DEFAULT_CONFIG_PATH
+        config_path = os.path.expanduser(self._config_path or DEFAULT_CONFIG_PATH)
+
+        return (
+            f"ASR Model:      {asr_model}\n"
+            f"AI Enhance:     {enhance_mode}\n"
+            f"AI Provider:    {provider}\n"
+            f"AI Model:       {model}\n"
+            f"Thinking:       {thinking}\n"
+            f"Preview:        {preview}\n"
+            f"Vocabulary:     {vocabulary}\n"
+            f"History:        {history}\n"
+            f"Output:         {output}\n"
+            f"Hotkey:         {hotkey}\n"
+            f"Log Level:      {log_level}\n"
+            f"Config Path:    {config_path}"
+        )
+
+    def _on_show_config(self, _) -> None:
+        """Show current configuration in a dialog."""
+        from AppKit import NSAlert, NSFont, NSStatusWindowLevel, NSTextField
+        from Foundation import NSMakeRect
+
+        info = self._build_config_info()
+
+        self._activate_for_dialog()
+
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_("Current Configuration")
+        alert.addButtonWithTitle_("OK")
+        alert.setAlertStyle_(0)
+
+        # Use a monospace text field as accessory to keep alignment and force width
+        text_field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 360, 210))
+        text_field.setStringValue_(info)
+        text_field.setEditable_(False)
+        text_field.setBezeled_(False)
+        text_field.setDrawsBackground_(False)
+        text_field.setSelectable_(True)
+        text_field.setFont_(NSFont.monospacedSystemFontOfSize_weight_(12.0, 0.0))
+        alert.setAccessoryView_(text_field)
+
+        alert.window().setLevel_(NSStatusWindowLevel)
+        alert.runModal()
+        self._restore_accessory()
 
     def _on_about(self, _) -> None:
         from . import __version__
