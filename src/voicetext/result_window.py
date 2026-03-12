@@ -368,7 +368,9 @@ class ResultPreviewPanel:
                 self._enhance_label.setStringValue_(self._enhance_label_text(suffix))
             # Enable Thinking button when thinking text was collected
             if self._thinking_button is not None:
-                self._thinking_button.setEnabled_(bool(self._thinking_text))
+                has_thinking = bool(self._thinking_text)
+                self._thinking_button.setEnabled_(has_thinking)
+                self._thinking_button.setAlphaValue_(1.0 if has_thinking else 0.3)
             # Final sync of final text field
             if not self._user_edited and self._final_text_field is not None:
                 text = self._enhance_text_view.string()
@@ -390,6 +392,7 @@ class ResultPreviewPanel:
             self._thinking_text = ""
             if self._thinking_button is not None:
                 self._thinking_button.setEnabled_(False)
+                self._thinking_button.setAlphaValue_(0.3)
 
         AppHelper.callAfter(_update)
 
@@ -722,8 +725,8 @@ class ResultPreviewPanel:
             has_llm_popup = len(self._llm_models) > 0
             enhance_label_y = y + self._TEXT_HEIGHT
             prompt_btn_width = 72
-            thinking_btn_width = 34
-            thinking_cb_width = 40
+            thinking_btn_width = 24
+            thinking_cb_width = 22
 
             if has_llm_popup:
                 # "AI" fixed label
@@ -802,7 +805,7 @@ class ResultPreviewPanel:
                 )
             )
             thinking_cb.setButtonType_(NSSwitchButton)
-            thinking_cb.setTitle_("\U0001f9e0")
+            thinking_cb.setTitle_("")
             thinking_cb.setFont_(NSFont.systemFontOfSize_(11))
             thinking_cb.setState_(1 if self._thinking_enabled else 0)
             self._thinking_checkbox_target = _ThinkingCheckboxTarget.alloc().init()
@@ -812,7 +815,7 @@ class ResultPreviewPanel:
             content_view.addSubview_(thinking_cb)
             self._thinking_checkbox = thinking_cb
 
-            # "?" button to view thinking output (right after checkbox)
+            # "🧠" button to view thinking output (right after checkbox)
             thinking_btn = NSButton.alloc().initWithFrame_(
                 NSMakeRect(
                     thinking_group_x + thinking_cb_width,
@@ -821,11 +824,12 @@ class ResultPreviewPanel:
                     self._LABEL_HEIGHT,
                 )
             )
-            thinking_btn.setTitle_("\u24d8")
-            thinking_btn.setBezelStyle_(1)
-            thinking_btn.setBordered_(True)
-            thinking_btn.setFont_(NSFont.systemFontOfSize_(10))
+            thinking_btn.setTitle_("\U0001f9e0")
+            thinking_btn.setBezelStyle_(0)
+            thinking_btn.setBordered_(False)
+            thinking_btn.setFont_(NSFont.systemFontOfSize_(12))
             thinking_btn.setEnabled_(False)
+            thinking_btn.setAlphaValue_(0.3)
             thinking_btn.setTarget_(self)
             thinking_btn.setAction_(b"thinkingInfoClicked:")
             content_view.addSubview_(thinking_btn)
