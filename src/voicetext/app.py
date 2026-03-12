@@ -24,7 +24,13 @@ from .usage_stats import UsageStats
 from .enhancer import MODE_OFF, TextEnhancer, create_enhancer
 from .result_window import ResultPreviewPanel
 from .hotkey import HoldHotkeyListener, TapHotkeyListener
-from .input import get_clipboard_text, has_clipboard_text, set_clipboard_text, type_text
+from .input import (
+    copy_selection_to_clipboard,
+    get_clipboard_text,
+    has_clipboard_text,
+    set_clipboard_text,
+    type_text,
+)
 from .model_registry import (
     PRESET_BY_ID,
     PRESETS,
@@ -648,63 +654,71 @@ class VoiceTextApp(rumps.App):
     def _on_clipboard_enhance(self, _sender=None) -> None:
         """Handle Enhance Clipboard menu item or hotkey activation.
 
-        May be called from a background thread (Quartz event tap), so
-        dispatch to the main thread where AppKit UI calls are safe.
+        May be called from a background thread (Quartz event tap).
+        Launches a worker thread that simulates Cmd+C to capture the
+        current selection, then validates and enhances the clipboard text.
+        """
+        threading.Thread(
+            target=self._on_clipboard_enhance_worker, daemon=True
+        ).start()
+
+    def _on_clipboard_enhance_worker(self) -> None:
+        """Worker-thread implementation of clipboard enhance.
+
+        Simulates Cmd+C to copy the current selection, then validates
+        the clipboard content. UI dialogs are dispatched to the main thread.
         """
         from PyObjCTools import AppHelper
 
-        AppHelper.callAfter(self._on_clipboard_enhance_main)
-
-    def _on_clipboard_enhance_main(self) -> None:
-        """Main-thread implementation of clipboard enhance."""
         if self._busy:
             logger.info("Clipboard enhance ignored: busy")
             return
 
+        # Try to copy the current selection first
+        copy_selection_to_clipboard()
+
+        # Now validate the clipboard content
         if not has_clipboard_text():
-            self._topmost_alert(
-                title="Clipboard Content Not Supported",
-                message="The clipboard does not contain text. "
-                "Please copy some text first.",
-            )
-            self._restore_accessory()
+            AppHelper.callAfter(self._clipboard_enhance_show_error,
+                                "Clipboard Content Not Supported",
+                                "The clipboard does not contain text. "
+                                "Please copy some text first.")
             return
 
         clipboard_text = get_clipboard_text()
         if not clipboard_text or not clipboard_text.strip():
-            self._topmost_alert(
-                title="Clipboard Empty",
-                message="No text found in clipboard.",
-            )
-            self._restore_accessory()
+            AppHelper.callAfter(self._clipboard_enhance_show_error,
+                                "Clipboard Empty",
+                                "No text found in clipboard.")
             return
 
         clipboard_text = clipboard_text.strip()
 
         if len(clipboard_text) > self._CLIPBOARD_MAX_CHARS:
-            self._topmost_alert(
-                title="Text Too Long",
-                message=(
-                    f"The clipboard contains {len(clipboard_text)} characters "
-                    f"(limit: {self._CLIPBOARD_MAX_CHARS}).\n\n"
-                    "Please copy a shorter text and try again."
-                ),
+            AppHelper.callAfter(
+                self._clipboard_enhance_show_error,
+                "Text Too Long",
+                f"The clipboard contains {len(clipboard_text)} characters "
+                f"(limit: {self._CLIPBOARD_MAX_CHARS}).\n\n"
+                "Please copy a shorter text and try again.",
             )
-            self._restore_accessory()
             return
+
         self._busy = True
         self._set_status("Enhancing...")
 
-        def _do():
-            try:
-                self._do_clipboard_with_preview(clipboard_text)
-            except Exception as e:
-                logger.error("Clipboard enhance failed: %s", e)
-                self._set_status("Error")
-            finally:
-                self._busy = False
+        try:
+            self._do_clipboard_with_preview(clipboard_text)
+        except Exception as e:
+            logger.error("Clipboard enhance failed: %s", e)
+            self._set_status("Error")
+        finally:
+            self._busy = False
 
-        threading.Thread(target=_do, daemon=True).start()
+    def _clipboard_enhance_show_error(self, title: str, message: str) -> None:
+        """Show an error alert on the main thread for clipboard enhance."""
+        self._topmost_alert(title=title, message=message)
+        self._restore_accessory()
 
     def _do_clipboard_with_preview(self, clipboard_text: str) -> None:
         """Show preview panel for clipboard text enhancement."""

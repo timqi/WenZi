@@ -92,6 +92,54 @@ class TestClipboardPublicFunctions:
         assert has_clipboard_text() is False
 
 
+class TestCopySelectionToClipboard:
+    """Test copy_selection_to_clipboard() function."""
+
+    @patch("voicetext.input.time.sleep")
+    @patch("voicetext.input._send_cmd_c")
+    @patch("voicetext.input.get_clipboard_text")
+    def test_selection_copied_successfully(self, mock_get, mock_send, mock_sleep):
+        from voicetext.input import copy_selection_to_clipboard
+
+        # Clipboard changes after Cmd+C
+        mock_get.side_effect = ["old text", "new selected text"]
+
+        result = copy_selection_to_clipboard()
+
+        assert result is True
+        mock_send.assert_called_once()
+        # Two sleeps: 0.05 before Cmd+C and 0.15 after
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_any_call(0.05)
+        mock_sleep.assert_any_call(0.15)
+
+    @patch("voicetext.input.time.sleep")
+    @patch("voicetext.input._send_cmd_c")
+    @patch("voicetext.input.get_clipboard_text")
+    def test_no_selection_clipboard_unchanged(self, mock_get, mock_send, mock_sleep):
+        from voicetext.input import copy_selection_to_clipboard
+
+        # Clipboard stays the same (nothing selected)
+        mock_get.side_effect = ["same text", "same text"]
+
+        result = copy_selection_to_clipboard()
+
+        assert result is False
+
+    @patch("voicetext.input.time.sleep")
+    @patch("voicetext.input._send_cmd_c")
+    @patch("voicetext.input.get_clipboard_text")
+    def test_send_cmd_c_failure_returns_false(self, mock_get, mock_send, mock_sleep):
+        from voicetext.input import copy_selection_to_clipboard
+
+        mock_get.return_value = "old text"
+        mock_send.side_effect = OSError("failed")
+
+        result = copy_selection_to_clipboard()
+
+        assert result is False
+
+
 class TestClipboardEnhanceValidation:
     """Test clipboard content validation before enhancement."""
 
@@ -107,45 +155,69 @@ class TestClipboardEnhanceValidation:
         app = MagicMock(spec=[])
         app._busy = False
         app._CLIPBOARD_MAX_CHARS = VoiceTextApp._CLIPBOARD_MAX_CHARS
-        # Bind the real main-thread method to our mock
-        app._on_clipboard_enhance_main = (
-            VoiceTextApp._on_clipboard_enhance_main.__get__(app)
+        # Bind the real worker method to our mock
+        app._on_clipboard_enhance_worker = (
+            VoiceTextApp._on_clipboard_enhance_worker.__get__(app)
+        )
+        app._clipboard_enhance_show_error = (
+            VoiceTextApp._clipboard_enhance_show_error.__get__(app)
         )
         return app
 
     def test_non_text_clipboard_shows_alert(self):
-        with patch("voicetext.app.has_clipboard_text", return_value=False):
+        with patch("voicetext.app.copy_selection_to_clipboard"), \
+             patch("voicetext.app.has_clipboard_text", return_value=False):
             app = self._make_app()
             app._topmost_alert = MagicMock()
             app._restore_accessory = MagicMock()
 
-            app._on_clipboard_enhance_main()
+            mock_helper = MagicMock()
+            mock_helper.callAfter = lambda fn, *a: fn(*a)
+            with patch.dict("sys.modules", {
+                "PyObjCTools": MagicMock(AppHelper=mock_helper),
+                "PyObjCTools.AppHelper": mock_helper,
+            }):
+                app._on_clipboard_enhance_worker()
 
             app._topmost_alert.assert_called_once()
             assert "Not Supported" in app._topmost_alert.call_args[1]["title"]
             app._restore_accessory.assert_called_once()
 
     def test_empty_text_clipboard_shows_alert(self):
-        with patch("voicetext.app.has_clipboard_text", return_value=True), \
+        with patch("voicetext.app.copy_selection_to_clipboard"), \
+             patch("voicetext.app.has_clipboard_text", return_value=True), \
              patch("voicetext.app.get_clipboard_text", return_value=""):
             app = self._make_app()
             app._topmost_alert = MagicMock()
             app._restore_accessory = MagicMock()
 
-            app._on_clipboard_enhance_main()
+            mock_helper = MagicMock()
+            mock_helper.callAfter = lambda fn, *a: fn(*a)
+            with patch.dict("sys.modules", {
+                "PyObjCTools": MagicMock(AppHelper=mock_helper),
+                "PyObjCTools.AppHelper": mock_helper,
+            }):
+                app._on_clipboard_enhance_worker()
 
             app._topmost_alert.assert_called_once()
             assert "Empty" in app._topmost_alert.call_args[1]["title"]
             app._restore_accessory.assert_called_once()
 
     def test_long_text_shows_alert_and_aborts(self):
-        with patch("voicetext.app.has_clipboard_text", return_value=True), \
+        with patch("voicetext.app.copy_selection_to_clipboard"), \
+             patch("voicetext.app.has_clipboard_text", return_value=True), \
              patch("voicetext.app.get_clipboard_text", return_value="x" * 301):
             app = self._make_app()
             app._topmost_alert = MagicMock()
             app._restore_accessory = MagicMock()
 
-            app._on_clipboard_enhance_main()
+            mock_helper = MagicMock()
+            mock_helper.callAfter = lambda fn, *a: fn(*a)
+            with patch.dict("sys.modules", {
+                "PyObjCTools": MagicMock(AppHelper=mock_helper),
+                "PyObjCTools.AppHelper": mock_helper,
+            }):
+                app._on_clipboard_enhance_worker()
 
             app._topmost_alert.assert_called_once()
             assert "301" in app._topmost_alert.call_args[1]["message"]
@@ -153,40 +225,47 @@ class TestClipboardEnhanceValidation:
             assert not app._busy
 
     def test_normal_text_proceeds_without_alert(self):
-        with patch("voicetext.app.has_clipboard_text", return_value=True), \
-             patch("voicetext.app.get_clipboard_text", return_value="short text"), \
-             patch("voicetext.app.rumps") as mock_rumps, \
-             patch("threading.Thread") as mock_thread:
+        with patch("voicetext.app.copy_selection_to_clipboard"), \
+             patch("voicetext.app.has_clipboard_text", return_value=True), \
+             patch("voicetext.app.get_clipboard_text", return_value="short text"):
             app = self._make_app()
             app._set_status = MagicMock()
-            mock_thread.return_value.start = MagicMock()
+            app._do_clipboard_with_preview = MagicMock()
 
-            app._on_clipboard_enhance_main()
+            mock_helper = MagicMock()
+            mock_helper.callAfter = lambda fn, *a: fn(*a)
+            with patch.dict("sys.modules", {
+                "PyObjCTools": MagicMock(AppHelper=mock_helper),
+                "PyObjCTools.AppHelper": mock_helper,
+            }):
+                app._on_clipboard_enhance_worker()
 
-            mock_rumps.alert.assert_not_called()
-            assert app._busy is True
+            app._do_clipboard_with_preview.assert_called_once_with("short text")
+            assert app._busy is False  # busy is reset in finally block
 
     def test_busy_skips(self):
         app = self._make_app()
         app._busy = True
-        app._on_clipboard_enhance_main()
 
-    def test_dispatches_to_main_thread(self):
-        """Verify _on_clipboard_enhance dispatches via AppHelper.callAfter."""
+        mock_helper = MagicMock()
+        with patch.dict("sys.modules", {
+            "PyObjCTools": MagicMock(AppHelper=mock_helper),
+            "PyObjCTools.AppHelper": mock_helper,
+        }):
+            app._on_clipboard_enhance_worker()
+
+    def test_dispatches_to_worker_thread(self):
+        """Verify _on_clipboard_enhance starts a worker thread."""
         from voicetext.app import VoiceTextApp
 
         app = MagicMock()
         app._on_clipboard_enhance = VoiceTextApp._on_clipboard_enhance.__get__(app)
 
-        mock_helper = MagicMock()
-        mock_pyobjc = MagicMock()
-        mock_pyobjc.AppHelper = mock_helper
-        with patch.dict("sys.modules", {
-            "PyObjCTools": mock_pyobjc,
-            "PyObjCTools.AppHelper": mock_helper,
-        }):
+        with patch("threading.Thread") as mock_thread:
+            mock_thread.return_value.start = MagicMock()
             app._on_clipboard_enhance()
-            mock_helper.callAfter.assert_called_once_with(app._on_clipboard_enhance_main)
+            mock_thread.assert_called_once()
+            assert mock_thread.call_args[1]["target"] == app._on_clipboard_enhance_worker
 
 
 class TestPreviewPanelClipboardSource:

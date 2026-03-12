@@ -28,6 +28,53 @@ def set_clipboard_text(text: str) -> None:
     _set_pasteboard_string(text)
 
 
+def copy_selection_to_clipboard() -> bool:
+    """Simulate Cmd+C to copy the current selection to the clipboard.
+
+    Uses CGEvent directly so that only the Command modifier is set,
+    regardless of which physical modifier keys the user is still holding.
+
+    Returns True if the clipboard content changed (selection was copied),
+    False otherwise.
+    """
+    old = get_clipboard_text()
+
+    # Brief pause so the system finishes processing the trigger hotkey
+    time.sleep(0.05)
+
+    try:
+        _send_cmd_c()
+    except Exception as exc:
+        logger.warning("Simulate Cmd+C failed: %s", exc)
+        return False
+
+    time.sleep(0.15)
+    new = get_clipboard_text()
+    return old != new
+
+
+def _send_cmd_c() -> None:
+    """Post a synthetic Cmd+C keystroke via Quartz CGEvent.
+
+    Unlike osascript ``keystroke``, CGEvent lets us set modifier flags
+    explicitly so physical keys (e.g. ctrl held from the trigger hotkey)
+    do not leak into the synthesised event.
+    """
+    import Quartz
+
+    _C_KEYCODE = 8  # virtual keycode for 'c'
+
+    # Key down
+    event_down = Quartz.CGEventCreateKeyboardEvent(None, _C_KEYCODE, True)
+    Quartz.CGEventSetFlags(event_down, Quartz.kCGEventFlagMaskCommand)
+    Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, event_down)
+
+    # Key up
+    event_up = Quartz.CGEventCreateKeyboardEvent(None, _C_KEYCODE, False)
+    Quartz.CGEventSetFlags(event_up, Quartz.kCGEventFlagMaskCommand)
+    Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, event_up)
+
+
 def type_text(text: str, append_newline: bool = False, method: str = "auto") -> None:
     """Type text into the currently focused text field on macOS.
 
