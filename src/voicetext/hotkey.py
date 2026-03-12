@@ -11,6 +11,61 @@ from pynput import keyboard
 
 logger = logging.getLogger(__name__)
 
+# --- Quartz CGEventTap constants for TapHotkeyListener ---
+
+_KEYCODE_MAP = {
+    "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7,
+    "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15,
+    "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22,
+    "5": 23, "9": 25, "7": 26, "8": 28, "0": 29, "o": 31, "u": 32,
+    "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46,
+}
+
+_MOD_FLAGS = {
+    "cmd": 0x100000, "command": 0x100000,
+    "ctrl": 0x040000,
+    "alt": 0x080000, "option": 0x080000,
+    "shift": 0x020000,
+}
+
+_MOD_MASK = 0x100000 | 0x040000 | 0x080000 | 0x020000
+
+
+def _parse_hotkey_for_quartz(hotkey_str: str) -> tuple[int, int]:
+    """Parse a hotkey string into (modifier_flags, keycode) for Quartz.
+
+    Args:
+        hotkey_str: Hotkey string like "ctrl+cmd+v".
+
+    Returns:
+        Tuple of (modifier_flags_bitmask, trigger_keycode).
+
+    Raises:
+        ValueError: If the hotkey string is invalid.
+    """
+    parts = [p.strip().lower() for p in hotkey_str.strip().split("+")]
+    if not parts:
+        raise ValueError(f"Empty hotkey string: {hotkey_str!r}")
+
+    mod_flags = 0
+    trigger_keys = []
+    for part in parts:
+        if part in _MOD_FLAGS:
+            mod_flags |= _MOD_FLAGS[part]
+        elif part in _KEYCODE_MAP:
+            trigger_keys.append(part)
+        else:
+            raise ValueError(f"Unknown key in hotkey: {part!r}")
+
+    if mod_flags == 0:
+        raise ValueError(f"Hotkey must include at least one modifier: {hotkey_str!r}")
+    if len(trigger_keys) != 1:
+        raise ValueError(
+            f"Hotkey must include exactly one trigger key, got {len(trigger_keys)}: {hotkey_str!r}"
+        )
+
+    return mod_flags, _KEYCODE_MAP[trigger_keys[0]]
+
 _FN_FLAG = 0x800000  # NSEventModifierFlagFunction
 _FN_KEYCODE = 63
 
@@ -241,32 +296,88 @@ def _convert_hotkey_to_pynput(hotkey_str: str) -> str:
 class TapHotkeyListener:
     """Listen for a hotkey combination (single tap, not hold).
 
-    Uses pynput's GlobalHotKeys to listen for key combinations like
-    "ctrl+shift+v" and fire the callback once per activation.
+    Uses Quartz CGEventTap to intercept key combinations like "ctrl+cmd+v"
+    and swallow the event so it does not reach the active application.
     """
 
     def __init__(self, hotkey_str: str, on_activate: Callable[[], None]) -> None:
         self._hotkey_str = hotkey_str
         self._on_activate = on_activate
-        self._listener: Optional[keyboard.GlobalHotKeys] = None
-        self._pynput_hotkey = _convert_hotkey_to_pynput(hotkey_str)
+        self._mod_flags, self._keycode = _parse_hotkey_for_quartz(hotkey_str)
+        self._tap = None
+        self._loop = None
+        self._thread: Optional[threading.Thread] = None
+
+    def _callback(self, proxy, event_type, event, refcon):
+        import Quartz
+        from AppKit import NSEvent
+
+        if event_type == Quartz.kCGEventTapDisabledByTimeout:
+            logger.warning("CGEventTap disabled by timeout, re-enabling")
+            if self._tap is not None:
+                Quartz.CGEventTapEnable(self._tap, True)
+            return event
+
+        if event_type != Quartz.kCGEventKeyDown:
+            return event
+
+        ns_event = NSEvent.eventWithCGEvent_(event)
+        if ns_event is None:
+            return event
+
+        keycode = ns_event.keyCode()
+        flags = ns_event.modifierFlags() & _MOD_MASK
+
+        if keycode == self._keycode and flags == self._mod_flags:
+            logger.debug("TapHotkeyListener matched: %s", self._hotkey_str)
+            try:
+                self._on_activate()
+            except Exception as e:
+                logger.error("on_activate callback error: %s", e)
+            return None  # Swallow the event
+
+        return event
 
     def start(self) -> None:
-        self._listener = keyboard.GlobalHotKeys({
-            self._pynput_hotkey: self._on_activate,
-        })
-        self._listener.daemon = True
-        self._listener.start()
-        logger.info(
-            "TapHotkeyListener started: %s -> %s",
-            self._hotkey_str, self._pynput_hotkey,
-        )
+        import Quartz
+
+        def _run():
+            mask = Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
+            self._tap = Quartz.CGEventTapCreate(
+                Quartz.kCGSessionEventTap,
+                Quartz.kCGHeadInsertEventTap,
+                Quartz.kCGEventTapOptionDefault,
+                mask,
+                self._callback,
+                None,
+            )
+            if self._tap is None:
+                logger.error(
+                    "Failed to create Quartz event tap for hotkey. "
+                    "Check accessibility permissions in System Settings."
+                )
+                return
+
+            source = Quartz.CFMachPortCreateRunLoopSource(None, self._tap, 0)
+            self._loop = Quartz.CFRunLoopGetCurrent()
+            Quartz.CFRunLoopAddSource(
+                self._loop, source, Quartz.kCFRunLoopDefaultMode
+            )
+            Quartz.CGEventTapEnable(self._tap, True)
+            logger.info("TapHotkeyListener started: %s", self._hotkey_str)
+            Quartz.CFRunLoopRun()
+
+        self._thread = threading.Thread(target=_run, daemon=True)
+        self._thread.start()
 
     def stop(self) -> None:
-        if self._listener:
-            self._listener.stop()
-            self._listener = None
-            logger.info("TapHotkeyListener stopped")
+        import Quartz
+
+        if self._loop is not None:
+            Quartz.CFRunLoopStop(self._loop)
+            self._loop = None
+        self._tap = None
+        logger.info("TapHotkeyListener stopped")
 
 
 class HoldHotkeyListener:

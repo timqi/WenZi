@@ -7,6 +7,9 @@ from voicetext.hotkey import (
     _parse_key,
     _is_fn_key,
     _convert_hotkey_to_pynput,
+    _parse_hotkey_for_quartz,
+    _KEYCODE_MAP,
+    _MOD_FLAGS,
     _QuartzFnListener,
     _PynputListener,
     HoldHotkeyListener,
@@ -113,14 +116,63 @@ class TestConvertHotkeyToPynput:
         assert _convert_hotkey_to_pynput("Ctrl+Shift+V") == "<ctrl>+<shift>+v"
 
 
+class TestParseHotkeyForQuartz:
+    def test_ctrl_cmd_v(self):
+        mod_flags, keycode = _parse_hotkey_for_quartz("ctrl+cmd+v")
+        assert mod_flags == (_MOD_FLAGS["ctrl"] | _MOD_FLAGS["cmd"])
+        assert keycode == _KEYCODE_MAP["v"]
+
+    def test_shift_a(self):
+        mod_flags, keycode = _parse_hotkey_for_quartz("shift+a")
+        assert mod_flags == _MOD_FLAGS["shift"]
+        assert keycode == _KEYCODE_MAP["a"]
+
+    def test_option_alias(self):
+        mod_flags, keycode = _parse_hotkey_for_quartz("option+c")
+        assert mod_flags == _MOD_FLAGS["alt"]
+        assert keycode == _KEYCODE_MAP["c"]
+
+    def test_command_alias(self):
+        mod_flags, keycode = _parse_hotkey_for_quartz("command+v")
+        assert mod_flags == _MOD_FLAGS["cmd"]
+        assert keycode == _KEYCODE_MAP["v"]
+
+    def test_case_insensitive(self):
+        mod_flags, keycode = _parse_hotkey_for_quartz("Ctrl+Cmd+V")
+        assert mod_flags == (_MOD_FLAGS["ctrl"] | _MOD_FLAGS["cmd"])
+        assert keycode == _KEYCODE_MAP["v"]
+
+    def test_strips_spaces(self):
+        mod_flags, keycode = _parse_hotkey_for_quartz(" ctrl + cmd + v ")
+        assert mod_flags == (_MOD_FLAGS["ctrl"] | _MOD_FLAGS["cmd"])
+        assert keycode == _KEYCODE_MAP["v"]
+
+    def test_no_modifier_raises(self):
+        with pytest.raises(ValueError, match="at least one modifier"):
+            _parse_hotkey_for_quartz("v")
+
+    def test_no_trigger_key_raises(self):
+        with pytest.raises(ValueError, match="exactly one trigger key"):
+            _parse_hotkey_for_quartz("ctrl+cmd")
+
+    def test_multiple_trigger_keys_raises(self):
+        with pytest.raises(ValueError, match="exactly one trigger key"):
+            _parse_hotkey_for_quartz("ctrl+a+b")
+
+    def test_unknown_key_raises(self):
+        with pytest.raises(ValueError, match="Unknown key"):
+            _parse_hotkey_for_quartz("ctrl+nonsense")
+
+
 class TestTapHotkeyListener:
     def test_creation(self):
         cb = MagicMock()
-        listener = TapHotkeyListener("ctrl+shift+v", cb)
-        assert listener._pynput_hotkey == "<ctrl>+<shift>+v"
+        listener = TapHotkeyListener("ctrl+cmd+v", cb)
+        assert listener._mod_flags == (_MOD_FLAGS["ctrl"] | _MOD_FLAGS["cmd"])
+        assert listener._keycode == _KEYCODE_MAP["v"]
         assert listener._on_activate is cb
 
     def test_stop_when_not_started(self):
         listener = TapHotkeyListener("ctrl+v", MagicMock())
         listener.stop()
-        assert listener._listener is None
+        assert listener._tap is None
