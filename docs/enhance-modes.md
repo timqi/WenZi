@@ -6,6 +6,7 @@ VoiceText uses AI enhancement modes to post-process transcribed text. Each mode 
 
 - [How It Works](#how-it-works)
 - [File Format](#file-format)
+- [Chain Modes](#chain-modes)
 - [Built-in Modes](#built-in-modes)
 - [Add a New Mode](#add-a-new-mode)
 - [Edit an Existing Mode](#edit-an-existing-mode)
@@ -39,11 +40,53 @@ You can use multiple lines.
 |---------|----------|----------------------------------------------------------|
 | `label` | No       | Display name shown in the menu. Defaults to the filename |
 | `order` | No       | Sort weight for menu ordering. Default `50`. Lower = higher in menu |
+| `steps` | No       | Comma-separated list of mode IDs for chain execution (see [Chain Modes](#chain-modes)) |
 | body    | Yes      | The system prompt sent to the LLM. Everything after the second `---` |
 
 The **filename** (without `.md`) serves as the mode ID and must match the `mode` value in `config.json`. Use only letters, numbers, hyphens, and underscores.
 
 > The reserved mode ID `off` disables enhancement and does not correspond to any file.
+
+## Chain Modes
+
+A chain mode runs multiple enhancement steps sequentially, passing the output of each step as input to the next. This is useful for combining existing modes into a pipeline without duplicating prompts.
+
+To create a chain mode, add a `steps` field listing the mode IDs to execute in order:
+
+```markdown
+---
+label: Translate EN+ (Proofread → Translate)
+order: 25
+steps: proofread, translate_en
+---
+This mode first proofreads the text, then translates it to English.
+```
+
+**How it works:**
+
+1. The input text is sent to the first step (`proofread`) using that mode's prompt.
+2. The output of step 1 becomes the input for step 2 (`translate_en`).
+3. The final output is the result of the last step.
+
+**In preview mode**, each step's output is displayed with a separator, and the thinking text from each step is accumulated. The Final Result field shows only the last step's output.
+
+**In direct mode**, the streaming overlay shows step progress (e.g., "Step 1/2: 纠错润色") and updates in real-time.
+
+> **Note:** The prompt body of a chain mode file is not sent to the LLM — each step uses its own mode's prompt. The body is only for documentation purposes.
+
+### Chain Mode Example
+
+```bash
+cat > ~/.config/VoiceText/enhance_modes/translate_en_plus.md << 'EOF'
+---
+label: Translate EN+ (纠错→翻译)
+order: 25
+steps: proofread, translate_en
+---
+Proofread first, then translate to English.
+This prompt body is not used — each step uses its own mode's prompt.
+EOF
+```
 
 ## Built-in Modes
 

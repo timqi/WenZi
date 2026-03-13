@@ -6,7 +6,7 @@ Default config path: `~/.config/VoiceText/config.json`. Pass a JSON config file 
 
 ```json
 {
-  "hotkey": "fn",
+  "hotkeys": {"fn": true},
   "audio": {
     "sample_rate": 16000,
     "block_ms": 20,
@@ -45,6 +45,8 @@ Default config path: `~/.config/VoiceText/config.json`. Pass a JSON config file 
     },
     "thinking": false,
     "timeout": 30,
+    "connection_timeout": 10,
+    "max_retries": 2,
     "vocabulary": {
       "enabled": false,
       "top_k": 5,
@@ -59,8 +61,12 @@ Default config path: `~/.config/VoiceText/config.json`. Pass a JSON config file 
     }
   },
   "clipboard_enhance": {
-    "hotkey": "ctrl+cmd+v",
-    "output": "clipboard"
+    "hotkey": "ctrl+cmd+v"
+  },
+  "feedback": {
+    "sound_enabled": true,
+    "sound_volume": 0.4,
+    "visual_indicator": true
   },
   "logging": {
     "level": "INFO"
@@ -74,7 +80,7 @@ Default config path: `~/.config/VoiceText/config.json`. Pass a JSON config file 
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `hotkey` | `"fn"` | Trigger key. Supported: `fn`, `f1`–`f12`, `esc`, `space`, `cmd`, `ctrl`, `alt`, `shift` |
+| `hotkeys` | `{"fn": true}` | Hotkey map. Keys: `fn`, `f1`–`f12`, `esc`, `space`, `cmd`, `ctrl`, `alt`, `shift`. Values: `true` to enable |
 
 ### Audio
 
@@ -90,7 +96,7 @@ Default config path: `~/.config/VoiceText/config.json`. Pass a JSON config file 
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `asr.backend` | `"funasr"` | ASR backend: `funasr`, `mlx-whisper`, or `whisper-api` |
+| `asr.backend` | `"funasr"` | ASR backend: `funasr`, `mlx-whisper`, `apple`, or `whisper-api` |
 | `asr.use_vad` | `true` | Enable voice activity detection (prevents hallucination on silence) |
 | `asr.use_punc` | `true` | Enable automatic punctuation restoration |
 | `asr.language` | `"zh"` | Language code (used by MLX-Whisper and Whisper API) |
@@ -119,6 +125,8 @@ Default config path: `~/.config/VoiceText/config.json`. Pass a JSON config file 
 | `ai_enhance.default_model` | `"qwen2.5:7b"` | Default LLM model |
 | `ai_enhance.thinking` | `false` | Enable extended thinking for supported models |
 | `ai_enhance.timeout` | `30` | LLM request timeout in seconds |
+| `ai_enhance.connection_timeout` | `10` | LLM connection timeout in seconds |
+| `ai_enhance.max_retries` | `2` | Maximum retry attempts on connection failure |
 
 ### Vocabulary Retrieval
 
@@ -143,7 +151,14 @@ Default config path: `~/.config/VoiceText/config.json`. Pass a JSON config file 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `clipboard_enhance.hotkey` | `"ctrl+cmd+v"` | Hotkey to trigger clipboard AI enhancement (modifier+key format) |
-| `clipboard_enhance.output` | `"clipboard"` | Output method: `"clipboard"` places result on clipboard |
+
+### Feedback
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `feedback.sound_enabled` | `true` | Enable sound feedback for recording start/stop |
+| `feedback.sound_volume` | `0.4` | Sound volume (0.0 – 1.0) |
+| `feedback.visual_indicator` | `true` | Show floating recording indicator with audio level bars |
 
 ### Logging
 

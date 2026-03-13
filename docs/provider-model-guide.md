@@ -25,12 +25,13 @@ This guide explains how to configure ASR (speech recognition) models and AI enha
 
 ## ASR Model Selection
 
-VoiceText supports three ASR backends:
+VoiceText supports four ASR backends:
 
 | Backend | Best For | GPU | Offline |
 |---------|----------|-----|---------|
 | **FunASR Paraformer** (default) | Chinese speech | CPU (ONNX) | Yes (after first download) |
 | **MLX-Whisper** | Multi-language, Apple Silicon | GPU (MLX) | Yes (after first download) |
+| **Apple Speech** | Multi-language, no download needed | CPU/Neural Engine | On-device or server-based |
 | **Whisper API** (remote) | Cloud-based, any hardware | N/A | No (requires API) |
 
 ### ASR Via GUI
@@ -45,6 +46,7 @@ STT Model
 ├──   Whisper small (MLX)
 ├──   Whisper medium (MLX)
 ├──   Whisper large-v3-turbo (MLX)
+├──   Apple Speech (macOS built-in)
 ├──   ─────────────────
 ├──   groq / whisper-large-v3       (remote, if configured)
 ├──   ─────────────────
@@ -74,7 +76,7 @@ Key fields:
 
 | Field | Description |
 |-------|-------------|
-| `backend` | `"funasr"` or `"mlx-whisper"` |
+| `backend` | `"funasr"`, `"mlx-whisper"`, or `"apple"` |
 | `preset` | Preset ID from the table below (recommended way to select a model) |
 | `model` | Direct model path override (e.g. a custom HuggingFace model ID). Overrides `preset` |
 | `language` | Language code for MLX-Whisper (`"zh"`, `"en"`, `"ja"`, etc.). Ignored by FunASR |
