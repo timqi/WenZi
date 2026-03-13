@@ -279,7 +279,7 @@ class ResultPreviewPanel:
             italic_font = fm.convertFont_toHaveTrait_(font, 0x01)  # NSItalicFontMask
             attrs = {
                 NSFontAttributeName: italic_font,
-                NSForegroundColorAttributeName: NSColor.grayColor(),
+                NSForegroundColorAttributeName: NSColor.secondaryLabelColor(),
             }
             attr_str = NSAttributedString.alloc().initWithString_attributes_(chunk, attrs)
             storage.appendAttributedString_(attr_str)
@@ -332,9 +332,15 @@ class ResultPreviewPanel:
                 return
             # Append chunk to existing text
             storage = self._enhance_text_view.textStorage()
-            from AppKit import NSAttributedString, NSFont, NSFontAttributeName
+            from AppKit import (
+                NSAttributedString, NSColor, NSFont,
+                NSFontAttributeName, NSForegroundColorAttributeName,
+            )
             font = NSFont.systemFontOfSize_(13)
-            attrs = {NSFontAttributeName: font}
+            attrs = {
+                NSFontAttributeName: font,
+                NSForegroundColorAttributeName: NSColor.labelColor(),
+            }
             attr_str = NSAttributedString.alloc().initWithString_attributes_(chunk, attrs)
             storage.appendAttributedString_(attr_str)
             # Update label with streaming token count
@@ -757,7 +763,7 @@ class ResultPreviewPanel:
         final_field.setEditable_(True)
         final_field.setBezeled_(True)
         final_field.setFont_(NSFont.userFixedPitchFontOfSize_(12.0))
-        final_field.setBackgroundColor_(_NSColor.whiteColor())
+        final_field.setBackgroundColor_(_NSColor.textBackgroundColor())
         final_field.setStringValue_(asr_text)
         final_field.setUsesSingleLineMode_(False)
         final_field.cell().setWraps_(True)
@@ -919,6 +925,10 @@ class ResultPreviewPanel:
 
             enhance_scroll, enhance_tv = self._make_text_view(
                 NSMakeRect(self._PADDING, y, inner_width, self._TEXT_HEIGHT),
+                bg_color=self._dynamic_color(
+                    (0.93, 0.95, 0.98),  # light: subtle blue tint
+                    (0.13, 0.15, 0.20),  # dark: subtle blue tint
+                ),
             )
             enhance_tv.setString_("")
             content_view.addSubview_(enhance_scroll)
@@ -1116,8 +1126,28 @@ class ResultPreviewPanel:
         self._panel = panel
 
     @staticmethod
-    def _make_text_view(frame):
-        """Create a read-only NSScrollView + NSTextView pair."""
+    def _dynamic_color(light_rgb, dark_rgb):
+        """Create an appearance-aware dynamic NSColor from (r, g, b) tuples."""
+        from AppKit import NSColor
+
+        def _provider(appearance):
+            name = appearance.bestMatchFromAppearancesWithNames_(
+                ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]
+            )
+            r, g, b = dark_rgb if name and "Dark" in str(name) else light_rgb
+            return NSColor.colorWithSRGBRed_green_blue_alpha_(r, g, b, 1.0)
+
+        return NSColor.colorWithName_dynamicProvider_(None, _provider)
+
+    @staticmethod
+    def _make_text_view(frame, bg_color=None):
+        """Create a read-only NSScrollView + NSTextView pair.
+
+        Args:
+            frame: The frame rect for the scroll view.
+            bg_color: Optional dynamic NSColor for background.
+                      Defaults to textBackgroundColor().
+        """
         from AppKit import NSBezelBorder, NSColor, NSFont, NSScrollView, NSTextView
         from Foundation import NSMakeRect
 
@@ -1135,7 +1165,7 @@ class ResultPreviewPanel:
         tv.textContainer().setWidthTracksTextView_(True)
         tv.setFont_(NSFont.userFixedPitchFontOfSize_(12.0))
         tv.setEditable_(False)
-        tv.setBackgroundColor_(NSColor.textBackgroundColor())
+        tv.setBackgroundColor_(bg_color or NSColor.textBackgroundColor())
 
         scroll.setDocumentView_(tv)
         return scroll, tv
@@ -1151,9 +1181,7 @@ class ResultPreviewPanel:
         )
         box.setBoxType_(1)  # NSBoxSeparator
         box.setTitlePosition_(0)  # NSNoTitle — hide the default "Title" label
-        box.setBorderColor_(
-            NSColor.colorWithCalibratedRed_green_blue_alpha_(0.85, 0.85, 0.85, 1.0)
-        )
+        box.setBorderColor_(NSColor.separatorColor())
         return box
 
     def _on_user_edit(self) -> None:
