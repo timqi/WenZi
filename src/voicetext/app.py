@@ -19,7 +19,6 @@ from CoreFoundation import kCFBooleanTrue
 from .auto_vocab_builder import AutoVocabBuilder
 from .config import load_config, save_config
 from .conversation_history import ConversationHistory
-from .correction_log import CorrectionLogger
 from .usage_stats import UsageStats
 from .enhancer import MODE_OFF, TextEnhancer, create_enhancer
 from .history_browser_window import HistoryBrowserPanel
@@ -157,7 +156,6 @@ class VoiceTextApp(rumps.App):
         self._busy = False
         self._preview_panel = ResultPreviewPanel()
         self._enhance_cancel_event: threading.Event | None = None
-        self._correction_logger = CorrectionLogger()
         self._conversation_history = ConversationHistory()
         self._usage_stats = UsageStats()
 
@@ -218,6 +216,7 @@ class VoiceTextApp(rumps.App):
             enabled=vocab_cfg.get("auto_build", True),
             threshold=vocab_cfg.get("auto_build_threshold", 10),
             on_build_done=self._update_vocab_title,
+            conversation_history=self._conversation_history,
         )
         if self._enhancer:
             self._auto_vocab_builder.set_enhancer(self._enhancer)
@@ -881,17 +880,9 @@ class VoiceTextApp(rumps.App):
             result_holder["text"] = text
             result_holder["confirmed"] = True
             result_holder["copy_to_clipboard"] = copy_to_clipboard
+            result_holder["user_corrected"] = correction_info is not None
             if correction_info is not None:
-                try:
-                    self._correction_logger.log(
-                        asr_text=correction_info["asr_text"],
-                        enhanced_text=correction_info["enhanced_text"],
-                        final_text=correction_info["final_text"],
-                        enhance_mode=self._enhance_mode,
-                    )
-                    self._auto_vocab_builder.on_correction_logged()
-                except Exception as e:
-                    logger.error("Failed to log correction: %s", e)
+                self._auto_vocab_builder.on_correction_logged()
             try:
                 self._usage_stats.record_confirm(modified=correction_info is not None)
             except Exception as e:
@@ -1132,6 +1123,7 @@ class VoiceTextApp(rumps.App):
                     preview_enabled=True,
                     stt_model=self._current_stt_model(),
                     llm_model=self._current_llm_model(),
+                    user_corrected=bool(result_holder.get("user_corrected")),
                 )
             except Exception as e:
                 logger.error("Failed to log conversation: %s", e)
@@ -1233,6 +1225,9 @@ class VoiceTextApp(rumps.App):
             result_holder["text"] = text
             result_holder["confirmed"] = True
             result_holder["copy_to_clipboard"] = copy_to_clipboard
+            result_holder["user_corrected"] = correction_info is not None
+            if correction_info is not None:
+                self._auto_vocab_builder.on_correction_logged()
             result_event.set()
 
         def on_cancel() -> None:
@@ -1349,6 +1344,7 @@ class VoiceTextApp(rumps.App):
                     preview_enabled=True,
                     stt_model=self._current_stt_model(),
                     llm_model=self._current_llm_model(),
+                    user_corrected=bool(result_holder.get("user_corrected")),
                 )
             except Exception as e:
                 logger.error("Failed to log conversation: %s", e)
@@ -3844,7 +3840,7 @@ models:
         from .vocabulary import get_vocab_entry_count
 
         conversation_count = self._conversation_history.count()
-        correction_count = self._correction_logger.count()
+        correction_count = self._conversation_history.correction_count()
         vocab_count = get_vocab_entry_count()
         parts.append("")
         parts.append("--- Stored Data ---")

@@ -38,6 +38,7 @@ def _sample_corrections():
             "enhanced_text": "Python编程语言",
             "final_text": "Python编程语言",
             "enhance_mode": "proofread",
+            "user_corrected": True,
         },
         {
             "timestamp": "2026-01-01T11:00:00+00:00",
@@ -45,6 +46,7 @@ def _sample_corrections():
             "enhanced_text": "Kubernetes容器",
             "final_text": "Kubernetes容器",
             "enhance_mode": "proofread",
+            "user_corrected": True,
         },
         {
             "timestamp": "2026-01-01T12:00:00+00:00",
@@ -52,6 +54,7 @@ def _sample_corrections():
             "enhanced_text": "VS Code编辑器",
             "final_text": "Visual Studio Code编辑器",
             "enhance_mode": "proofread",
+            "user_corrected": True,
         },
     ]
 
@@ -80,7 +83,7 @@ _PIPE_RESPONSE_TEST = (
 
 class TestReadCorrections:
     def test_read_all(self, tmp_path):
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         records = _sample_corrections()
         with open(corrections_path, "w", encoding="utf-8") as f:
             for r in records:
@@ -91,7 +94,7 @@ class TestReadCorrections:
         assert len(result) == 3
 
     def test_read_since_timestamp(self, tmp_path):
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         records = _sample_corrections()
         with open(corrections_path, "w", encoding="utf-8") as f:
             for r in records:
@@ -108,27 +111,40 @@ class TestReadCorrections:
         assert result == []
 
     def test_read_skips_invalid_json(self, tmp_path):
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         with open(corrections_path, "w", encoding="utf-8") as f:
-            f.write('{"timestamp": "2026-01-01T10:00:00", "asr_text": "hello"}\n')
+            f.write('{"timestamp": "2026-01-01T10:00:00", "asr_text": "hello", "user_corrected": true}\n')
             f.write("invalid json line\n")
-            f.write('{"timestamp": "2026-01-01T11:00:00", "asr_text": "world"}\n')
+            f.write('{"timestamp": "2026-01-01T11:00:00", "asr_text": "world", "user_corrected": true}\n')
 
         builder = VocabularyBuilder(_make_config(), log_dir=str(tmp_path))
         result = builder._read_corrections()
         assert len(result) == 2
 
     def test_read_skips_empty_lines(self, tmp_path):
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         with open(corrections_path, "w", encoding="utf-8") as f:
-            f.write('{"timestamp": "2026-01-01T10:00:00", "asr_text": "hello"}\n')
+            f.write('{"timestamp": "2026-01-01T10:00:00", "asr_text": "hello", "user_corrected": true}\n')
             f.write("\n")
             f.write("\n")
-            f.write('{"timestamp": "2026-01-01T11:00:00", "asr_text": "world"}\n')
+            f.write('{"timestamp": "2026-01-01T11:00:00", "asr_text": "world", "user_corrected": true}\n')
 
         builder = VocabularyBuilder(_make_config(), log_dir=str(tmp_path))
         result = builder._read_corrections()
         assert len(result) == 2
+
+    def test_read_filters_non_corrections(self, tmp_path):
+        corrections_path = tmp_path / "conversation_history.jsonl"
+        with open(corrections_path, "w", encoding="utf-8") as f:
+            f.write('{"timestamp": "2026-01-01T10:00:00", "asr_text": "a", "user_corrected": true}\n')
+            f.write('{"timestamp": "2026-01-01T11:00:00", "asr_text": "b", "user_corrected": false}\n')
+            f.write('{"timestamp": "2026-01-01T12:00:00", "asr_text": "c", "user_corrected": true}\n')
+
+        builder = VocabularyBuilder(_make_config(), log_dir=str(tmp_path))
+        result = builder._read_corrections()
+        assert len(result) == 2
+        assert result[0]["asr_text"] == "a"
+        assert result[1]["asr_text"] == "c"
 
 
 class TestBatchRecords:
@@ -395,7 +411,7 @@ class TestBuild:
         assert result["new_records"] == 0
 
     def test_build_end_to_end(self, tmp_path):
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         records = _sample_corrections()
         with open(corrections_path, "w", encoding="utf-8") as f:
             for r in records:
@@ -433,7 +449,7 @@ class TestBuild:
         }
         vocab_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
 
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         records = _sample_corrections()
         with open(corrections_path, "w", encoding="utf-8") as f:
             for r in records:
@@ -468,7 +484,7 @@ class TestBuild:
         }
         vocab_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
 
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         records = _sample_corrections()
         with open(corrections_path, "w", encoding="utf-8") as f:
             for r in records:
@@ -498,13 +514,14 @@ class TestBuild:
 class TestBuildWithCancel:
     def test_cancel_after_first_batch(self, tmp_path):
         """Cancel event set after first batch - should save partial results."""
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         records = []
         for i in range(25):
             records.append({
                 "timestamp": f"2026-01-01T{i:02d}:00:00+00:00",
                 "asr_text": f"test{i}",
                 "final_text": f"test{i}",
+                "user_corrected": True,
             })
         with open(corrections_path, "w", encoding="utf-8") as f:
             for r in records:
@@ -541,7 +558,7 @@ class TestBuildWithCancel:
 
     def test_cancel_before_any_batch(self, tmp_path):
         """Cancel event set before processing starts."""
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         records = _sample_corrections()
         with open(corrections_path, "w", encoding="utf-8") as f:
             for r in records:
@@ -647,7 +664,7 @@ class TestExtractBatchStreaming:
 class TestBuildWithCallbacks:
     def test_callbacks_called_correctly(self, tmp_path):
         """Verify on_batch_start and on_batch_done are called for each batch."""
-        corrections_path = tmp_path / "corrections.jsonl"
+        corrections_path = tmp_path / "conversation_history.jsonl"
         records = _sample_corrections()
         with open(corrections_path, "w", encoding="utf-8") as f:
             for r in records:

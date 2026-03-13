@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from .config import DEFAULT_CONFIG_DIR
+from .conversation_history import ConversationHistory
 from .enhancer import build_thinking_body
 
 logger = logging.getLogger(__name__)
@@ -28,16 +29,17 @@ class BuildCallbacks:
 
 
 class VocabularyBuilder:
-    """Extract vocabulary entries from corrections.jsonl using LLM."""
+    """Extract vocabulary entries from user corrections using LLM."""
 
     def __init__(
         self,
         config: Dict[str, Any],
         log_dir: str = DEFAULT_CONFIG_DIR,
+        conversation_history: Optional[ConversationHistory] = None,
     ) -> None:
         self._config = config
         self._log_dir = os.path.expanduser(log_dir)
-        self._corrections_path = os.path.join(self._log_dir, "corrections.jsonl")
+        self._conversation_history = conversation_history or ConversationHistory(config_dir=self._log_dir)
         self._vocab_path = os.path.join(self._log_dir, "vocabulary.json")
         self._batch_size = 20
         self._batch_timeout = config.get("vocabulary", {}).get("build_timeout", 600)
@@ -58,9 +60,8 @@ class VocabularyBuilder:
         Returns a summary dict with counts.
         """
         logger.info(
-            "Starting vocabulary build (full_rebuild=%s, corrections=%s)",
+            "Starting vocabulary build (full_rebuild=%s)",
             full_rebuild,
-            self._corrections_path,
         )
         existing = self._load_existing_vocabulary()
         since = None
@@ -150,28 +151,8 @@ class VocabularyBuilder:
     def _read_corrections(
         self, since: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Read correction records from JSONL file, optionally filtered by timestamp."""
-        if not os.path.exists(self._corrections_path):
-            return []
-
-        records: List[Dict[str, Any]] = []
-        try:
-            with open(self._corrections_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        record = json.loads(line)
-                        if since and record.get("timestamp", "") <= since:
-                            continue
-                        records.append(record)
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            logger.warning("Failed to read corrections: %s", e)
-
-        return records
+        """Read correction records from conversation history, optionally filtered by timestamp."""
+        return self._conversation_history.get_corrections(since=since)
 
     def _batch_records(
         self, records: List[Dict[str, Any]], batch_size: int = 20

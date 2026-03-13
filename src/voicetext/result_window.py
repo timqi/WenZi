@@ -1653,7 +1653,7 @@ def _create_panel_close_delegate_class():
     """Create an NSObject subclass for NSWindowDelegate to handle panel close."""
     from Foundation import NSObject
 
-    class PanelCloseDelegate(NSObject):
+    class ResultPanelCloseDelegate(NSObject):
         """NSWindowDelegate that triggers cancel when the panel close button is clicked."""
 
         _panel_ref = None
@@ -1662,7 +1662,7 @@ def _create_panel_close_delegate_class():
             if self._panel_ref is not None:
                 self._panel_ref.cancelClicked_(None)
 
-    return PanelCloseDelegate
+    return ResultPanelCloseDelegate
 
 
 _TextFieldEditDelegate = _create_text_field_delegate_class()

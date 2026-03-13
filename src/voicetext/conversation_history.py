@@ -29,6 +29,7 @@ class ConversationHistory:
         preview_enabled: bool,
         stt_model: str = "",
         llm_model: str = "",
+        user_corrected: bool = False,
     ) -> None:
         """Write a single conversation record to the JSONL file."""
         os.makedirs(self._config_dir, exist_ok=True)
@@ -42,6 +43,7 @@ class ConversationHistory:
             "preview_enabled": preview_enabled,
             "stt_model": stt_model,
             "llm_model": llm_model,
+            "user_corrected": user_corrected,
         }
 
         with open(self._history_path, "a", encoding="utf-8") as f:
@@ -58,6 +60,76 @@ class ConversationHistory:
                 return sum(1 for line in f if line.strip())
         except Exception:
             return 0
+
+    def correction_count(self) -> int:
+        """Return the number of user-corrected records."""
+        if not os.path.exists(self._history_path):
+            return 0
+        try:
+            count = 0
+            with open(self._history_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if self._is_corrected(record):
+                        count += 1
+            return count
+        except Exception:
+            return 0
+
+    def get_corrections(self, since: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return records where the user made corrections.
+
+        For records with an explicit ``user_corrected`` field, that value is
+        used.  For legacy records without the field, correction is inferred
+        when ``enhanced_text`` differs from ``final_text``.
+
+        Args:
+            since: If provided, only return records with timestamp > since.
+
+        Returns:
+            List of correction records in chronological order.
+        """
+        if not os.path.exists(self._history_path):
+            return []
+
+        records: List[Dict[str, Any]] = []
+        try:
+            with open(self._history_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if since and record.get("timestamp", "") <= since:
+                        continue
+                    if self._is_corrected(record):
+                        records.append(record)
+        except Exception as e:
+            logger.warning("Failed to read corrections: %s", e)
+
+        return records
+
+    @staticmethod
+    def _is_corrected(record: Dict[str, Any]) -> bool:
+        """Determine whether a record represents a user correction.
+
+        Uses the explicit ``user_corrected`` field when present; otherwise
+        falls back to comparing ``enhanced_text`` with ``final_text``.
+        """
+        if "user_corrected" in record:
+            return bool(record["user_corrected"])
+        enhanced = record.get("enhanced_text")
+        final = record.get("final_text")
+        return enhanced is not None and enhanced != final
 
     # Skip history entries whose final_text exceeds this length (e.g. clipboard
     # enhance with large input).  Long texts bloat the system prompt and add

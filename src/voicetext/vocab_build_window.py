@@ -304,7 +304,7 @@ def _get_panel_close_delegate_class():
     if _PanelCloseDelegate is None:
         from Foundation import NSObject
 
-        class PanelCloseDelegate(NSObject):
+        class VocabBuildPanelCloseDelegate(NSObject):
             """NSWindowDelegate that triggers cancel when the panel close button is clicked."""
 
             _panel_ref = None
@@ -313,5 +313,5 @@ def _get_panel_close_delegate_class():
                 if self._panel_ref is not None:
                     self._panel_ref.cancelClicked_(None)
 
-        _PanelCloseDelegate = PanelCloseDelegate
+        _PanelCloseDelegate = VocabBuildPanelCloseDelegate
     return _PanelCloseDelegate

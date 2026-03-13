@@ -21,6 +21,7 @@ class AutoVocabBuilder:
         enabled: bool = True,
         threshold: int = 10,
         on_build_done: Optional[Callable[[], None]] = None,
+        conversation_history: Any = None,
     ) -> None:
         self._config = config
         self._enabled = enabled
@@ -30,6 +31,7 @@ class AutoVocabBuilder:
         self._lock = threading.Lock()
         self._enhancer = None
         self._on_build_done = on_build_done
+        self._conversation_history = conversation_history
 
     def set_enhancer(self, enhancer: Any) -> None:
         """Bind the TextEnhancer instance (needed for vocab_index reload)."""
@@ -66,7 +68,9 @@ class AutoVocabBuilder:
             from .vocabulary_builder import VocabularyBuilder
 
             ai_cfg = self._config.get("ai_enhance", {})
-            builder = VocabularyBuilder(ai_cfg)
+            builder = VocabularyBuilder(
+                ai_cfg, conversation_history=self._conversation_history,
+            )
 
             loop = asyncio.new_event_loop()
             summary = loop.run_until_complete(builder.build())
