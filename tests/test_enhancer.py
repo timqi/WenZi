@@ -1467,7 +1467,9 @@ class TestTextEnhancerEnhanceStream:
     @patch("voicetext.enhancer.asyncio.wait_for", side_effect=asyncio.TimeoutError)
     def test_fallback_on_timeout(self, mock_wait_for):
         with patch("voicetext.enhancer.TextEnhancer._init_providers"):
-            enhancer = TextEnhancer(_make_config(enabled=True, mode="proofread"))
+            enhancer = TextEnhancer(_make_config(
+                enabled=True, mode="proofread", max_retries=0,
+            ))
             enhancer._providers = {
                 "ollama": (MagicMock(), ["qwen2.5:7b"], {}),
             }
@@ -1479,5 +1481,111 @@ class TestTextEnhancerEnhanceStream:
                 results.append((chunk, usage, is_thinking))
 
         asyncio.get_event_loop().run_until_complete(collect())
+        # With max_retries=0, single attempt fails and yields error thinking text
         assert len(results) == 1
-        assert results[0] == ("original text", None, False)
+        assert results[0][2] == "retry"  # is_thinking
+        assert "all 1 attempts failed" in results[0][0]
+
+
+class TestConnectionTimeoutRetry:
+    """Tests for connection timeout retry logic in enhance_stream."""
+
+    def test_connection_timeout_config(self):
+        """Verify connection_timeout and max_retries are read from config."""
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(
+                connection_timeout=5, max_retries=3,
+            ))
+        assert enhancer._connection_timeout == 5
+        assert enhancer._max_retries == 3
+
+    def test_connection_timeout_defaults(self):
+        """Verify defaults when config keys are absent."""
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config())
+        assert enhancer._connection_timeout == 10
+        assert enhancer._max_retries == 2
+
+    def test_enhance_stream_connection_timeout_retry_success(self):
+        """First 2 attempts timeout, third succeeds — verify retry yields and content."""
+        mock_stream_iter = _make_mock_stream_client(
+            ["ok", " text"],
+            usage={"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7},
+        )
+
+        call_count = 0
+
+        async def _create_side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise asyncio.TimeoutError()
+            return mock_stream_iter.chat.completions.create.return_value
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(side_effect=_create_side_effect)
+
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(
+                enabled=True, mode="proofread",
+                connection_timeout=1, max_retries=2,
+            ))
+            enhancer._providers = {
+                "ollama": (mock_client, ["qwen2.5:7b"], {}),
+            }
+            enhancer._active_provider = "ollama"
+            enhancer._active_model = "qwen2.5:7b"
+
+        results = []
+
+        async def collect():
+            async for chunk, usage, is_thinking in enhancer.enhance_stream("hello"):
+                results.append((chunk, usage, is_thinking))
+
+        asyncio.get_event_loop().run_until_complete(collect())
+
+        # Should have 2 retry yields, then content chunks, then final usage
+        retry_results = [r for r in results if r[2] == "retry"]
+        assert len(retry_results) == 2
+        assert "retrying 1/2" in retry_results[0][0]
+        assert "retrying 2/2" in retry_results[1][0]
+
+        content_chunks = [r[0] for r in results if r[2] is False and r[0]]
+        assert "".join(content_chunks) == "ok text"
+
+    def test_enhance_stream_all_retries_exhausted(self):
+        """All 3 attempts timeout — verify error yield, no content."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=asyncio.TimeoutError(),
+        )
+
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(
+                enabled=True, mode="proofread",
+                connection_timeout=1, max_retries=2,
+            ))
+            enhancer._providers = {
+                "ollama": (mock_client, ["qwen2.5:7b"], {}),
+            }
+            enhancer._active_provider = "ollama"
+            enhancer._active_model = "qwen2.5:7b"
+
+        results = []
+
+        async def collect():
+            async for chunk, usage, is_thinking in enhancer.enhance_stream("hello"):
+                results.append((chunk, usage, is_thinking))
+
+        asyncio.get_event_loop().run_until_complete(collect())
+
+        # All yields should be retry (retry status + final error)
+        assert all(r[2] == "retry" for r in results)
+        # Should have 2 retry messages + 1 final error = 3 retry yields
+        assert len(results) == 3
+        assert "retrying 1/2" in results[0][0]
+        assert "retrying 2/2" in results[1][0]
+        assert "all 3 attempts failed" in results[2][0]
+        # No content yields
+        content = [r for r in results if r[2] is False]
+        assert len(content) == 0

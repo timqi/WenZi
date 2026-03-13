@@ -83,6 +83,8 @@ class TextEnhancer:
     def __init__(self, config: Dict[str, Any]) -> None:
         self._enabled = config.get("enabled", False)
         self._timeout = config.get("timeout", 30)
+        self._connection_timeout = config.get("connection_timeout", 10)
+        self._max_retries = config.get("max_retries", 2)
         self._thinking = config.get("thinking", False)
 
         # Debug flags
@@ -599,11 +601,43 @@ class TextEnhancer:
                     _json.dumps(kwargs, ensure_ascii=False, default=str, indent=2),
                 )
 
-            # Timeout for initial connection
-            stream = await asyncio.wait_for(
-                client.chat.completions.create(**kwargs),
-                timeout=self._timeout,
-            )
+            # Retry loop for initial connection
+            last_error = None
+            stream = None
+            for attempt in range(1 + self._max_retries):
+                if attempt > 0:
+                    yield (
+                        f"(Connection timed out, retrying {attempt}/{self._max_retries}...)\n",
+                        None,
+                        "retry",
+                    )
+                    logger.warning(
+                        "Retrying stream connection (attempt %d/%d)",
+                        attempt + 1, 1 + self._max_retries,
+                    )
+
+                try:
+                    stream = await asyncio.wait_for(
+                        client.chat.completions.create(**kwargs),
+                        timeout=self._connection_timeout,
+                    )
+                    break  # Connection succeeded
+                except asyncio.TimeoutError:
+                    last_error = (
+                        f"connection timed out after {self._connection_timeout}s"
+                    )
+                    logger.warning(
+                        "Stream connection attempt %d failed: %s",
+                        attempt + 1, last_error,
+                    )
+                    if attempt >= self._max_retries:
+                        yield (
+                            f"(Error: {last_error}, all {1 + self._max_retries} attempts failed)\n",
+                            None,
+                            "retry",
+                        )
+                        return
+
             # Expose stream so callers can close it on cancellation
             self._active_stream = stream
 

@@ -1179,7 +1179,17 @@ class VoiceTextApp(rumps.App):
                     if cancel_event is not None and cancel_event.is_set():
                         cancelled = True
                         return
-                    if is_thinking and chunk:
+                    if is_thinking == "retry" and chunk:
+                        # Retry status — show as gray italic, update label as retry
+                        self._preview_panel.append_thinking_text(
+                            chunk, request_id=request_id,
+                            thinking_tokens=0,
+                        )
+                        label = chunk.strip().strip("()\n")
+                        self._preview_panel.set_enhance_label(
+                            f"\u23f3 {label}", request_id=request_id,
+                        )
+                    elif is_thinking and chunk:
                         had_thinking = True
                         thinking_tokens += 1
                         self._preview_panel.append_thinking_text(
@@ -1214,15 +1224,22 @@ class VoiceTextApp(rumps.App):
         enhanced = "".join(collected).strip() or asr_text
         if result_holder is not None:
             result_holder["enhanced_text"] = enhanced
-        try:
-            self._usage_stats.record_token_usage(usage)
-        except Exception as e:
-            logger.error("Failed to record token usage: %s", e)
-        system_prompt = self._enhancer.last_system_prompt
-        self._preview_panel.set_enhance_complete(
-            request_id=request_id, usage=usage,
-            system_prompt=system_prompt,
-        )
+
+        if collected:
+            try:
+                self._usage_stats.record_token_usage(usage)
+            except Exception as e:
+                logger.error("Failed to record token usage: %s", e)
+            system_prompt = self._enhancer.last_system_prompt
+            self._preview_panel.set_enhance_complete(
+                request_id=request_id, usage=usage,
+                system_prompt=system_prompt,
+            )
+        else:
+            # All retries failed — update label, don't touch Final Result
+            self._preview_panel.set_enhance_label(
+                "Connection failed", request_id=request_id,
+            )
 
     def _run_chain_enhance(
         self, asr_text: str, request_id: int,
@@ -1278,7 +1295,16 @@ class VoiceTextApp(rumps.App):
                             if cancel_event is not None and cancel_event.is_set():
                                 cancelled = True
                                 return
-                            if is_thinking and chunk:
+                            if is_thinking == "retry" and chunk:
+                                self._preview_panel.append_thinking_text(
+                                    chunk, request_id=request_id,
+                                    thinking_tokens=0,
+                                )
+                                label = chunk.strip().strip("()\n")
+                                self._preview_panel.set_enhance_label(
+                                    f"\u23f3 {label}", request_id=request_id,
+                                )
+                            elif is_thinking and chunk:
                                 had_thinking = True
                                 thinking_tokens += 1
                                 self._preview_panel.append_thinking_text(

@@ -54,6 +54,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
         "thinking": False,
         "timeout": 30,
+        "connection_timeout": 10,
+        "max_retries": 2,
         "vocabulary": {
             "enabled": False,
             "top_k": 5,

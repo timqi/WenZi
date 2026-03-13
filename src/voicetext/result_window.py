@@ -409,6 +409,19 @@ class ResultPreviewPanel:
 
         AppHelper.callAfter(_update)
 
+    def set_enhance_label(self, suffix: str, request_id: int = 0) -> None:
+        """Update only the enhancement label text."""
+        from PyObjCTools import AppHelper
+
+        def _update():
+            if self._enhance_label is None:
+                return
+            if request_id != 0 and request_id != self._enhance_request_id:
+                return
+            self._enhance_label.setStringValue_(self._enhance_label_text(suffix))
+
+        AppHelper.callAfter(_update)
+
     def set_enhance_loading(self) -> None:
         """Show loading state in the enhancement section."""
         from PyObjCTools import AppHelper
