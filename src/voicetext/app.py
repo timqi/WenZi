@@ -461,11 +461,12 @@ class VoiceTextApp(rumps.App):
         if not self._recorder.is_recording:
             return
         logger.info("Hotkey released, stopping recording")
-        self._stop_recording_indicator(animate=self._preview_enabled)
         wav_data = self._recorder.stop()
         if not wav_data:
+            self._stop_recording_indicator()
             self._set_status("VT")
             return
+        self._stop_recording_indicator(animate=self._preview_enabled)
 
         self._busy = True
 
