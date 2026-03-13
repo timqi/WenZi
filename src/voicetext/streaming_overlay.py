@@ -116,7 +116,6 @@ class StreamingOverlayPanel:
         try:
             from AppKit import (
                 NSColor,
-                NSEvent,
                 NSFont,
                 NSPanel,
                 NSScreen,

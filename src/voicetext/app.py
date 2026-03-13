@@ -20,7 +20,7 @@ from .auto_vocab_builder import AutoVocabBuilder
 from .config import load_config, save_config
 from .conversation_history import ConversationHistory
 from .usage_stats import UsageStats
-from .enhancer import MODE_OFF, TextEnhancer, create_enhancer
+from .enhancer import MODE_OFF, create_enhancer
 from .history_browser_window import HistoryBrowserPanel
 from .log_viewer_window import LogViewerPanel
 from .result_window import ResultPreviewPanel
@@ -36,10 +36,7 @@ from .input import (
 from .model_registry import (
     PRESET_BY_ID,
     PRESETS,
-    ModelPreset,
-    RemoteASRModel,
     build_remote_asr_models,
-    get_model_cache_dir,
     is_backend_available,
     is_model_cached,
     resolve_preset_from_config,
@@ -48,14 +45,22 @@ from .recorder import Recorder
 from .recording_indicator import RecordingIndicatorPanel
 from .sound_manager import SoundManager
 from .statusbar import (
-    InputWindow,
     StatusBarApp,
     StatusMenuItem,
     quit_application,
     send_notification,
 )
 from .streaming_overlay import StreamingOverlayPanel
+from .menu_builder import MenuBuilder
+from .model_controller import ModelController, migrate_asr_config
 from .transcriber import create_transcriber
+from .ui_helpers import (
+    activate_for_dialog,
+    restore_accessory,
+    topmost_alert,
+    run_window,
+    run_multiline_window,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -74,9 +79,6 @@ class EnhanceCacheEntry:
 
 LOG_DIR = Path.home() / "Library" / "Logs" / "VoiceText"
 LOG_FILE = LOG_DIR / "voicetext.log"
-
-# Approximate FunASR total model size in bytes (ASR + VAD + PUNC)
-_FUNASR_APPROX_SIZE = 502 * 1024 * 1024
 
 # Map status strings to SF Symbol names for menu bar icons
 _STATUS_ICONS: Dict[str, str] = {
@@ -128,7 +130,7 @@ class VoiceTextApp(StatusBarApp):
         asr_cfg = self._config["asr"]
 
         # Migrate old flat base_url/api_key to provider format
-        self._migrate_asr_config(asr_cfg)
+        migrate_asr_config(asr_cfg)
 
         # Remote ASR state: (provider_name, model_name) or None
         self._current_remote_asr: Optional[Tuple[str, str]] = None
@@ -211,18 +213,20 @@ class VoiceTextApp(StatusBarApp):
         self._hotkey_record_item = StatusMenuItem(
             "Record Hotkey...", callback=self._on_record_hotkey
         )
-        self._build_hotkey_menu()
+        self._menu_builder = MenuBuilder(self)
+        self._model_controller = ModelController(self)
+        self._menu_builder.build_hotkey_menu()
 
         # STT Model submenu
         self._model_menu = StatusMenuItem("STT Model")
         self._model_menu_items: Dict[str, StatusMenuItem] = {}
         self._remote_asr_menu_items: Dict[Tuple[str, str], StatusMenuItem] = {}
         self._asr_add_provider_item = StatusMenuItem(
-            "Add ASR Provider...", callback=self._on_asr_add_provider
+            "Add ASR Provider...", callback=self._model_controller.on_asr_add_provider
         )
         self._asr_remove_provider_menu = StatusMenuItem("Remove ASR Provider")
         self._asr_remove_provider_items: Dict[str, StatusMenuItem] = {}
-        self._build_model_menu()
+        self._menu_builder.build_model_menu()
 
         # AI Enhance
         self._enhancer = create_enhancer(self._config)
@@ -296,11 +300,11 @@ class VoiceTextApp(StatusBarApp):
         self._llm_model_menu = StatusMenuItem("LLM Model")
         self._llm_model_menu_items: Dict[Tuple[str, str], StatusMenuItem] = {}
         self._llm_add_provider_item = StatusMenuItem(
-            "Add Provider...", callback=self._on_enhance_add_provider
+            "Add Provider...", callback=self._model_controller.on_enhance_add_provider
         )
         self._llm_remove_provider_menu = StatusMenuItem("Remove Provider")
         self._llm_remove_provider_items: Dict[str, StatusMenuItem] = {}
-        self._build_llm_model_menu()
+        self._menu_builder.build_llm_model_menu()
 
         # AI Settings submenu (low-frequency AI configuration)
         self._ai_settings_menu = StatusMenuItem("AI Settings")
@@ -590,9 +594,6 @@ class VoiceTextApp(StatusBarApp):
             # Run transcription in background to keep UI responsive
             def _do_transcribe():
                 try:
-                    from .transcriber import BaseTranscriber
-
-                    audio_duration = BaseTranscriber.wav_duration_seconds(wav_data)
                     self._transcriber.skip_punc = bool(
                         self._enhancer and self._enhancer.is_active
                     )
@@ -616,28 +617,6 @@ class VoiceTextApp(StatusBarApp):
     # Hotkey management
     # ------------------------------------------------------------------
 
-    def _build_hotkey_menu(self) -> None:
-        """(Re)build the Hotkey submenu from config."""
-        # Clear rumps-level items
-        for key in list(self._hotkey_menu.keys()):
-            del self._hotkey_menu[key]
-        self._hotkey_menu_items.clear()
-        # Clear NSMenu-level items (separators are not tracked by rumps)
-        ns_submenu = self._hotkey_menu._menuitem.submenu()
-        if ns_submenu:
-            ns_submenu.removeAllItems()
-
-        hotkeys: Dict[str, bool] = self._config.get("hotkeys", {"fn": True})
-        for key_name, enabled in hotkeys.items():
-            item = StatusMenuItem(key_name, callback=self._on_hotkey_item_click)
-            item.state = 1 if enabled else 0
-            item._hotkey_name = key_name
-            self._hotkey_menu_items[key_name] = item
-            self._hotkey_menu.add(item)
-
-        self._hotkey_menu.add(None)
-        self._hotkey_menu.add(self._hotkey_record_item)
-
     def _start_hotkey_listeners(self) -> None:
         hotkeys: Dict[str, bool] = self._config.get("hotkeys", {"fn": True})
         active_keys = [k for k, v in hotkeys.items() if v]
@@ -658,7 +637,7 @@ class VoiceTextApp(StatusBarApp):
         enabled = bool(sender.state)
         is_fn = _is_fn_key(key_name)
 
-        self._activate_for_dialog()
+        activate_for_dialog()
         alert = NSAlert.alloc().init()
         alert.setMessageText_(f"Hotkey: {key_name}")
         state_text = "enabled" if enabled else "disabled"
@@ -672,7 +651,7 @@ class VoiceTextApp(StatusBarApp):
         alert.setAlertStyle_(0)
         alert.window().setLevel_(NSStatusWindowLevel)
         result = alert.runModal()
-        self._restore_accessory()
+        restore_accessory()
 
         # 1000=first(Cancel), 1001=second(Disable/Enable), 1002=third(Delete)
         # Defer all state changes to avoid modifying menu/listeners during
@@ -700,7 +679,7 @@ class VoiceTextApp(StatusBarApp):
                     save_config(self._config, self._config_path)
                     if self._hotkey_listener:
                         self._hotkey_listener.disable_key(key_name)
-                    self._build_hotkey_menu()
+                    self._menu_builder.build_hotkey_menu()
                 except Exception:
                     logger.exception("Failed to delete hotkey %s", key_name)
             AppHelper.callAfter(_delete)
@@ -713,7 +692,7 @@ class VoiceTextApp(StatusBarApp):
         if not self._hotkey_listener:
             return
 
-        self._activate_for_dialog()
+        activate_for_dialog()
         alert = NSAlert.alloc().init()
         alert.setMessageText_("Record Hotkey")
         alert.setInformativeText_("Press any key to register it as a hotkey...")
@@ -751,9 +730,9 @@ class VoiceTextApp(StatusBarApp):
             timeout=10.0,
             on_unrecognized=on_unrecognized,
         )
-        result = alert.runModal()
+        alert.runModal()
         self._hotkey_listener.cancel_record()
-        self._restore_accessory()
+        restore_accessory()
 
         if recorded_key:
             def _apply():
@@ -763,7 +742,7 @@ class VoiceTextApp(StatusBarApp):
                     save_config(self._config, self._config_path)
                     if self._hotkey_listener:
                         self._hotkey_listener.enable_key(recorded_key)
-                    self._build_hotkey_menu()
+                    self._menu_builder.build_hotkey_menu()
                     logger.info("Recorded new hotkey: %s", recorded_key)
                 except Exception:
                     logger.exception("Failed to apply recorded hotkey %s", recorded_key)
@@ -1174,7 +1153,7 @@ class VoiceTextApp(StatusBarApp):
 
         # Show panel on main thread, then start enhancement/STT after panel is built
         def _show():
-            self._activate_for_dialog()
+            activate_for_dialog()
 
             # Get indicator frame for transition animation before animating it out
             indicator_frame = self._recording_indicator.current_frame
@@ -1287,7 +1266,7 @@ class VoiceTextApp(StatusBarApp):
         self._busy = False
 
         # Restore menu bar mode and inject text
-        AppHelper.callAfter(self._restore_accessory)
+        AppHelper.callAfter(restore_accessory)
         time.sleep(0.1)  # Brief delay for target app to regain focus
 
         if result_holder["confirmed"] and result_holder["text"]:
@@ -1394,8 +1373,8 @@ class VoiceTextApp(StatusBarApp):
 
     def _clipboard_enhance_show_error(self, title: str, message: str) -> None:
         """Show an error alert on the main thread for clipboard enhance."""
-        self._topmost_alert(title=title, message=message)
-        self._restore_accessory()
+        topmost_alert(title=title, message=message)
+        restore_accessory()
 
     def _do_clipboard_with_preview(self, clipboard_text: str) -> None:
         """Show preview panel for clipboard text enhancement."""
@@ -1469,7 +1448,7 @@ class VoiceTextApp(StatusBarApp):
         use_enhance = bool(self._enhancer and self._enhancer.is_active)
 
         def _show():
-            self._activate_for_dialog()
+            activate_for_dialog()
             self._preview_panel.show(
                 asr_text=clipboard_text,
                 show_enhance=use_enhance,
@@ -1504,7 +1483,7 @@ class VoiceTextApp(StatusBarApp):
 
         result_event.wait()
 
-        AppHelper.callAfter(self._restore_accessory)
+        AppHelper.callAfter(restore_accessory)
         time.sleep(0.1)
 
         if result_holder["confirmed"] and result_holder["text"]:
@@ -1984,7 +1963,7 @@ class VoiceTextApp(StatusBarApp):
                         self._config["asr"]["default_provider"] = prov
                         self._config["asr"]["default_model"] = mod
 
-                    self._update_model_checkmarks()
+                    self._menu_builder.update_model_checkmarks()
                     save_config(self._config, self._config_path)
 
                     self._preview_panel.set_asr_result(
@@ -2006,6 +1985,7 @@ class VoiceTextApp(StatusBarApp):
 
             except Exception as e:
                 logger.error("Preview STT switch failed: %s", e)
+                err_msg = str(e)
 
                 def _on_failure():
                     # Try to restore old transcriber
@@ -2017,7 +1997,7 @@ class VoiceTextApp(StatusBarApp):
                     asr_text = getattr(self, "_current_preview_asr_text", "")
                     if self._preview_panel._asr_text_view is not None:
                         self._preview_panel._asr_text_view.setString_(
-                            asr_text or f"(STT switch error: {e})"
+                            asr_text or f"(STT switch error: {err_msg})"
                         )
 
                 AppHelper.callAfter(_on_failure)
@@ -2164,7 +2144,7 @@ Output only the processed text without any explanation."""
                 logger.error("Add mode failed: %s", e, exc_info=True)
             finally:
                 from PyObjCTools import AppHelper
-                AppHelper.callAfter(self._restore_accessory)
+                AppHelper.callAfter(restore_accessory)
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -2172,7 +2152,7 @@ Output only the processed text without any explanation."""
         """Internal implementation for adding a new enhancement mode file."""
         from .mode_loader import DEFAULT_MODES_DIR, parse_mode_file
 
-        resp = self._run_multiline_window(
+        resp = run_multiline_window(
             title="Add Enhancement Mode",
             message=(
                 "Edit the template below, then click Save.\n\n"
@@ -2188,7 +2168,7 @@ Output only the processed text without any explanation."""
             return
 
         # Ask for filename (mode ID)
-        name_resp = self._run_window(
+        name_resp = run_window(
             title="Mode ID",
             message=(
                 "Enter a short ID for this mode (used as filename).\n"
@@ -2202,8 +2182,8 @@ Output only the processed text without any explanation."""
         import re
         mode_id = name_resp.text.strip()
         if not mode_id or not re.match(r"^[A-Za-z0-9_-]+$", mode_id):
-            self._activate_for_dialog()
-            self._topmost_alert(
+            activate_for_dialog()
+            topmost_alert(
                 "Invalid ID",
                 "Mode ID must contain only letters, numbers, hyphens, or underscores.",
             )
@@ -2214,8 +2194,8 @@ Output only the processed text without any explanation."""
         file_path = os.path.join(modes_dir, f"{mode_id}.md")
 
         if os.path.exists(file_path):
-            self._activate_for_dialog()
-            self._topmost_alert(
+            activate_for_dialog()
+            topmost_alert(
                 "Already Exists",
                 f"A mode file '{mode_id}.md' already exists.\n"
                 "Edit it directly or choose a different ID.",
@@ -2237,8 +2217,8 @@ Output only the processed text without any explanation."""
             os.unlink(tmp_path)
 
         if mode_def is None or not mode_def.prompt.strip():
-            self._activate_for_dialog()
-            self._topmost_alert("Invalid Content", "The mode file has no prompt content.")
+            activate_for_dialog()
+            topmost_alert("Invalid Content", "The mode file has no prompt content.")
             return
 
         # Save the file
@@ -2251,55 +2231,10 @@ Output only the processed text without any explanation."""
         # Reload modes and rebuild menu
         if self._enhancer:
             self._enhancer.reload_modes()
-            self._rebuild_enhance_mode_menu()
+            self._menu_builder.rebuild_enhance_mode_menu()
 
-        self._activate_for_dialog()
-        self._topmost_alert("Mode Added", f"Enhancement mode '{mode_id}' has been added.")
-
-    def _rebuild_enhance_mode_menu(self) -> None:
-        """Rebuild mode menu items from current enhancer modes."""
-        # Remove old mode items (keep Off)
-        for mode_id, item in list(self._enhance_menu_items.items()):
-            if mode_id != MODE_OFF:
-                self._enhance_menu.pop(item.title)
-                del self._enhance_menu_items[mode_id]
-
-        # Re-add from enhancer, inserting before "Add Mode..."
-        if self._enhancer:
-            for mode_id, label in self._enhancer.available_modes:
-                item = StatusMenuItem(label)
-                item._enhance_mode = mode_id
-                item.set_callback(self._on_enhance_mode_select)
-                if mode_id == self._enhance_mode:
-                    item.state = 1
-                self._enhance_menu_items[mode_id] = item
-                self._enhance_menu.insert_before(
-                    self._enhance_add_mode_item.title, item
-                )
-
-    def _on_llm_model_select(self, sender) -> None:
-        """Handle LLM model menu item click."""
-        pname = sender._llm_provider
-        mname = sender._llm_model
-        if not self._enhancer:
-            return
-        if pname == self._enhancer.provider_name and mname == self._enhancer.model_name:
-            return
-
-        self._enhancer.provider_name = pname
-        self._enhancer.model_name = mname
-
-        # Update checkmarks
-        current_key = (pname, mname)
-        for key, item in self._llm_model_menu_items.items():
-            item.state = 1 if key == current_key else 0
-
-        # Persist to config
-        self._config.setdefault("ai_enhance", {})
-        self._config["ai_enhance"]["default_provider"] = pname
-        self._config["ai_enhance"]["default_model"] = mname
-        save_config(self._config, self._config_path)
-        logger.info("LLM model set to: %s / %s", pname, mname)
+        activate_for_dialog()
+        topmost_alert("Mode Added", f"Enhancement mode '{mode_id}' has been added.")
 
     def _on_enhance_thinking_toggle(self, sender) -> None:
         """Toggle AI thinking mode."""
@@ -2415,11 +2350,11 @@ Output only the processed text without any explanation."""
     def _on_vocab_build(self, _sender) -> None:
         """Build vocabulary from correction logs in a background thread."""
         if not self._enhancer:
-            self._topmost_alert("AI Enhance is not configured.")
+            topmost_alert("AI Enhance is not configured.")
             return
 
         if self._auto_vocab_builder.is_building():
-            self._topmost_alert("Vocabulary is being auto-built. Please wait.")
+            topmost_alert("Vocabulary is being auto-built. Please wait.")
             return
 
         logger.info("Starting vocabulary build...")
@@ -2510,1052 +2445,6 @@ Output only the processed text without any explanation."""
         t = threading.Thread(target=_build, daemon=True)
         t.start()
 
-    def _build_llm_model_menu(self) -> None:
-        """Build or rebuild the LLM Model top-level submenu."""
-        if self._llm_model_menu._menu is not None:
-            self._llm_model_menu.clear()
-        self._llm_model_menu_items.clear()
-
-        if not self._enhancer:
-            return
-
-        providers = self._enhancer.providers_with_models
-        current_key = (self._enhancer.provider_name, self._enhancer.model_name)
-        first_provider = True
-
-        for pname, models in providers.items():
-            if not first_provider:
-                self._llm_model_menu.add(None)  # separator
-            first_provider = False
-
-            for mname in models:
-                key = (pname, mname)
-                title = f"{pname} / {mname}"
-                item = StatusMenuItem(title)
-                item._llm_provider = pname
-                item._llm_model = mname
-                item.set_callback(self._on_llm_model_select)
-                if key == current_key:
-                    item.state = 1
-                self._llm_model_menu_items[key] = item
-                self._llm_model_menu.add(item)
-
-        # Management items
-        self._llm_model_menu.add(None)  # separator
-        self._llm_model_menu.add(self._llm_add_provider_item)
-
-        # Rebuild remove submenu
-        if self._llm_remove_provider_menu._menu is not None:
-            self._llm_remove_provider_menu.clear()
-        self._llm_remove_provider_items.clear()
-
-        for pname in providers:
-            item = StatusMenuItem(pname)
-            item._provider_name = pname
-            item.set_callback(self._on_enhance_remove_provider)
-            self._llm_remove_provider_items[pname] = item
-            self._llm_remove_provider_menu.add(item)
-
-        if providers:
-            self._llm_model_menu.add(self._llm_remove_provider_menu)
-
-    # ── Remote ASR provider management ────────────────────────────────
-
-    def _build_model_menu(self) -> None:
-        """Build or rebuild the entire STT Model submenu."""
-        if self._model_menu._menu is not None:
-            self._model_menu.clear()
-        self._model_menu_items.clear()
-        self._remote_asr_menu_items.clear()
-
-        # Local presets
-        prev_backend = None
-        for preset in PRESETS:
-            # Add separator between different backend groups
-            if prev_backend is not None and preset.backend != prev_backend:
-                self._model_menu.add(None)
-            prev_backend = preset.backend
-
-            backend_ok = is_backend_available(preset.backend)
-            if backend_ok:
-                title = preset.display_name
-            else:
-                title = f"{preset.display_name} (N/A)"
-            item = StatusMenuItem(title)
-            item._preset_id = preset.id
-            if backend_ok:
-                item.set_callback(self._on_model_select)
-            else:
-                item.set_callback(None)
-            if preset.id == self._current_preset_id:
-                item.state = 1
-            self._model_menu_items[preset.id] = item
-            self._model_menu.add(item)
-
-        # Remote ASR models
-        asr_cfg = self._config.get("asr", {})
-        providers = asr_cfg.get("providers", {})
-        remote_models = build_remote_asr_models(providers)
-
-        if remote_models:
-            self._model_menu.add(None)  # separator
-            for rm in remote_models:
-                key = (rm.provider, rm.model)
-                item = StatusMenuItem(rm.display_name)
-                item._remote_asr = rm
-                item.set_callback(self._on_remote_asr_select)
-                if key == self._current_remote_asr:
-                    item.state = 1
-                self._remote_asr_menu_items[key] = item
-                self._model_menu.add(item)
-
-        # Management items
-        self._model_menu.add(None)  # separator
-        self._model_menu.add(self._asr_add_provider_item)
-
-        # Rebuild remove submenu
-        if self._asr_remove_provider_menu._menu is not None:
-            self._asr_remove_provider_menu.clear()
-        self._asr_remove_provider_items.clear()
-        for pname in providers:
-            item = StatusMenuItem(pname)
-            item._provider_name = pname
-            item.set_callback(self._on_asr_remove_provider)
-            self._asr_remove_provider_items[pname] = item
-            self._asr_remove_provider_menu.add(item)
-
-        if providers:
-            self._model_menu.add(self._asr_remove_provider_menu)
-
-    def _on_remote_asr_select(self, sender) -> None:
-        """Handle remote ASR model menu item click."""
-        rm: RemoteASRModel = sender._remote_asr
-        key = (rm.provider, rm.model)
-
-        if key == self._current_remote_asr:
-            return
-
-        if self._busy:
-            send_notification(
-                "VoiceText",
-                "Cannot switch model",
-                "Please wait for current operation to finish.",
-            )
-            return
-
-        self._busy = True
-        old_transcriber = self._transcriber
-
-        def _do_switch():
-            try:
-                self._set_status("Switching...")
-                old_transcriber.cleanup()
-
-                asr_cfg = self._config["asr"]
-                new_transcriber = create_transcriber(
-                    backend="whisper-api",
-                    base_url=rm.base_url,
-                    api_key=rm.api_key,
-                    model=rm.model,
-                    language=asr_cfg.get("language"),
-                    temperature=asr_cfg.get("temperature"),
-                )
-                new_transcriber.initialize()
-
-                self._transcriber = new_transcriber
-                self._current_remote_asr = key
-                self._current_preset_id = None
-                self._update_model_checkmarks()
-
-                # Persist to config
-                self._config["asr"]["default_provider"] = rm.provider
-                self._config["asr"]["default_model"] = rm.model
-                save_config(self._config, self._config_path)
-
-                self._set_status("VT")
-                logger.info("Switched to remote ASR: %s", rm.display_name)
-                try:
-                    send_notification(
-                        "VoiceText",
-                        "Model switched",
-                        f"Now using: {rm.display_name}",
-                    )
-                except Exception:
-                    logger.debug("Notification unavailable, skipping")
-
-            except Exception as e:
-                logger.error("Remote ASR switch failed: %s", e)
-                self._set_status("Error")
-                try:
-                    send_notification(
-                        "VoiceText",
-                        "Model switch failed",
-                        str(e)[:100],
-                    )
-                except Exception:
-                    logger.debug("Notification unavailable, skipping")
-            finally:
-                self._busy = False
-
-        threading.Thread(target=_do_switch, daemon=True).start()
-
-    _ADD_ASR_PROVIDER_TEMPLATE = """\
-name: my-provider
-base_url: https://api.groq.com/openai/v1
-api_key: gsk-xxx
-models:
-  whisper-large-v3-turbo"""
-
-    _ASR_PROVIDER_DRAFT_FILENAME = ".asr_provider_draft"
-
-    def _get_asr_provider_draft_path(self) -> str:
-        from .config import DEFAULT_CONFIG_DIR
-        config_dir = self._config_path or DEFAULT_CONFIG_DIR
-        parent = os.path.dirname(os.path.expanduser(config_dir))
-        return os.path.join(parent, self._ASR_PROVIDER_DRAFT_FILENAME)
-
-    def _load_asr_provider_draft(self) -> str:
-        draft_path = self._get_asr_provider_draft_path()
-        try:
-            with open(draft_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if content.strip():
-                return content
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.debug("Could not read ASR provider draft: %s", e)
-        return self._ADD_ASR_PROVIDER_TEMPLATE
-
-    def _save_asr_provider_draft(self, text: str) -> None:
-        draft_path = self._get_asr_provider_draft_path()
-        try:
-            os.makedirs(os.path.dirname(draft_path), exist_ok=True)
-            with open(draft_path, "w", encoding="utf-8") as f:
-                f.write(text)
-        except Exception as e:
-            logger.debug("Could not save ASR provider draft: %s", e)
-
-    def _remove_asr_provider_draft(self) -> None:
-        draft_path = self._get_asr_provider_draft_path()
-        try:
-            os.remove(draft_path)
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.debug("Could not remove ASR provider draft: %s", e)
-
-    def _on_asr_add_provider(self, _) -> None:
-        """Add a new ASR provider via multi-step dialog."""
-        def _run():
-            try:
-                self._do_add_asr_provider()
-            except Exception as e:
-                logger.error("Add ASR provider failed: %s", e, exc_info=True)
-            finally:
-                from PyObjCTools import AppHelper
-                AppHelper.callAfter(self._restore_accessory)
-
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _do_add_asr_provider(self) -> None:
-        """Internal implementation for adding an ASR provider."""
-        template = self._load_asr_provider_draft()
-        while True:
-            resp = self._run_multiline_window(
-                title="Add ASR Provider",
-                message=(
-                    "name       — unique provider name\n"
-                    "base_url   — OpenAI-compatible ASR endpoint\n"
-                    "api_key    — authentication key\n"
-                    "models     — one model per line (indented)"
-                ),
-                default_text=template,
-                ok="Verify",
-                dimensions=(380, 140),
-            )
-            if resp is None:
-                self._save_asr_provider_draft(template)
-                return
-
-            parsed = self._parse_asr_provider_text(resp.text)
-            if isinstance(parsed, str):
-                self._activate_for_dialog()
-                self._topmost_alert("Validation Error", parsed)
-                template = resp.text
-                self._save_asr_provider_draft(resp.text)
-                continue
-
-            name, base_url, api_key, models = parsed
-
-            # Check for duplicate
-            providers = self._config.get("asr", {}).get("providers", {})
-            if name in providers:
-                self._activate_for_dialog()
-                self._topmost_alert("Error", f"ASR provider '{name}' already exists.")
-                template = resp.text
-                self._save_asr_provider_draft(resp.text)
-                continue
-
-            # Verify connection
-            self._activate_for_dialog()
-            self._topmost_alert(
-                "Verifying...",
-                f"Testing connection to {base_url}\nModel: {models[0]}",
-            )
-
-            from .transcriber_whisper_api import WhisperAPITranscriber
-
-            err = WhisperAPITranscriber.verify_provider(base_url, api_key, models[0])
-
-            if err:
-                self._activate_for_dialog()
-                result = self._topmost_alert(
-                    title="Verification Failed",
-                    message=f"{err}\n\nEdit and retry?",
-                    ok="Edit",
-                    cancel="Cancel",
-                )
-                if result != 1:
-                    self._save_asr_provider_draft(resp.text)
-                    return
-                template = resp.text
-                self._save_asr_provider_draft(resp.text)
-                continue
-
-            # Verify passed — ask to save
-            self._activate_for_dialog()
-            result = self._topmost_alert(
-                title="Verification Passed",
-                message=(
-                    f"Provider: {name}\n"
-                    f"URL: {base_url}\n"
-                    f"Models: {', '.join(models)}\n\n"
-                    "Save this provider?"
-                ),
-                ok="Save",
-                cancel="Cancel",
-            )
-            if result != 1:
-                self._save_asr_provider_draft(resp.text)
-                return
-
-            # Save to config
-            self._config.setdefault("asr", {})
-            providers_cfg = self._config["asr"].setdefault("providers", {})
-            providers_cfg[name] = {
-                "base_url": base_url,
-                "api_key": api_key,
-                "models": models,
-            }
-            save_config(self._config, self._config_path)
-            self._remove_asr_provider_draft()
-
-            self._build_model_menu()
-
-            send_notification(
-                "VoiceText", "ASR Provider added", f"{name} ({', '.join(models)})"
-            )
-            logger.info("Added ASR provider: %s", name)
-            return
-
-    @staticmethod
-    def _parse_asr_provider_text(text: str):
-        """Parse ASR provider config text.
-
-        Returns (name, base_url, api_key, models) on success,
-        or a string error message on failure.
-        """
-        lines = text.strip().splitlines()
-        fields = {}
-        in_models = False
-        models = []
-
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.startswith("models:"):
-                in_models = True
-                inline = stripped[len("models:"):].strip()
-                if inline:
-                    models.append(inline)
-                continue
-            if in_models:
-                is_indented = line.startswith(" ") or line.startswith("\t")
-                if not is_indented and ":" in stripped:
-                    in_models = False
-                else:
-                    models.append(stripped)
-                    continue
-            if ":" in stripped:
-                key, _, val = stripped.partition(":")
-                fields[key.strip().lower()] = val.strip()
-
-        name = fields.get("name", "").strip()
-        base_url = fields.get("base_url", "").strip()
-        api_key = fields.get("api_key", "").strip()
-
-        errors = []
-        if not name:
-            errors.append("name is required")
-        if not base_url:
-            errors.append("base_url is required")
-        if not api_key:
-            errors.append("api_key is required")
-        if not models:
-            errors.append("at least one model is required")
-
-        if errors:
-            return "\n".join(errors)
-
-        return name, base_url, api_key, models
-
-    def _on_asr_remove_provider(self, sender) -> None:
-        """Remove an ASR provider after confirmation."""
-        try:
-            pname = sender._provider_name
-
-            self._activate_for_dialog()
-            result = self._topmost_alert(
-                title="Remove ASR Provider",
-                message=f"Remove ASR provider '{pname}' and all its models?",
-                ok="Remove",
-                cancel="Cancel",
-            )
-            if result != 1:
-                return
-
-            # If currently using a model from this provider, switch to default
-            if self._current_remote_asr and self._current_remote_asr[0] == pname:
-                self._transcriber.cleanup()
-                asr_cfg = self._config["asr"]
-                self._transcriber = create_transcriber(
-                    backend=asr_cfg.get("backend", "funasr"),
-                    use_vad=asr_cfg.get("use_vad", True),
-                    use_punc=asr_cfg.get("use_punc", True),
-                    language=asr_cfg.get("language"),
-                    model=asr_cfg.get("model"),
-                    temperature=asr_cfg.get("temperature"),
-                )
-                self._current_remote_asr = None
-                self._current_preset_id = resolve_preset_from_config(
-                    asr_cfg.get("backend", "funasr"),
-                    asr_cfg.get("model"),
-                )
-                self._config["asr"]["default_provider"] = None
-                self._config["asr"]["default_model"] = None
-
-            # Remove from config
-            providers_cfg = self._config.get("asr", {}).get("providers", {})
-            providers_cfg.pop(pname, None)
-            save_config(self._config, self._config_path)
-
-            self._build_model_menu()
-            self._update_model_checkmarks()
-
-            send_notification("VoiceText", "ASR Provider removed", pname)
-            logger.info("Removed ASR provider: %s", pname)
-        except Exception as e:
-            logger.error("Remove ASR provider failed: %s", e, exc_info=True)
-        finally:
-            self._restore_accessory()
-
-    @staticmethod
-    def _migrate_asr_config(asr_cfg: Dict[str, Any]) -> None:
-        """Migrate old flat base_url/api_key to provider format."""
-        base_url = asr_cfg.pop("base_url", None)
-        api_key = asr_cfg.pop("api_key", None)
-
-        if not base_url or not api_key:
-            return
-
-        providers = asr_cfg.setdefault("providers", {})
-        if providers:
-            # Already has providers, don't overwrite
-            return
-
-        # Infer provider name from URL
-        if "groq.com" in base_url:
-            name = "groq"
-            models = ["whisper-large-v3-turbo"]
-        else:
-            name = "migrated"
-            model = asr_cfg.get("model") or "whisper-large-v3-turbo"
-            models = [model]
-
-        providers[name] = {
-            "base_url": base_url,
-            "api_key": api_key,
-            "models": models,
-        }
-
-        # If the current backend was whisper-api, set as default
-        if asr_cfg.get("backend") == "whisper-api":
-            asr_cfg["default_provider"] = name
-            asr_cfg["default_model"] = models[0]
-
-        logger.info("Migrated ASR config: base_url/api_key → provider '%s'", name)
-
-    @staticmethod
-    def _activate_for_dialog():
-        """Set activation policy so modal dialogs can show from non-bundled process.
-
-        Safe to call from any thread.
-        """
-        def _do():
-            from AppKit import NSApp
-            NSApp.setActivationPolicy_(0)  # NSApplicationActivationPolicyRegular
-            NSApp.activateIgnoringOtherApps_(True)
-
-        if threading.current_thread() is threading.main_thread():
-            _do()
-        else:
-            from PyObjCTools import AppHelper
-            AppHelper.callAfter(_do)
-
-    @staticmethod
-    def _restore_accessory():
-        """Restore accessory activation policy (statusbar-only).
-
-        Safe to call from any thread.
-        """
-        def _do():
-            from AppKit import NSApp
-            NSApp.setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
-
-        if threading.current_thread() is threading.main_thread():
-            _do()
-        else:
-            from PyObjCTools import AppHelper
-            AppHelper.callAfter(_do)
-
-    @staticmethod
-    def _topmost_alert(title=None, message="", ok=None, cancel=None):
-        """Show an NSAlert at NSStatusWindowLevel so it stays on top.
-
-        Safe to call from any thread — dispatches to main thread if needed.
-        """
-        from PyObjCTools import AppHelper
-
-        result_holder = {"value": 0}
-        done_event = threading.Event()
-
-        def _show():
-            from AppKit import NSAlert, NSStatusWindowLevel
-
-            VoiceTextApp._activate_for_dialog()
-
-            alert = NSAlert.alloc().init()
-            if title is not None:
-                alert.setMessageText_(str(title))
-            if message:
-                alert.setInformativeText_(str(message))
-            alert.addButtonWithTitle_(ok or "OK")
-            if cancel:
-                cancel_text = cancel if isinstance(cancel, str) else "Cancel"
-                alert.addButtonWithTitle_(cancel_text)
-            alert.setAlertStyle_(0)  # informational
-            alert.window().setLevel_(NSStatusWindowLevel)
-            alert.window().setFloatingPanel_(True)
-            alert.window().setHidesOnDeactivate_(False)
-
-            # NSAlertFirstButtonReturn = 1000, NSAlertSecondButtonReturn = 1001
-            result = alert.runModal()
-            result_holder["value"] = 1 if result == 1000 else 0
-            done_event.set()
-
-        if threading.current_thread() is threading.main_thread():
-            _show()
-        else:
-            AppHelper.callAfter(_show)
-            done_event.wait()
-
-        return result_holder["value"]
-
-    @staticmethod
-    def _run_window(title: str, message: str, default_text: str = "",
-                    ok: str = "OK", cancel: str = "Cancel",
-                    dimensions: tuple = (320, 22), secure: bool = False):
-        """Run an InputWindow with proper app activation.
-
-        Safe to call from any thread — dispatches to main thread if needed.
-        Returns Response or None on cancel.
-        """
-        from PyObjCTools import AppHelper
-
-        result_holder = {"resp": None}
-        done_event = threading.Event()
-
-        def _show():
-            from AppKit import NSStatusWindowLevel
-
-            VoiceTextApp._activate_for_dialog()
-            w = InputWindow(
-                title=title, message=message, default_text=default_text,
-                ok=ok, cancel=cancel, dimensions=dimensions, secure=secure,
-            )
-            w.alert.window().setLevel_(NSStatusWindowLevel)
-            w.alert.window().setFloatingPanel_(True)
-            w.alert.window().setHidesOnDeactivate_(False)
-            resp = w.run()
-            result_holder["resp"] = resp if resp.clicked == 1 else None
-            done_event.set()
-
-        if threading.current_thread() is threading.main_thread():
-            _show()
-        else:
-            AppHelper.callAfter(_show)
-            done_event.wait()
-
-        return result_holder["resp"]
-
-    @staticmethod
-    def _run_multiline_window(title: str, message: str, default_text: str = "",
-                              ok: str = "OK", cancel: str = "Cancel",
-                              dimensions: tuple = (380, 180)):
-        """Show a floating NSPanel with a multiline NSTextView (Enter = newline).
-
-        Must be called from a background thread.  The panel is created on the
-        main thread via ``callAfter`` and the caller blocks on a
-        ``threading.Event`` — the same pattern used by ResultPreviewPanel so
-        that ``setFloatingPanel_(True)`` reliably keeps the window on top.
-
-        Returns a Response-like object with .clicked and .text, or None on cancel.
-        """
-        from PyObjCTools import AppHelper
-
-        result_holder = {"clicked": 0, "text": ""}
-        done_event = threading.Event()
-
-        # Store panel ref at method level to prevent garbage collection
-        panel_holder = [None]
-
-        def _show():
-            try:
-                from AppKit import (
-                    NSApp, NSBackingStoreBuffered, NSBezelBorder, NSButton,
-                    NSClosableWindowMask, NSFont, NSPanel, NSScrollView,
-                    NSStatusWindowLevel, NSTextField, NSTextView, NSTitledWindowMask,
-                )
-                from Foundation import NSMakeRect
-
-                padding = 12
-                btn_h = 32
-                btn_w = 90
-                line_count = max(message.count("\n") + 1, 1)
-                label_h = 16 * line_count
-                width, height = dimensions
-                panel_w = width + 2 * padding
-                panel_h = padding + btn_h + padding + height + padding + label_h + padding
-
-                panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-                    NSMakeRect(0, 0, panel_w, panel_h),
-                    NSTitledWindowMask | NSClosableWindowMask,
-                    NSBackingStoreBuffered,
-                    False,
-                )
-                panel.setTitle_(title)
-                panel.setLevel_(NSStatusWindowLevel)
-                panel.setFloatingPanel_(True)
-                panel.setHidesOnDeactivate_(False)
-                panel.center()
-
-                content = panel.contentView()
-                y = padding
-
-                # -- helper to close panel and signal the waiting thread ------
-                text_view_holder = [None]
-
-                def _finish(clicked):
-                    tv = text_view_holder[0]
-                    text_val = tv.string() if tv is not None else ""
-                    result_holder["clicked"] = clicked
-                    result_holder["text"] = text_val
-                    panel.setDelegate_(None)
-                    panel.orderOut_(None)
-                    VoiceTextApp._restore_accessory()
-                    done_event.set()
-
-                # Action target for OK / Cancel / Close
-                target_cls = _get_multiline_panel_target_class()
-                btn_target = target_cls.alloc().init()
-                btn_target._finish_callback = _finish
-
-                # Buttons row (right-aligned)
-                cancel_btn = NSButton.alloc().initWithFrame_(
-                    NSMakeRect(panel_w - padding - btn_w, y, btn_w, btn_h)
-                )
-                cancel_btn.setTitle_(cancel)
-                cancel_btn.setBezelStyle_(1)
-                cancel_btn.setKeyEquivalent_("\x1b")  # ESC
-                cancel_btn.setTarget_(btn_target)
-                cancel_btn.setAction_(b"cancelClicked:")
-                content.addSubview_(cancel_btn)
-
-                ok_btn = NSButton.alloc().initWithFrame_(
-                    NSMakeRect(panel_w - padding - 2 * btn_w - 8, y, btn_w, btn_h)
-                )
-                ok_btn.setTitle_(ok)
-                ok_btn.setBezelStyle_(1)
-                ok_btn.setKeyEquivalent_("")
-                ok_btn.setTarget_(btn_target)
-                ok_btn.setAction_(b"okClicked:")
-                content.addSubview_(ok_btn)
-
-                y += btn_h + padding
-
-                # Multiline text view
-                scroll_view = NSScrollView.alloc().initWithFrame_(
-                    NSMakeRect(padding, y, width, height)
-                )
-                scroll_view.setHasVerticalScroller_(True)
-                scroll_view.setBorderType_(NSBezelBorder)
-
-                text_view = NSTextView.alloc().initWithFrame_(
-                    NSMakeRect(0, 0, width, height)
-                )
-                text_view.setMinSize_(NSMakeRect(0, 0, width, 0).size)
-                text_view.setMaxSize_(NSMakeRect(0, 0, 1e7, 1e7).size)
-                text_view.setVerticallyResizable_(True)
-                text_view.setHorizontallyResizable_(False)
-                text_view.textContainer().setWidthTracksTextView_(True)
-                text_view.setFont_(NSFont.userFixedPitchFontOfSize_(12.0))
-                text_view.setString_(default_text)
-                scroll_view.setDocumentView_(text_view)
-                content.addSubview_(scroll_view)
-                text_view_holder[0] = text_view
-
-                y += height + padding
-
-                # Message label
-                msg_label = NSTextField.labelWithString_(message)
-                msg_label.setFrame_(NSMakeRect(padding, y, width, label_h))
-                msg_label.setFont_(NSFont.systemFontOfSize_(12))
-                content.addSubview_(msg_label)
-
-                # Handle close button (X) as cancel
-                panel.setDelegate_(btn_target)
-
-                # Keep refs alive until panel is dismissed
-                panel_holder[0] = (panel, btn_target)
-
-                VoiceTextApp._activate_for_dialog()
-                panel.makeKeyAndOrderFront_(None)
-                panel.makeFirstResponder_(text_view)
-                NSApp.activateIgnoringOtherApps_(True)
-            except Exception as e:
-                logger.error("_run_multiline_window _show failed: %s", e, exc_info=True)
-                done_event.set()
-
-        AppHelper.callAfter(_show)
-        done_event.wait()
-
-        if result_holder["clicked"] != 1:
-            return None
-
-        class _Response:
-            pass
-
-        resp = _Response()
-        resp.clicked = 1
-        resp.text = result_holder["text"]
-        return resp
-
-    def _on_enhance_add_provider(self, _) -> None:
-        """Add a new AI provider via multi-step dialog."""
-        def _run():
-            try:
-                self._do_add_provider()
-            except Exception as e:
-                logger.error("Add provider failed: %s", e, exc_info=True)
-            finally:
-                from PyObjCTools import AppHelper
-                AppHelper.callAfter(self._restore_accessory)
-
-        threading.Thread(target=_run, daemon=True).start()
-
-    _ADD_PROVIDER_TEMPLATE = """\
-name: my-provider
-base_url: https://api.openai.com/v1
-api_key: sk-xxx
-models:
-  gpt-4o
-  gpt-4o-mini"""
-
-    _PROVIDER_DRAFT_FILENAME = ".provider_draft"
-
-    def _get_provider_draft_path(self) -> str:
-        """Return the path to the provider draft cache file."""
-        from .config import DEFAULT_CONFIG_DIR
-        config_dir = self._config_path or DEFAULT_CONFIG_DIR
-        parent = os.path.dirname(os.path.expanduser(config_dir))
-        return os.path.join(parent, self._PROVIDER_DRAFT_FILENAME)
-
-    def _load_provider_draft(self) -> str:
-        """Load cached draft text, or return the default template."""
-        draft_path = self._get_provider_draft_path()
-        try:
-            with open(draft_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if content.strip():
-                return content
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.debug("Could not read provider draft: %s", e)
-        return self._ADD_PROVIDER_TEMPLATE
-
-    def _save_provider_draft(self, text: str) -> None:
-        """Cache the user's draft text for next time."""
-        draft_path = self._get_provider_draft_path()
-        try:
-            os.makedirs(os.path.dirname(draft_path), exist_ok=True)
-            with open(draft_path, "w", encoding="utf-8") as f:
-                f.write(text)
-        except Exception as e:
-            logger.debug("Could not save provider draft: %s", e)
-
-    def _remove_provider_draft(self) -> None:
-        """Remove the draft cache file after a successful save."""
-        draft_path = self._get_provider_draft_path()
-        try:
-            os.remove(draft_path)
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.debug("Could not remove provider draft: %s", e)
-
-    def _do_add_provider(self) -> None:
-        """Internal implementation for adding a provider."""
-        if not self._enhancer:
-            self._activate_for_dialog()
-            self._topmost_alert("Error", "AI enhancer is not initialized.")
-            return
-
-        template = self._load_provider_draft()
-        while True:
-            resp = self._run_multiline_window(
-                title="Add AI Provider",
-                message=(
-                    "name       — unique provider name\n"
-                    "base_url   — OpenAI-compatible API endpoint\n"
-                    "api_key    — authentication key\n"
-                    "models     — one model per line (indented)\n"
-                    "extra_body — optional, extra JSON for request body"
-                ),
-                default_text=template,
-                ok="Verify",
-                dimensions=(380, 180),
-            )
-            if resp is None:
-                # User cancelled — cache their input for next time
-                self._save_provider_draft(template)
-                return
-
-            parsed = self._parse_provider_text(resp.text)
-            if isinstance(parsed, str):
-                # Validation error
-                self._activate_for_dialog()
-                self._topmost_alert("Validation Error", parsed)
-                template = resp.text
-                self._save_provider_draft(resp.text)
-                continue
-
-            name, base_url, api_key, models, extra_body = parsed
-
-            if name in self._enhancer.provider_names:
-                self._activate_for_dialog()
-                self._topmost_alert("Error", f"Provider '{name}' already exists.")
-                template = resp.text
-                self._save_provider_draft(resp.text)
-                continue
-
-            # Verify connection
-            self._activate_for_dialog()
-            self._topmost_alert("Verifying...", f"Testing connection to {base_url}\nModel: {models[0]}")
-
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                err = loop.run_until_complete(
-                    self._enhancer.verify_provider(
-                        base_url, api_key, models[0], extra_body=extra_body or None
-                    )
-                )
-            finally:
-                loop.close()
-
-            if err:
-                self._activate_for_dialog()
-                result = self._topmost_alert(
-                    title="Verification Failed",
-                    message=f"{err}\n\nEdit and retry?",
-                    ok="Edit",
-                    cancel="Cancel",
-                )
-                if result != 1:
-                    self._save_provider_draft(resp.text)
-                    return
-                template = resp.text
-                self._save_provider_draft(resp.text)
-                continue
-
-            # Verify passed — ask to save
-            self._activate_for_dialog()
-            result = self._topmost_alert(
-                title="Verification Passed",
-                message=(
-                    f"Provider: {name}\n"
-                    f"URL: {base_url}\n"
-                    f"Models: {', '.join(models)}\n\n"
-                    "Save this provider?"
-                ),
-                ok="Save",
-                cancel="Cancel",
-            )
-            if result != 1:
-                self._save_provider_draft(resp.text)
-                return
-
-            # Save
-            success = self._enhancer.add_provider(
-                name, base_url, api_key, models, extra_body=extra_body or None
-            )
-            if not success:
-                self._activate_for_dialog()
-                self._topmost_alert(
-                    "Error",
-                    "Failed to initialize provider. "
-                    "Check that the openai package is installed.",
-                )
-                return
-
-            self._config.setdefault("ai_enhance", {})
-            providers_cfg = self._config["ai_enhance"].setdefault("providers", {})
-            pcfg_save: Dict[str, Any] = {
-                "base_url": base_url,
-                "api_key": api_key,
-                "models": models,
-            }
-            if extra_body:
-                pcfg_save["extra_body"] = extra_body
-            providers_cfg[name] = pcfg_save
-            save_config(self._config, self._config_path)
-            self._remove_provider_draft()
-
-            self._build_llm_model_menu()
-
-            send_notification(
-                "VoiceText", "Provider added", f"{name} ({', '.join(models)})"
-            )
-            logger.info("Added AI provider: %s", name)
-            return
-
-    @staticmethod
-    def _parse_provider_text(text: str):
-        """Parse the provider config text.
-
-        Returns (name, base_url, api_key, models, extra_body) on success,
-        or a string error message on failure.
-        """
-        import json as _json
-
-        lines = text.strip().splitlines()
-        fields = {}
-        in_models = False
-        models = []
-
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.startswith("models:"):
-                in_models = True
-                # Handle inline value: "models: gpt-4o"
-                inline = stripped[len("models:"):].strip()
-                if inline:
-                    models.append(inline)
-                continue
-            if in_models:
-                # A non-indented line with "key:" pattern ends the models section
-                is_indented = line.startswith(" ") or line.startswith("\t")
-                if not is_indented and ":" in stripped:
-                    in_models = False
-                else:
-                    models.append(stripped)
-                    continue
-            if ":" in stripped:
-                key, _, val = stripped.partition(":")
-                fields[key.strip().lower()] = val.strip()
-
-        name = fields.get("name", "").strip()
-        base_url = fields.get("base_url", "").strip()
-        api_key = fields.get("api_key", "").strip()
-        extra_body_raw = fields.get("extra_body", "").strip()
-
-        extra_body = {}
-        if extra_body_raw:
-            try:
-                extra_body = _json.loads(extra_body_raw)
-                if not isinstance(extra_body, dict):
-                    return "extra_body must be a JSON object"
-            except _json.JSONDecodeError as e:
-                return f"extra_body is not valid JSON: {e}"
-
-        errors = []
-        if not name:
-            errors.append("name is required")
-        if not base_url:
-            errors.append("base_url is required")
-        if not api_key:
-            errors.append("api_key is required")
-        if not models:
-            errors.append("at least one model is required")
-
-        if errors:
-            return "\n".join(errors)
-
-        return name, base_url, api_key, models, extra_body
-
-    def _on_enhance_remove_provider(self, sender) -> None:
-        """Remove an AI provider after confirmation."""
-        try:
-            pname = sender._provider_name
-            if not self._enhancer:
-                return
-
-            self._activate_for_dialog()
-
-            result = self._topmost_alert(
-                title="Remove Provider",
-                message=f"Remove provider '{pname}' and all its models?",
-                ok="Remove",
-                cancel="Cancel",
-            )
-            if result != 1:
-                return
-
-            self._enhancer.remove_provider(pname)
-
-            # Persist to config
-            self._config.setdefault("ai_enhance", {})
-            providers_cfg = self._config["ai_enhance"].get("providers", {})
-            providers_cfg.pop(pname, None)
-            self._config["ai_enhance"]["default_provider"] = self._enhancer.provider_name
-            self._config["ai_enhance"]["default_model"] = self._enhancer.model_name
-            save_config(self._config, self._config_path)
-
-            # Rebuild LLM model menu
-            self._build_llm_model_menu()
-
-            send_notification("VoiceText", "Provider removed", pname)
-            logger.info("Removed AI provider: %s", pname)
-        except Exception as e:
-            logger.error("Remove provider failed: %s", e, exc_info=True)
-        finally:
-            self._restore_accessory()
-
     def _on_preview_toggle(self, sender) -> None:
         """Toggle preview window on/off."""
         self._preview_enabled = not self._preview_enabled
@@ -3624,208 +2513,6 @@ models:
             self._enhancer.debug_print_request_body = enabled
         logger.info("Debug print request body: %s", enabled)
 
-    def _on_model_select(self, sender) -> None:
-        """Handle local model menu item click."""
-        preset_id = sender._preset_id
-
-        # Ignore if already active
-        if preset_id == self._current_preset_id and not self._current_remote_asr:
-            return
-
-        # Reject if busy (transcribing or switching)
-        if self._busy:
-            send_notification(
-                "VoiceText",
-                "Cannot switch model",
-                "Please wait for current operation to finish.",
-            )
-            return
-
-        preset = PRESET_BY_ID[preset_id]
-        self._busy = True
-
-        # Disable all model menu callbacks during switch
-        for item in self._model_menu_items.values():
-            item.set_callback(None)
-        for item in self._remote_asr_menu_items.values():
-            item.set_callback(None)
-
-        old_preset_id = self._current_preset_id
-        old_transcriber = self._transcriber
-
-        def _do_switch():
-            stop_event = threading.Event()
-            monitor_thread = None
-
-            try:
-                # Cleanup current model
-                self._set_status("Unloading...")
-                old_transcriber.cleanup()
-
-                # Check if model is cached; if not, start download monitor
-                cached = is_model_cached(preset)
-                if not cached:
-                    monitor_thread = threading.Thread(
-                        target=self._monitor_download_progress,
-                        args=(preset, stop_event),
-                        daemon=True,
-                    )
-                    monitor_thread.start()
-                else:
-                    self._set_status("Loading...")
-
-                # Create and initialize new transcriber
-                asr_cfg = self._config["asr"]
-                new_transcriber = create_transcriber(
-                    backend=preset.backend,
-                    use_vad=asr_cfg.get("use_vad", True),
-                    use_punc=asr_cfg.get("use_punc", True),
-                    language=preset.language or asr_cfg.get("language"),
-                    model=preset.model,
-                    temperature=asr_cfg.get("temperature"),
-                )
-                new_transcriber.initialize()
-
-                # Stop download monitor
-                stop_event.set()
-                if monitor_thread:
-                    monitor_thread.join(timeout=2)
-
-                # Success: update state
-                self._transcriber = new_transcriber
-                self._current_preset_id = preset_id
-                self._current_remote_asr = None
-                self._update_model_checkmarks()
-
-                # Persist to config
-                self._config["asr"]["preset"] = preset_id
-                self._config["asr"]["backend"] = preset.backend
-                self._config["asr"]["model"] = preset.model
-                self._config["asr"]["language"] = preset.language
-                self._config["asr"]["default_provider"] = None
-                self._config["asr"]["default_model"] = None
-                save_config(self._config, self._config_path)
-
-                self._set_status("VT")
-                logger.info("Switched to model: %s", preset.display_name)
-                try:
-                    send_notification(
-                        "VoiceText",
-                        "Model switched",
-                        f"Now using: {preset.display_name}",
-                    )
-                except Exception:
-                    logger.debug("Notification unavailable, skipping")
-
-            except Exception as e:
-                stop_event.set()
-                if monitor_thread:
-                    monitor_thread.join(timeout=2)
-
-                logger.error("Model switch failed: %s", e)
-                self._set_status("Error")
-                try:
-                    send_notification(
-                        "VoiceText",
-                        "Model switch failed",
-                        str(e)[:100],
-                    )
-                except Exception:
-                    logger.debug("Notification unavailable, skipping")
-
-                # Try to restore previous model
-                self._try_restore_previous_model(old_preset_id)
-
-            finally:
-                # Re-enable model menu callbacks (only for available backends)
-                for pid, item in self._model_menu_items.items():
-                    p = PRESET_BY_ID[pid]
-                    if is_backend_available(p.backend):
-                        item.set_callback(self._on_model_select)
-                for item in self._remote_asr_menu_items.values():
-                    item.set_callback(self._on_remote_asr_select)
-                self._busy = False
-
-        threading.Thread(target=_do_switch, daemon=True).start()
-
-    def _monitor_download_progress(
-        self, preset: ModelPreset, stop_event: threading.Event
-    ) -> None:
-        """Monitor download progress by checking cache directory size."""
-        expected_size = self._get_expected_model_size(preset)
-        if not expected_size:
-            self._set_status("Downloading...")
-            stop_event.wait()
-            return
-
-        cache_dir = get_model_cache_dir(preset)
-
-        while not stop_event.is_set():
-            current_size = _get_dir_size(cache_dir)
-            pct = min(int(current_size / expected_size * 100), 99)
-            self._set_status(f"DL {pct}%")
-            stop_event.wait(1.0)
-
-    def _get_expected_model_size(self, preset: ModelPreset) -> Optional[int]:
-        """Get expected total download size for a preset."""
-        if preset.backend == "funasr":
-            return _FUNASR_APPROX_SIZE
-
-        if preset.backend == "mlx-whisper" and preset.model:
-            try:
-                from huggingface_hub import model_info
-
-                info = model_info(preset.model)
-                total = sum(
-                    s.size for s in (info.siblings or []) if s.size is not None
-                )
-                return total if total > 0 else None
-            except Exception:
-                logger.debug("Could not get model size for %s", preset.model)
-                return None
-
-        return None
-
-    def _update_model_checkmarks(self) -> None:
-        """Update checkmark state on all model menu items (thread-safe)."""
-        import Foundation
-        if not Foundation.NSThread.isMainThread():
-            from PyObjCTools import AppHelper
-            AppHelper.callAfter(self._update_model_checkmarks)
-            return
-        for pid, item in self._model_menu_items.items():
-            item.state = 1 if pid == self._current_preset_id else 0
-        for key, item in self._remote_asr_menu_items.items():
-            item.state = 1 if key == self._current_remote_asr else 0
-
-    def _try_restore_previous_model(self, old_preset_id: Optional[str]) -> None:
-        """Attempt to restore the previous model after a failed switch."""
-        if not old_preset_id or old_preset_id not in PRESET_BY_ID:
-            return
-
-        old_preset = PRESET_BY_ID[old_preset_id]
-        try:
-            logger.info("Restoring previous model: %s", old_preset.display_name)
-            self._set_status("Restoring...")
-            asr_cfg = self._config["asr"]
-            restored = create_transcriber(
-                backend=old_preset.backend,
-                use_vad=asr_cfg.get("use_vad", True),
-                use_punc=asr_cfg.get("use_punc", True),
-                language=old_preset.language or asr_cfg.get("language"),
-                model=old_preset.model,
-                temperature=asr_cfg.get("temperature"),
-            )
-            restored.initialize()
-            self._transcriber = restored
-            self._current_preset_id = old_preset_id
-            self._update_model_checkmarks()
-            self._set_status("VT")
-            logger.info("Previous model restored")
-        except Exception as e2:
-            logger.error("Failed to restore previous model: %s", e2)
-            self._set_status("Error")
-
     def _build_config_info(self) -> str:
         """Build a summary string of current configuration."""
         # ASR Model
@@ -3885,7 +2572,7 @@ models:
 
         info = self._build_config_info()
 
-        self._activate_for_dialog()
+        activate_for_dialog()
 
         alert = NSAlert.alloc().init()
         alert.setMessageText_("Current Configuration")
@@ -3906,7 +2593,7 @@ models:
         alert.window().setFloatingPanel_(True)
         alert.window().setHidesOnDeactivate_(False)
         alert.runModal()
-        self._restore_accessory()
+        restore_accessory()
 
     def _on_reload_config(self, _) -> None:
         """Reload configuration from disk and apply changes."""
@@ -3974,7 +2661,7 @@ models:
 
             # Reload enhancement mode definitions from disk
             self._enhancer.reload_modes()
-            self._rebuild_enhance_mode_menu()
+            self._menu_builder.rebuild_enhance_mode_menu()
 
         # Feedback settings
         fb_cfg = new_config.get("feedback", {})
@@ -4029,8 +2716,8 @@ models:
             today = self._usage_stats.get_today_stats()
         except Exception as e:
             logger.error("Failed to get usage stats: %s", e)
-            self._topmost_alert("Error", f"Failed to load usage stats: {e}")
-            self._restore_accessory()
+            topmost_alert("Error", f"Failed to load usage stats: {e}")
+            restore_accessory()
             return
 
         def _fmt_section(label: str, data: dict) -> list[str]:
@@ -4116,7 +2803,7 @@ models:
 
         text = "\n".join(parts)
 
-        self._activate_for_dialog()
+        activate_for_dialog()
 
         alert = NSAlert.alloc().init()
         alert.setMessageText_("Usage Statistics")
@@ -4141,15 +2828,15 @@ models:
         alert.window().setFloatingPanel_(True)
         alert.window().setHidesOnDeactivate_(False)
         alert.runModal()
-        self._restore_accessory()
+        restore_accessory()
 
     def _on_about(self, _) -> None:
         from . import __version__
         from ._build_info import BUILD_DATE, GIT_HASH
 
         message = f"Version: {__version__}\nBuild:   {GIT_HASH}\nDate:    {BUILD_DATE}"
-        self._topmost_alert(title="VoiceText", message=message)
-        self._restore_accessory()
+        topmost_alert(title="VoiceText", message=message)
+        restore_accessory()
 
     # ── Settings panel ────────────────────────────────────────────────
 
@@ -4195,9 +2882,6 @@ models:
         if vocab_count == 0:
             vocab_count = get_vocab_entry_count()
 
-        ai_cfg = self._config.get("ai_enhance", {})
-        vocab_cfg = ai_cfg.get("vocabulary", {})
-
         state = {
             "hotkeys": hotkeys,
             "sound_enabled": self._sound_manager.enabled,
@@ -4228,10 +2912,10 @@ models:
             "on_preview_toggle": self._settings_preview_toggle,
             "on_stt_select": self._settings_stt_select,
             "on_stt_remote_select": self._settings_stt_remote_select,
-            "on_stt_add_provider": lambda: self._on_asr_add_provider(None),
+            "on_stt_add_provider": lambda: self._model_controller.on_asr_add_provider(None),
             "on_stt_remove_provider": self._settings_stt_remove_provider,
             "on_llm_select": self._settings_llm_select,
-            "on_llm_add_provider": lambda: self._on_enhance_add_provider(None),
+            "on_llm_add_provider": lambda: self._model_controller.on_enhance_add_provider(None),
             "on_llm_remove_provider": self._settings_llm_remove_provider,
             "on_enhance_mode_select": self._settings_enhance_mode_select,
             "on_enhance_mode_edit": self._settings_enhance_mode_edit,
@@ -4299,11 +2983,11 @@ models:
         if preset_id == self._current_preset_id and not self._current_remote_asr:
             return
         if self._busy:
-            self._topmost_alert(
+            topmost_alert(
                 "Cannot switch model",
                 "Please wait for current operation to finish.",
             )
-            self._restore_accessory()
+            restore_accessory()
             return
 
         preset = PRESET_BY_ID.get(preset_id)
@@ -4351,7 +3035,7 @@ models:
                 self._transcriber = new_transcriber
                 self._current_preset_id = preset_id
                 self._current_remote_asr = None
-                self._update_model_checkmarks()
+                self._menu_builder.update_model_checkmarks()
 
                 self._config["asr"]["preset"] = preset_id
                 self._config["asr"]["backend"] = preset.backend
@@ -4388,11 +3072,11 @@ models:
         if key == self._current_remote_asr:
             return
         if self._busy:
-            self._topmost_alert(
+            topmost_alert(
                 "Cannot switch model",
                 "Please wait for current operation to finish.",
             )
-            self._restore_accessory()
+            restore_accessory()
             return
 
         # Find the RemoteASRModel with connection details
@@ -4424,7 +3108,7 @@ models:
                 self._transcriber = new_transcriber
                 self._current_remote_asr = key
                 self._current_preset_id = None
-                self._update_model_checkmarks()
+                self._menu_builder.update_model_checkmarks()
 
                 self._config["asr"]["default_provider"] = provider
                 self._config["asr"]["default_model"] = model
@@ -4450,7 +3134,7 @@ models:
             first_name = next(iter(providers))
             item = self._asr_remove_provider_items.get(first_name)
             if item:
-                self._on_asr_remove_provider(item)
+                self._model_controller.on_asr_remove_provider(item)
 
     def _settings_llm_select(self, provider: str, model: str) -> None:
         """Handle LLM model selection from Settings panel."""
@@ -4482,7 +3166,7 @@ models:
                 first_name = next(iter(providers))
                 item = self._llm_remove_provider_items.get(first_name)
                 if item:
-                    self._on_enhance_remove_provider(item)
+                    self._model_controller.on_enhance_remove_provider(item)
 
     def _settings_enhance_mode_edit(self, mode_id: str) -> None:
         """Open the enhance mode markdown file in TextEdit."""
@@ -4619,22 +3303,6 @@ models:
 
         super().run(**kwargs)
 
-
-def _get_dir_size(path) -> int:
-    """Calculate total size of all files in a directory."""
-    from pathlib import Path
-
-    target = Path(path)
-    if not target.exists():
-        return 0
-    total = 0
-    try:
-        for f in target.rglob("*"):
-            if f.is_file():
-                total += f.stat().st_size
-    except OSError:
-        pass
-    return total
 
 
 _MultilinePanelTarget = None

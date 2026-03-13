@@ -2,42 +2,15 @@
 
 from __future__ import annotations
 
-import sys
 import threading
 from unittest.mock import MagicMock
 
 import pytest
 
-
 @pytest.fixture(autouse=True)
-def _mock_appkit(monkeypatch):
+def _mock_appkit(mock_appkit_modules):
     """Mock AppKit and Foundation modules for headless testing."""
-    mock_appkit = MagicMock()
-    mock_foundation = MagicMock()
-    mock_pyobjctools = MagicMock()
-    mock_apphelper = MagicMock()
-
-    # Make callAfter execute the callback immediately
-    mock_apphelper.callAfter = lambda fn: fn()
-    mock_pyobjctools.AppHelper = mock_apphelper
-
-    monkeypatch.setitem(sys.modules, "AppKit", mock_appkit)
-    monkeypatch.setitem(sys.modules, "Foundation", mock_foundation)
-    monkeypatch.setitem(sys.modules, "PyObjCTools", mock_pyobjctools)
-    monkeypatch.setitem(sys.modules, "PyObjCTools.AppHelper", mock_apphelper)
-
-    # NSMakeRect returns a mock with .size attribute
-    def make_rect(x, y, w, h):
-        r = MagicMock()
-        r.size = MagicMock()
-        r.size.width = w
-        r.size.height = h
-        return r
-
-    mock_foundation.NSMakeRect = make_rect
-    mock_foundation.NSAttributedString = MagicMock()
-
-    return mock_appkit, mock_foundation, mock_apphelper
+    return mock_appkit_modules
 
 
 def _make_panel():
@@ -89,7 +62,7 @@ class TestStreamingOverlayPanel:
         assert panel._status_label is None
 
     def test_show_registers_esc_monitor(self, _mock_appkit):
-        mock_appkit_mod, _, _ = _mock_appkit
+        mock_appkit_mod = _mock_appkit.appkit
         panel = _make_panel()
         cancel_event = threading.Event()
         panel.show(asr_text="test", cancel_event=cancel_event)
@@ -97,7 +70,7 @@ class TestStreamingOverlayPanel:
         assert panel._esc_monitor is not None
 
     def test_close_removes_esc_monitor(self, _mock_appkit):
-        mock_appkit_mod, _, _ = _mock_appkit
+        mock_appkit_mod = _mock_appkit.appkit
         panel = _make_panel()
         panel.show(asr_text="test", cancel_event=threading.Event())
         panel.close()
@@ -105,7 +78,7 @@ class TestStreamingOverlayPanel:
         assert panel._esc_monitor is None
 
     def test_esc_handler_sets_cancel_event(self, _mock_appkit):
-        mock_appkit_mod, _, _ = _mock_appkit
+        mock_appkit_mod = _mock_appkit.appkit
         panel = _make_panel()
         cancel_event = threading.Event()
 
@@ -173,7 +146,7 @@ class TestStreamingOverlayPanel:
 
     def test_show_with_model_info(self, _mock_appkit):
         """show() with stt_info and llm_info should include them in labels."""
-        mock_appkit_mod, _, _ = _mock_appkit
+        mock_appkit_mod = _mock_appkit.appkit
         panel = _make_panel()
         panel.show(asr_text="test", stt_info="FunASR", llm_info="openai / gpt-4o")
         assert panel._panel is not None
@@ -185,7 +158,7 @@ class TestStreamingOverlayPanel:
 
     def test_show_with_animate_from_frame(self, _mock_appkit):
         """show() with animate_from_frame should use animation."""
-        mock_appkit_mod, _, _ = _mock_appkit
+        mock_appkit_mod = _mock_appkit.appkit
         panel = _make_panel()
         mock_frame = MagicMock()
         panel.show(asr_text="test", animate_from_frame=mock_frame)
@@ -230,7 +203,7 @@ class TestStreamingOverlayPanel:
 
     def test_loading_timer_starts_on_show(self, _mock_appkit):
         """show() should start the loading timer."""
-        _, mock_foundation, _ = _mock_appkit
+        mock_foundation = _mock_appkit.foundation
         panel = _make_panel()
         panel.show(asr_text="test")
         mock_foundation.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_.assert_called()

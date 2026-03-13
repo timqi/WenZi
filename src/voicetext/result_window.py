@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -832,9 +832,7 @@ class ResultPreviewPanel:
     def _build_panel(self, asr_text: str, show_enhance: bool) -> None:
         """Build the NSPanel and all subviews."""
         from AppKit import (
-            NSApp,
             NSBackingStoreBuffered,
-            NSBezelBorder,
             NSButton,
             NSClosableWindowMask,
             NSSwitchButton,
@@ -843,11 +841,9 @@ class ResultPreviewPanel:
             NSLineBreakByWordWrapping,
             NSPanel,
             NSPopUpButton,
-            NSScrollView,
             NSSegmentedControl,
             NSSmallControlSize,
             NSTextField,
-            NSTextView,
             NSTitledWindowMask,
         )
         from Foundation import NSMakeRect
@@ -1484,7 +1480,6 @@ class ResultPreviewPanel:
     def _save_wav(self, wav_data: bytes) -> None:
         """Save WAV audio data to a user-chosen file via NSSavePanel."""
         from AppKit import NSSavePanel
-        from Foundation import NSURL
 
         panel = NSSavePanel.savePanel()
         panel.setTitle_("Save Audio")

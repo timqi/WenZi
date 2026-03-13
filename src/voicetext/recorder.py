@@ -22,6 +22,11 @@ class Recorder:
     # RMS threshold for silence detection (int16 range: 0-32768).
     # Typical quiet room noise is ~100-300, speech is ~1000+.
     DEFAULT_SILENCE_RMS = 20
+    # Reference RMS for normalizing current_level to 0.0-1.0 range.
+    # Normal speech (~1000-3000 RMS) maps to roughly 0.5-1.0.
+    _LEVEL_REFERENCE_RMS = 800.0
+    # Timeout for stream stop/close to prevent blocking on hung PortAudio.
+    _STREAM_CLOSE_TIMEOUT = 2.0
 
     def __init__(
         self,
@@ -56,7 +61,7 @@ class Recorder:
         Uses 2000 as reference so normal speech (~1000-3000 RMS) maps
         to roughly 0.5-1.0.
         """
-        return min(1.0, self._current_rms / 800.0)
+        return min(1.0, self._current_rms / self._LEVEL_REFERENCE_RMS)
 
     def start(self) -> None:
         """Start recording."""
@@ -117,10 +122,11 @@ class Recorder:
                     done.set()
 
             threading.Thread(target=_close_stream, daemon=True).start()
-            if not done.wait(timeout=2.0):
+            if not done.wait(timeout=self._STREAM_CLOSE_TIMEOUT):
                 logger.error(
-                    "Audio stream stop/close timed out after 2s, "
-                    "continuing without waiting"
+                    "Audio stream stop/close timed out after %.1fs, "
+                    "continuing without waiting",
+                    self._STREAM_CLOSE_TIMEOUT,
                 )
 
         # Collect all buffered frames

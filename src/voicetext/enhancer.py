@@ -95,6 +95,7 @@ class TextEnhancer:
         self._last_system_prompt: str = ""
         # Active stream reference for cancellation
         self._active_stream: Any = None
+        self._cancel_event = asyncio.Event()
 
         # Load enhancement modes from external files
         ensure_default_modes()
@@ -392,6 +393,80 @@ class TextEnhancer:
             result.update(provider_extra_body)
         return result
 
+    def _build_system_content(self, text: str, mode_def: "ModeDefinition") -> str:
+        """Build system prompt with vocabulary and history context."""
+        system_content = mode_def.prompt
+
+        if self._vocab_enabled and self._vocab_index is not None:
+            try:
+                if not self._vocab_index.is_loaded:
+                    self._vocab_index.load()
+                entries = self._vocab_index.retrieve(
+                    text.strip(), top_k=self._vocab_top_k
+                )
+                if entries:
+                    vocab_context = self._vocab_index.format_for_prompt(entries)
+                    system_content = f"{mode_def.prompt}\n\n{vocab_context}"
+                    logger.info(
+                        "Vocabulary matched: %s",
+                        ", ".join(e.term for e in entries),
+                    )
+            except Exception as e:
+                logger.warning("Vocabulary retrieval failed: %s", e)
+
+        if self._history_enabled:
+            try:
+                entries = self._conversation_history.get_recent(
+                    max_entries=self._history_max_entries
+                )
+                if entries:
+                    history_context = self._conversation_history.format_for_prompt(
+                        entries
+                    )
+                    system_content = f"{system_content}\n\n{history_context}"
+                    logger.info(
+                        "Conversation history injected: %d entries",
+                        len(entries),
+                    )
+            except Exception as e:
+                logger.warning("Conversation history retrieval failed: %s", e)
+
+        if self._thinking:
+            system_content = f"{system_content}\n\n{THINKING_BREVITY_HINT}"
+
+        return system_content
+
+    def _build_request_kwargs(
+        self, text: str, system_content: str, **extra_kwargs: Any
+    ) -> Dict[str, Any]:
+        """Build the request kwargs dict for chat.completions.create."""
+        self._last_system_prompt = system_content
+
+        client, _, provider_extra_body = self._providers[self._active_provider]
+        extra_body = self._build_extra_body(provider_extra_body)
+        kwargs: Dict[str, Any] = {
+            "model": self._active_model,
+            "messages": [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": text.strip()},
+            ],
+            **extra_kwargs,
+        }
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+
+        if self._debug_print_prompt:
+            logger.info("[DEBUG] System prompt:\n%s", system_content)
+            logger.info("[DEBUG] User message:\n%s", text.strip())
+        if self._debug_print_request_body:
+            import json as _json
+            logger.info(
+                "[DEBUG] Request body:\n%s",
+                _json.dumps(kwargs, ensure_ascii=False, default=str, indent=2),
+            )
+
+        return kwargs
+
     async def enhance(self, text: str) -> Tuple[str, Optional[Dict[str, int]]]:
         """Enhance text using LLM.
 
@@ -411,73 +486,9 @@ class TextEnhancer:
             return text, None
 
         try:
-            # Retrieve vocabulary context if enabled
-            system_content = mode_def.prompt
-            if self._vocab_enabled and self._vocab_index is not None:
-                try:
-                    if not self._vocab_index.is_loaded:
-                        self._vocab_index.load()
-                    entries = self._vocab_index.retrieve(
-                        text.strip(), top_k=self._vocab_top_k
-                    )
-                    if entries:
-                        vocab_context = self._vocab_index.format_for_prompt(entries)
-                        system_content = f"{mode_def.prompt}\n\n{vocab_context}"
-                        logger.info(
-                            "Vocabulary matched: %s",
-                            ", ".join(e.term for e in entries),
-                        )
-                except Exception as e:
-                    logger.warning("Vocabulary retrieval failed: %s", e)
-
-            # Inject conversation history context if enabled
-            if self._history_enabled:
-                try:
-                    entries = self._conversation_history.get_recent(
-                        max_entries=self._history_max_entries
-                    )
-                    if entries:
-                        history_context = self._conversation_history.format_for_prompt(
-                            entries
-                        )
-                        system_content = f"{system_content}\n\n{history_context}"
-                        logger.info(
-                            "Conversation history injected: %d entries",
-                            len(entries),
-                        )
-                except Exception as e:
-                    logger.warning("Conversation history retrieval failed: %s", e)
-
-            if self._thinking:
-                system_content = f"{system_content}\n\n{THINKING_BREVITY_HINT}"
-
-            self._last_system_prompt = system_content
-
-            client, _, provider_extra_body = self._providers[self._active_provider]
-            extra_body = self._build_extra_body(provider_extra_body)
-            kwargs: Dict[str, Any] = {
-                "model": self._active_model,
-                "messages": [
-                    {"role": "system", "content": system_content},
-                    {"role": "user", "content": text.strip()},
-                ],
-            }
-            if extra_body:
-                kwargs["extra_body"] = extra_body
-
-            if self._debug_print_prompt:
-                logger.info(
-                    "[DEBUG] System prompt:\n%s", system_content
-                )
-                logger.info(
-                    "[DEBUG] User message:\n%s", text.strip()
-                )
-            if self._debug_print_request_body:
-                import json as _json
-                logger.info(
-                    "[DEBUG] Request body:\n%s",
-                    _json.dumps(kwargs, ensure_ascii=False, default=str, indent=2),
-                )
+            system_content = self._build_system_content(text, mode_def)
+            kwargs = self._build_request_kwargs(text, system_content)
+            client, _, _ = self._providers[self._active_provider]
 
             response = await asyncio.wait_for(
                 client.chat.completions.create(**kwargs),
@@ -511,6 +522,10 @@ class TextEnhancer:
             logger.error("AI enhancement failed: %s", e)
             return text, None
 
+    def cancel_stream(self) -> None:
+        """Signal the active stream to stop. Thread-safe."""
+        self._cancel_event.set()
+
     async def enhance_stream(
         self, text: str
     ) -> AsyncIterator[Tuple[str, Optional[Dict[str, int]], bool]]:
@@ -536,70 +551,13 @@ class TextEnhancer:
             return
 
         try:
-            # Build system prompt (same logic as enhance())
-            system_content = mode_def.prompt
-            if self._vocab_enabled and self._vocab_index is not None:
-                try:
-                    if not self._vocab_index.is_loaded:
-                        self._vocab_index.load()
-                    entries = self._vocab_index.retrieve(
-                        text.strip(), top_k=self._vocab_top_k
-                    )
-                    if entries:
-                        vocab_context = self._vocab_index.format_for_prompt(entries)
-                        system_content = f"{mode_def.prompt}\n\n{vocab_context}"
-                        logger.info(
-                            "Vocabulary matched: %s",
-                            ", ".join(e.term for e in entries),
-                        )
-                except Exception as e:
-                    logger.warning("Vocabulary retrieval failed: %s", e)
-
-            if self._history_enabled:
-                try:
-                    entries = self._conversation_history.get_recent(
-                        max_entries=self._history_max_entries
-                    )
-                    if entries:
-                        history_context = self._conversation_history.format_for_prompt(
-                            entries
-                        )
-                        system_content = f"{system_content}\n\n{history_context}"
-                        logger.info(
-                            "Conversation history injected: %d entries",
-                            len(entries),
-                        )
-                except Exception as e:
-                    logger.warning("Conversation history retrieval failed: %s", e)
-
-            if self._thinking:
-                system_content = f"{system_content}\n\n{THINKING_BREVITY_HINT}"
-
-            self._last_system_prompt = system_content
-
-            client, _, provider_extra_body = self._providers[self._active_provider]
-            extra_body = self._build_extra_body(provider_extra_body)
-            kwargs: Dict[str, Any] = {
-                "model": self._active_model,
-                "messages": [
-                    {"role": "system", "content": system_content},
-                    {"role": "user", "content": text.strip()},
-                ],
-                "stream": True,
-                "stream_options": {"include_usage": True},
-            }
-            if extra_body:
-                kwargs["extra_body"] = extra_body
-
-            if self._debug_print_prompt:
-                logger.info("[DEBUG] System prompt:\n%s", system_content)
-                logger.info("[DEBUG] User message:\n%s", text.strip())
-            if self._debug_print_request_body:
-                import json as _json
-                logger.info(
-                    "[DEBUG] Request body:\n%s",
-                    _json.dumps(kwargs, ensure_ascii=False, default=str, indent=2),
-                )
+            system_content = self._build_system_content(text, mode_def)
+            kwargs = self._build_request_kwargs(
+                text, system_content,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+            client, _, _ = self._providers[self._active_provider]
 
             # Retry loop for initial connection
             last_error = None
@@ -639,6 +597,7 @@ class TextEnhancer:
                         return
 
             # Expose stream so callers can close it on cancellation
+            self._cancel_event.clear()
             self._active_stream = stream
 
             collected = []
@@ -647,6 +606,9 @@ class TextEnhancer:
             aiter = stream.__aiter__()
             try:
                 while True:
+                    if self._cancel_event.is_set():
+                        logger.info("Stream cancelled via cancel_event")
+                        break
                     try:
                         chunk = await asyncio.wait_for(
                             aiter.__anext__(), timeout=self._timeout

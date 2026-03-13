@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -69,7 +68,6 @@ def _generate_default_start_sound(path: str) -> None:
 
     # Fallback: synthesized soft chirp
     n = int(_SAMPLE_RATE * _DURATION)
-    t = np.linspace(0, _DURATION, n, endpoint=False)
     freq = np.linspace(400, 700, n)
     phase = 2 * np.pi * np.cumsum(freq) / _SAMPLE_RATE
     sig = np.sin(phase) + 0.3 * np.sin(phase * 2)

@@ -2,27 +2,11 @@
 
 from __future__ import annotations
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-
-@pytest.fixture(autouse=True)
-def mock_appkit():
-    """Mock AppKit and Foundation for headless testing."""
-    mock_appkit = MagicMock()
-    mock_foundation = MagicMock()
-    mock_pyobjc = MagicMock()
-
-    modules = {
-        "AppKit": mock_appkit,
-        "Foundation": mock_foundation,
-        "PyObjCTools": mock_pyobjc,
-        "PyObjCTools.AppHelper": mock_pyobjc.AppHelper,
-    }
-    with patch.dict(sys.modules, modules):
-        yield mock_appkit
+pytestmark = pytest.mark.usefixtures("mock_appkit_modules")
 
 
 class TestHistoryBrowserPanel:

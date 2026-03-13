@@ -8,29 +8,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-# Mock AppKit/Foundation before importing the module
 @pytest.fixture(autouse=True)
-def mock_appkit(monkeypatch):
+def mock_appkit(mock_appkit_modules):
     """Provide mock AppKit and Foundation modules for headless testing."""
-    mock_nsobj = MagicMock()
-
-    mock_appkit_mod = MagicMock()
     # Set real integer values for keyboard event constants
-    mock_appkit_mod.NSCommandKeyMask = 1 << 20
-    mock_appkit_mod.NSShiftKeyMask = 1 << 17
-    mock_appkit_mod.NSDeviceIndependentModifierFlagsMask = 0xFFFF0000
-    mock_appkit_mod.NSKeyDownMask = 1 << 10
-
-    modules = {
-        "AppKit": mock_appkit_mod,
-        "Foundation": MagicMock(),
-        "objc": MagicMock(),
-        "PyObjCTools": MagicMock(),
-        "PyObjCTools.AppHelper": MagicMock(),
-    }
-
-    for name, mod in modules.items():
-        monkeypatch.setitem(__import__("sys").modules, name, mod)
+    mock_appkit_modules.appkit.NSCommandKeyMask = 1 << 20
+    mock_appkit_modules.appkit.NSShiftKeyMask = 1 << 17
+    mock_appkit_modules.appkit.NSDeviceIndependentModifierFlagsMask = 0xFFFF0000
+    mock_appkit_modules.appkit.NSKeyDownMask = 1 << 10
 
 
 def _setup_panel_with_final_field(panel):

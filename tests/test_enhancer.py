@@ -444,12 +444,12 @@ class TestTextEnhancerVerifyProvider:
 
 
 class TestParseProviderText:
-    """Tests for VoiceTextApp._parse_provider_text."""
+    """Tests for parse_provider_text."""
 
     @staticmethod
     def _parse(text):
-        from voicetext.app import VoiceTextApp
-        return VoiceTextApp._parse_provider_text(text)
+        from voicetext.model_controller import parse_provider_text
+        return parse_provider_text(text)
 
     def test_valid_config(self):
         text = """\

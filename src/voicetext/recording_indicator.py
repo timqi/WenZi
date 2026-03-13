@@ -50,7 +50,6 @@ class RecordingIndicatorView:
 
     def create_view(self, width: int, height: int) -> object:
         """Create and return the NSView instance."""
-        from AppKit import NSColor, NSView
         from Foundation import NSMakeRect
 
         rect = NSMakeRect(0, 0, width, height)
@@ -82,10 +81,9 @@ class RecordingIndicatorView:
 
     def draw(self, rect: object) -> None:
         """Draw the indicator contents."""
-        from AppKit import NSBezierPath, NSColor, NSFont, NSGraphicsContext
+        from AppKit import NSBezierPath, NSColor
         from Foundation import NSMakeRect
 
-        width = rect.size.width
         height = rect.size.height
 
         # Semi-transparent rounded background (adapts to light/dark mode)

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import io
 import logging
 import tempfile
 import threading
 import time
-from typing import Optional
 
 from .transcriber import BaseTranscriber
 

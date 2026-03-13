@@ -177,10 +177,10 @@ class TestClipboardEnhanceValidation:
 
     def test_non_text_clipboard_shows_alert(self):
         with patch("voicetext.app.copy_selection_to_clipboard"), \
-             patch("voicetext.app.has_clipboard_text", return_value=False):
+             patch("voicetext.app.has_clipboard_text", return_value=False), \
+             patch("voicetext.app.topmost_alert") as mock_alert, \
+             patch("voicetext.app.restore_accessory") as mock_restore:
             app = self._make_app()
-            app._topmost_alert = MagicMock()
-            app._restore_accessory = MagicMock()
 
             mock_helper = MagicMock()
             mock_helper.callAfter = lambda fn, *a: fn(*a)
@@ -190,17 +190,17 @@ class TestClipboardEnhanceValidation:
             }):
                 app._on_clipboard_enhance_worker()
 
-            app._topmost_alert.assert_called_once()
-            assert "Not Supported" in app._topmost_alert.call_args[1]["title"]
-            app._restore_accessory.assert_called_once()
+            mock_alert.assert_called_once()
+            assert "Not Supported" in mock_alert.call_args[1]["title"]
+            mock_restore.assert_called_once()
 
     def test_empty_text_clipboard_shows_alert(self):
         with patch("voicetext.app.copy_selection_to_clipboard"), \
              patch("voicetext.app.has_clipboard_text", return_value=True), \
-             patch("voicetext.app.get_clipboard_text", return_value=""):
+             patch("voicetext.app.get_clipboard_text", return_value=""), \
+             patch("voicetext.app.topmost_alert") as mock_alert, \
+             patch("voicetext.app.restore_accessory") as mock_restore:
             app = self._make_app()
-            app._topmost_alert = MagicMock()
-            app._restore_accessory = MagicMock()
 
             mock_helper = MagicMock()
             mock_helper.callAfter = lambda fn, *a: fn(*a)
@@ -210,17 +210,17 @@ class TestClipboardEnhanceValidation:
             }):
                 app._on_clipboard_enhance_worker()
 
-            app._topmost_alert.assert_called_once()
-            assert "Empty" in app._topmost_alert.call_args[1]["title"]
-            app._restore_accessory.assert_called_once()
+            mock_alert.assert_called_once()
+            assert "Empty" in mock_alert.call_args[1]["title"]
+            mock_restore.assert_called_once()
 
     def test_long_text_shows_alert_and_aborts(self):
         with patch("voicetext.app.copy_selection_to_clipboard"), \
              patch("voicetext.app.has_clipboard_text", return_value=True), \
-             patch("voicetext.app.get_clipboard_text", return_value="x" * 2001):
+             patch("voicetext.app.get_clipboard_text", return_value="x" * 2001), \
+             patch("voicetext.app.topmost_alert") as mock_alert, \
+             patch("voicetext.app.restore_accessory") as mock_restore:
             app = self._make_app()
-            app._topmost_alert = MagicMock()
-            app._restore_accessory = MagicMock()
 
             mock_helper = MagicMock()
             mock_helper.callAfter = lambda fn, *a: fn(*a)
@@ -230,9 +230,9 @@ class TestClipboardEnhanceValidation:
             }):
                 app._on_clipboard_enhance_worker()
 
-            app._topmost_alert.assert_called_once()
-            assert "2001" in app._topmost_alert.call_args[1]["message"]
-            app._restore_accessory.assert_called_once()
+            mock_alert.assert_called_once()
+            assert "2001" in mock_alert.call_args[1]["message"]
+            mock_restore.assert_called_once()
             assert not app._busy
 
     def test_normal_text_proceeds_without_alert(self):

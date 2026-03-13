@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -219,11 +218,10 @@ class LogViewerPanel:
             NSSwitchButton,
             NSViewWidthSizable,
             NSViewHeightSizable,
-            NSViewMaxYMargin,
             NSViewMinXMargin,
             NSViewMinYMargin,
         )
-        from Foundation import NSMakeRect, NSMakeSize, NSObject
+        from Foundation import NSMakeRect, NSMakeSize
 
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, self._PANEL_WIDTH, self._PANEL_HEIGHT),

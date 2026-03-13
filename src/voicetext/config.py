@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -119,6 +118,7 @@ def _ensure_default_config(config_path: str) -> None:
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(DEFAULT_CONFIG, f, indent=2, ensure_ascii=False)
         f.write("\n")
+    os.chmod(config_path, 0o600)
 
     logger.info("Created default config: %s", config_path)
 
@@ -138,6 +138,7 @@ def save_config(config: Dict[str, Any], path: Optional[str] = None) -> None:
     with open(expanded, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
         f.write("\n")
+    os.chmod(expanded, 0o600)
 
     logger.info("Config saved to %s", expanded)
 

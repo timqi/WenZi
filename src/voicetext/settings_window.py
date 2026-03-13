@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -187,15 +187,13 @@ class SettingsPanel:
             NSBackingStoreBuffered,
             NSButton,
             NSClosableWindowMask,
-            NSColor,
-            NSFont,
             NSPanel,
             NSStatusWindowLevel,
             NSTabView,
             NSTabViewItem,
             NSTitledWindowMask,
         )
-        from Foundation import NSMakeRect, NSMakeSize, NSObject
+        from Foundation import NSMakeRect, NSMakeSize
 
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, self._PANEL_WIDTH, self._PANEL_HEIGHT),
@@ -282,7 +280,6 @@ class SettingsPanel:
         """Build the General tab: Hotkeys, Feedback, Output."""
         from AppKit import (
             NSButton,
-            NSColor,
             NSFont,
             NSScrollView,
             NSView,
@@ -590,11 +587,9 @@ class SettingsPanel:
         """Build the AI tab: Enhance Mode, Options."""
         from AppKit import (
             NSButton,
-            NSColor,
             NSFont,
             NSScrollView,
             NSView,
-            NSSwitchButton,
         )
         from Foundation import NSMakeRect
 

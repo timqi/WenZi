@@ -2,50 +2,20 @@
 
 from __future__ import annotations
 
-import sys
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from tests.conftest import mock_panel_close_delegate
+
 
 @pytest.fixture(autouse=True)
-def _mock_appkit(monkeypatch):
+def _mock_appkit(mock_appkit_modules, monkeypatch):
     """Mock AppKit and Foundation modules for headless testing."""
-    mock_appkit = MagicMock()
-    mock_foundation = MagicMock()
-    mock_pyobjctools = MagicMock()
-    mock_apphelper = MagicMock()
-    mock_objc = MagicMock()
-
-    mock_apphelper.callAfter = lambda fn, *a, **kw: fn(*a, **kw)
-    mock_pyobjctools.AppHelper = mock_apphelper
-
-    monkeypatch.setitem(sys.modules, "AppKit", mock_appkit)
-    monkeypatch.setitem(sys.modules, "Foundation", mock_foundation)
-    monkeypatch.setitem(sys.modules, "PyObjCTools", mock_pyobjctools)
-    monkeypatch.setitem(sys.modules, "PyObjCTools.AppHelper", mock_apphelper)
-    monkeypatch.setitem(sys.modules, "objc", mock_objc)
-
-    def make_rect(x, y, w, h):
-        r = MagicMock()
-        r.size = MagicMock()
-        r.size.width = w
-        r.size.height = h
-        return r
-
-    mock_foundation.NSMakeRect = make_rect
-    mock_foundation.NSMakeSize = MagicMock()
-
-    # Reset cached delegate class
     import voicetext.settings_window as _sw
-    _sw._PanelCloseDelegate = None
 
-    mock_delegate_instance = MagicMock()
-    mock_delegate_cls = MagicMock()
-    mock_delegate_cls.alloc.return_value.init.return_value = mock_delegate_instance
-    monkeypatch.setattr(_sw, "_get_panel_close_delegate_class", lambda: mock_delegate_cls)
-
-    return mock_appkit, mock_foundation, mock_apphelper
+    mock_panel_close_delegate(monkeypatch, _sw)
+    return mock_appkit_modules
 
 
 def _make_state():

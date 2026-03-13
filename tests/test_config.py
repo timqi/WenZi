@@ -2,6 +2,7 @@
 
 import json
 import os
+import stat
 import tempfile
 
 import pytest
@@ -126,3 +127,19 @@ class TestSaveConfig:
 
         loaded = load_config(str(config_file))
         assert loaded["hotkeys"]["f5"] is True
+
+    def test_save_sets_owner_only_permissions(self, tmp_path):
+        """Config files should be readable only by owner (0o600)."""
+        config_file = tmp_path / "config.json"
+        save_config(DEFAULT_CONFIG, str(config_file))
+
+        mode = stat.S_IMODE(config_file.stat().st_mode)
+        assert mode == 0o600
+
+    def test_load_default_sets_owner_only_permissions(self, tmp_path):
+        """Default config created by load_config should be 0o600."""
+        config_file = tmp_path / "config.json"
+        load_config(str(config_file))
+
+        mode = stat.S_IMODE(config_file.stat().st_mode)
+        assert mode == 0o600

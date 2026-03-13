@@ -2,51 +2,21 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from tests.conftest import mock_panel_close_delegate
+
 
 @pytest.fixture(autouse=True)
-def _mock_appkit(monkeypatch):
+def _mock_appkit(mock_appkit_modules, monkeypatch):
     """Mock AppKit and Foundation modules for headless testing."""
-    mock_appkit = MagicMock()
-    mock_foundation = MagicMock()
-    mock_pyobjctools = MagicMock()
-    mock_apphelper = MagicMock()
-
-    mock_apphelper.callAfter = lambda fn: fn()
-    mock_pyobjctools.AppHelper = mock_apphelper
-
-    monkeypatch.setitem(sys.modules, "AppKit", mock_appkit)
-    monkeypatch.setitem(sys.modules, "Foundation", mock_foundation)
-    monkeypatch.setitem(sys.modules, "PyObjCTools", mock_pyobjctools)
-    monkeypatch.setitem(sys.modules, "PyObjCTools.AppHelper", mock_apphelper)
-
-    def make_rect(x, y, w, h):
-        r = MagicMock()
-        r.size = MagicMock()
-        r.size.width = w
-        r.size.height = h
-        return r
-
-    mock_foundation.NSMakeRect = make_rect
-    mock_foundation.NSAttributedString = MagicMock()
-    mock_foundation.NSDictionary = MagicMock()
-    mock_foundation.NSMutableAttributedString = MagicMock()
-
-    # Reset cached delegate class
     import voicetext.log_viewer_window as _lvw
-    _lvw._PanelCloseDelegate = None
 
-    mock_delegate_instance = MagicMock()
-    mock_delegate_cls = MagicMock()
-    mock_delegate_cls.alloc.return_value.init.return_value = mock_delegate_instance
-    monkeypatch.setattr(_lvw, "_get_panel_close_delegate_class", lambda: mock_delegate_cls)
-
-    return mock_appkit, mock_foundation, mock_apphelper
+    mock_panel_close_delegate(monkeypatch, _lvw)
+    return mock_appkit_modules
 
 
 class TestParseLogLines:
@@ -354,7 +324,7 @@ class TestLogViewerToolbarActions:
         panel.logLevelChanged_(sender)
 
     def test_print_prompt_toggled_triggers_callback(self, tmp_path, _mock_appkit):
-        mock_appkit = _mock_appkit[0]
+        mock_appkit = _mock_appkit.appkit
         mock_appkit.NSOnState = 1
         callback = MagicMock()
         panel, _ = self._make_panel(tmp_path, on_print_prompt_toggle=callback)
@@ -364,7 +334,7 @@ class TestLogViewerToolbarActions:
         callback.assert_called_once_with(True)
 
     def test_print_prompt_toggled_off(self, tmp_path, _mock_appkit):
-        mock_appkit = _mock_appkit[0]
+        mock_appkit = _mock_appkit.appkit
         mock_appkit.NSOnState = 1
         callback = MagicMock()
         panel, _ = self._make_panel(tmp_path, on_print_prompt_toggle=callback)
@@ -374,7 +344,7 @@ class TestLogViewerToolbarActions:
         callback.assert_called_once_with(False)
 
     def test_print_request_body_toggled_triggers_callback(self, tmp_path, _mock_appkit):
-        mock_appkit = _mock_appkit[0]
+        mock_appkit = _mock_appkit.appkit
         mock_appkit.NSOnState = 1
         callback = MagicMock()
         panel, _ = self._make_panel(
@@ -386,7 +356,7 @@ class TestLogViewerToolbarActions:
         callback.assert_called_once_with(True)
 
     def test_print_request_body_toggled_no_callback(self, tmp_path, _mock_appkit):
-        mock_appkit = _mock_appkit[0]
+        mock_appkit = _mock_appkit.appkit
         mock_appkit.NSOnState = 1
         panel, _ = self._make_panel(tmp_path)
         sender = MagicMock()
@@ -395,7 +365,7 @@ class TestLogViewerToolbarActions:
         panel.printRequestBodyToggled_(sender)
 
     def test_show_sets_log_level_popup(self, tmp_path, _mock_appkit):
-        mock_appkit = _mock_appkit[0]
+        mock_appkit = _mock_appkit.appkit
         mock_appkit.NSOnState = 1
         mock_appkit.NSOffState = 0
         panel, log_file = self._make_panel(tmp_path)
@@ -405,7 +375,7 @@ class TestLogViewerToolbarActions:
         panel._log_level_popup.selectItemAtIndex_.assert_called_with(2)
 
     def test_show_sets_default_level(self, tmp_path, _mock_appkit):
-        mock_appkit = _mock_appkit[0]
+        mock_appkit = _mock_appkit.appkit
         mock_appkit.NSOnState = 1
         mock_appkit.NSOffState = 0
         panel, log_file = self._make_panel(tmp_path)
@@ -413,7 +383,7 @@ class TestLogViewerToolbarActions:
         panel._log_level_popup.selectItemAtIndex_.assert_called_with(0)
 
     def test_show_sets_print_prompt_on(self, tmp_path, _mock_appkit):
-        mock_appkit = _mock_appkit[0]
+        mock_appkit = _mock_appkit.appkit
         mock_appkit.NSOnState = 1
         mock_appkit.NSOffState = 0
         callback = MagicMock()
