@@ -234,6 +234,57 @@ class TestConversationHistoryFormatForPrompt:
         result = history.format_for_prompt(entries)
         assert "a\u23ceb → a\u23cec" in result
 
+    def test_format_respects_max_chars(self, history):
+        """Output should not exceed max_chars."""
+        entries = [
+            {"asr_text": f"text{i}", "final_text": f"text{i}"}
+            for i in range(50)
+        ]
+        result = history.format_for_prompt(entries, max_chars=300)
+        assert len(result) <= 300
+        # Should still have header and footer
+        assert result.startswith("---")
+        assert result.endswith("---")
+
+    def test_format_truncates_older_entries(self, history):
+        """Oldest entries should be dropped when budget is exceeded."""
+        entries = [
+            {"asr_text": f"entry_{i:03d}", "final_text": f"entry_{i:03d}"}
+            for i in range(20)
+        ]
+        # Use a budget that fits header + a few entries but not all 20
+        result = history.format_for_prompt(entries, max_chars=250)
+        # Newest entries should be present
+        assert "entry_019" in result
+        # Some older entries should be dropped
+        assert "entry_000" not in result
+
+    def test_format_default_max_chars(self, history):
+        """Default max_chars should use _MAX_PROMPT_CHARS."""
+        entries = [
+            {"asr_text": "x" * 100, "final_text": "x" * 100}
+            for _ in range(50)
+        ]
+        result = history.format_for_prompt(entries)
+        assert len(result) <= history._MAX_PROMPT_CHARS
+
+    def test_format_single_entry_exceeding_budget_still_included(self, history):
+        """A single entry should still be included even if it exceeds budget."""
+        entries = [
+            {"asr_text": "x" * 200, "final_text": "x" * 200},
+        ]
+        result = history.format_for_prompt(entries, max_chars=100)
+        assert "x" * 200 in result
+
+    def test_format_explicit_max_chars_zero_uses_default(self, history):
+        """max_chars=0 should fall back to the class default."""
+        entries = [
+            {"asr_text": f"e{i}", "final_text": f"e{i}"}
+            for i in range(50)
+        ]
+        result = history.format_for_prompt(entries, max_chars=0)
+        assert len(result) <= history._MAX_PROMPT_CHARS
+
 
 class TestConversationHistoryGetAll:
     def test_get_all_returns_newest_first(self, history):

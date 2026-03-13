@@ -833,17 +833,9 @@ class ResultPreviewPanel:
         """Build the NSPanel and all subviews."""
         from AppKit import (
             NSBackingStoreBuffered,
-            NSButton,
             NSClosableWindowMask,
-            NSSwitchButton,
-            NSStatusWindowLevel,
-            NSFont,
-            NSLineBreakByWordWrapping,
             NSPanel,
-            NSPopUpButton,
-            NSSegmentedControl,
-            NSSmallControlSize,
-            NSTextField,
+            NSStatusWindowLevel,
             NSTitledWindowMask,
         )
         from Foundation import NSMakeRect
@@ -903,7 +895,21 @@ class ResultPreviewPanel:
         # Layout from bottom to top
         y = self._PADDING
 
-        # Buttons row
+        y = self._build_buttons(content_view, y, inner_width)
+        y = self._build_final_text(content_view, y, inner_width, asr_text)
+        y = self._build_enhance_section(content_view, y, inner_width, show_enhance, show_enhance_section)
+        y = self._build_mode_segment(content_view, y, inner_width, has_modes)
+        y = self._build_asr_label_row(content_view, y, inner_width)
+        y = self._build_audio_controls(content_view, y, inner_width)
+        y = self._build_asr_text_view(content_view, y, inner_width, asr_text)
+
+        self._panel = panel
+
+    def _build_buttons(self, content_view, y, inner_w) -> float:
+        """Build the buttons row (History, Cancel, Confirm)."""
+        from AppKit import NSButton
+        from Foundation import NSMakeRect
+
         # History button (left-aligned)
         if self._on_browse_history is not None:
             history_btn = NSButton.alloc().initWithFrame_(
@@ -947,11 +953,22 @@ class ResultPreviewPanel:
         self._confirm_btn = confirm_btn
 
         y += self._BUTTON_HEIGHT + self._PADDING
+        return y
+
+    def _build_final_text(self, content_view, y, inner_w, asr_text) -> float:
+        """Build the final result label, translate button, and editable text field."""
+        from AppKit import (
+            NSButton,
+            NSColor as _NSColor,
+            NSFont,
+            NSLineBreakByWordWrapping,
+            NSTextField,
+        )
+        from Foundation import NSMakeRect
 
         # Final result label — prominent blue to highlight the primary editing area
-        from AppKit import NSColor as _NSColor
         translate_btn_width = 86
-        label_width = inner_width - translate_btn_width - 4
+        label_width = inner_w - translate_btn_width - 4
         final_label = NSTextField.labelWithString_("Final Result (editable)")
         final_label.setFrame_(NSMakeRect(self._PADDING, y + self._EDIT_HEIGHT, label_width, self._LABEL_HEIGHT))
         final_label.setFont_(NSFont.boldSystemFontOfSize_(13))
@@ -978,7 +995,7 @@ class ResultPreviewPanel:
 
         # Final result editable text field (NSTextField with wrapping)
         final_field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(self._PADDING, y, inner_width, self._EDIT_HEIGHT)
+            NSMakeRect(self._PADDING, y, inner_w, self._EDIT_HEIGHT)
         )
         final_field.setEditable_(True)
         final_field.setBezeled_(True)
@@ -999,8 +1016,21 @@ class ResultPreviewPanel:
         final_field.setDelegate_(self._delegate)
 
         y += self._EDIT_HEIGHT + self._LABEL_HEIGHT + self._PADDING
+        return y
 
-        # AI Enhancement section
+    def _build_enhance_section(self, content_view, y, inner_w, show_enhance, show_enhance_section) -> float:
+        """Build the AI enhancement section (LLM popup, thinking, enhance text view)."""
+        from AppKit import (
+            NSButton,
+            NSColor as _NSColor,
+            NSFont,
+            NSPopUpButton,
+            NSSmallControlSize,
+            NSSwitchButton,
+            NSTextField,
+        )
+        from Foundation import NSMakeRect
+
         if show_enhance_section:
             has_llm_popup = len(self._llm_models) > 0
             enhance_label_y = y + self._TEXT_HEIGHT
@@ -1070,7 +1100,7 @@ class ResultPreviewPanel:
                     enhance_label_text = self._enhance_label_text("\u23f3 Processing...")
 
                 enhance_label = NSTextField.labelWithString_(enhance_label_text)
-                enhance_label.setFrame_(NSMakeRect(self._PADDING, _lbl_y, inner_width - 80, self._LABEL_HEIGHT))
+                enhance_label.setFrame_(NSMakeRect(self._PADDING, _lbl_y, inner_w - 80, self._LABEL_HEIGHT))
                 enhance_label.setFont_(NSFont.boldSystemFontOfSize_(13))
                 enhance_label.setTextColor_(_NSColor.labelColor())
                 content_view.addSubview_(enhance_label)
@@ -1144,7 +1174,7 @@ class ResultPreviewPanel:
             self._prompt_button = prompt_btn
 
             enhance_scroll, enhance_tv = self._make_text_view(
-                NSMakeRect(self._PADDING, y, inner_width, self._TEXT_HEIGHT),
+                NSMakeRect(self._PADDING, y, inner_w, self._TEXT_HEIGHT),
                 bg_color=self._dynamic_color(
                     (0.93, 0.95, 0.98),  # light: subtle blue tint
                     (0.13, 0.15, 0.20),  # dark: subtle blue tint
@@ -1167,10 +1197,16 @@ class ResultPreviewPanel:
             self._thinking_checkbox_target = None
             self._thinking_button = None
 
-        # Mode segmented control
+        return y
+
+    def _build_mode_segment(self, content_view, y, inner_w, has_modes) -> float:
+        """Build the mode segmented control."""
+        from AppKit import NSSegmentedControl
+        from Foundation import NSMakeRect
+
         if has_modes:
             segment = NSSegmentedControl.alloc().initWithFrame_(
-                NSMakeRect(self._PADDING, y, inner_width, self._SEGMENT_HEIGHT)
+                NSMakeRect(self._PADDING, y, inner_w, self._SEGMENT_HEIGHT)
             )
             segment.setSegmentCount_(len(self._available_modes))
             selected_index = 0
@@ -1195,7 +1231,21 @@ class ResultPreviewPanel:
             self._mode_segment = None
             self._segment_target = None
 
-        # ASR Result label row
+        return y
+
+    def _build_asr_label_row(self, content_view, y, inner_w) -> float:
+        """Build the ASR info label row with optional STT popup and Punc checkbox."""
+        from AppKit import (
+            NSButton,
+            NSColor as _NSColor,
+            NSFont,
+            NSPopUpButton,
+            NSSmallControlSize,
+            NSSwitchButton,
+            NSTextField,
+        )
+        from Foundation import NSMakeRect
+
         play_btn_width = 62
         save_btn_width = 50
         audio_btns_width = play_btn_width + 2 + save_btn_width  # Play + gap + Save
@@ -1255,7 +1305,7 @@ class ResultPreviewPanel:
             asr_label_text = asr_section_title
             if self._asr_info and self._source != "clipboard":
                 asr_label_text = f"{asr_section_title} ({self._asr_info})"
-            label_width = inner_width - audio_btns_width - 4 if self._asr_wav_data else inner_width
+            label_width = inner_w - audio_btns_width - 4 if self._asr_wav_data else inner_w
             asr_label = NSTextField.labelWithString_(asr_label_text)
             asr_label.setFrame_(NSMakeRect(self._PADDING, _asr_lbl_y, label_width, self._LABEL_HEIGHT))
             asr_label.setFont_(NSFont.boldSystemFontOfSize_(13))
@@ -1292,6 +1342,19 @@ class ResultPreviewPanel:
         else:
             self._punc_checkbox = None
             self._punc_checkbox_target = None
+
+        return y
+
+    def _build_audio_controls(self, content_view, y, inner_w) -> float:
+        """Build the Play and Save buttons for recorded audio."""
+        from AppKit import NSButton, NSFont
+        from Foundation import NSMakeRect
+
+        play_btn_width = 62
+        save_btn_width = 50
+        label_y = y + self._TEXT_HEIGHT
+        _asr_popup_h = self._LABEL_HEIGHT + 4
+        _asr_popup_y = label_y - 3
 
         # "Play ▶" and "Save ⤓" buttons for recorded audio
         if self._asr_wav_data:
@@ -1335,15 +1398,20 @@ class ResultPreviewPanel:
             self._asr_play_button = None
             self._asr_save_button = None
 
-        # ASR Result text view (read-only)
+        return y
+
+    def _build_asr_text_view(self, content_view, y, inner_w, asr_text) -> float:
+        """Build the ASR result text view (read-only)."""
+        from Foundation import NSMakeRect
+
         asr_scroll, asr_tv = self._make_text_view(
-            NSMakeRect(self._PADDING, y, inner_width, self._TEXT_HEIGHT),
+            NSMakeRect(self._PADDING, y, inner_w, self._TEXT_HEIGHT),
         )
         asr_tv.setString_(asr_text)
         content_view.addSubview_(asr_scroll)
         self._asr_text_view = asr_tv
 
-        self._panel = panel
+        return y
 
     @staticmethod
     def _dynamic_color(light_rgb, dark_rgb):

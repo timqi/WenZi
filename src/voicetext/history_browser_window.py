@@ -294,25 +294,13 @@ class HistoryBrowserPanel:
         """Build the NSPanel and all subviews."""
         from AppKit import (
             NSBackingStoreBuffered,
-            NSBezelBorder,
-            NSButton,
             NSClosableWindowMask,
             NSColor,
             NSFont,
             NSPanel,
-            NSPopUpButton,
             NSResizableWindowMask,
-            NSScrollView,
-            NSSearchField,
             NSStatusWindowLevel,
-            NSTableColumn,
-            NSTableView,
-            NSTextField,
-            NSTextView,
             NSTitledWindowMask,
-            NSViewWidthSizable,
-            NSViewHeightSizable,
-            NSViewMinYMargin,
         )
         from Foundation import NSMakeRect, NSMakeSize
 
@@ -337,11 +325,23 @@ class HistoryBrowserPanel:
 
         content = panel.contentView()
         inner_w = self._PANEL_WIDTH - 2 * self._PADDING
-        small_font = NSFont.systemFontOfSize_(11.0)
-        label_color = NSColor.secondaryLabelColor()
         y = self._PADDING
 
-        # --- Bottom: Save + Close buttons ---
+        y = self._build_buttons(content, y, inner_w)
+        y = self._build_detail_info(content, y, inner_w)
+        y = self._build_final_text(content, y, inner_w)
+        y = self._build_enhanced_text(content, y, inner_w)
+        y = self._build_asr_text(content, y, inner_w)
+        y = self._build_table_view(content, y, inner_w)
+        y = self._build_toolbar(content, y, inner_w)
+
+        self._panel = panel
+
+    def _build_buttons(self, content_view, y, inner_w):
+        """Build Close and Save buttons at the bottom."""
+        from AppKit import NSButton
+        from Foundation import NSMakeRect
+
         close_btn = NSButton.alloc().initWithFrame_(
             NSMakeRect(
                 self._PANEL_WIDTH - self._PADDING - self._BUTTON_WIDTH,
@@ -355,7 +355,7 @@ class HistoryBrowserPanel:
         close_btn.setKeyEquivalent_("\x1b")  # Escape
         close_btn.setTarget_(self)
         close_btn.setAction_(b"closeClicked:")
-        content.addSubview_(close_btn)
+        content_view.addSubview_(close_btn)
 
         save_btn = NSButton.alloc().initWithFrame_(
             NSMakeRect(
@@ -373,20 +373,27 @@ class HistoryBrowserPanel:
         save_btn.setTarget_(self)
         save_btn.setAction_(b"saveClicked:")
         save_btn.setEnabled_(False)
-        content.addSubview_(save_btn)
+        content_view.addSubview_(save_btn)
         self._save_btn = save_btn
 
         y += self._BUTTON_HEIGHT + self._PADDING
+        return y
 
-        # --- Detail section ---
-        # Mode + Time info line
+    def _build_detail_info(self, content_view, y, inner_w):
+        """Build Time and Mode labels."""
+        from AppKit import NSColor, NSFont, NSTextField
+        from Foundation import NSMakeRect
+
+        small_font = NSFont.systemFontOfSize_(11.0)
+        label_color = NSColor.secondaryLabelColor()
+
         self._time_label = NSTextField.labelWithString_("")
         self._time_label.setFrame_(
             NSMakeRect(self._PADDING + inner_w // 3, y, inner_w * 2 // 3, self._DETAIL_LABEL_HEIGHT)
         )
         self._time_label.setFont_(small_font)
         self._time_label.setTextColor_(label_color)
-        content.addSubview_(self._time_label)
+        content_view.addSubview_(self._time_label)
 
         self._mode_label = NSTextField.labelWithString_("")
         self._mode_label.setFrame_(
@@ -394,18 +401,23 @@ class HistoryBrowserPanel:
         )
         self._mode_label.setFont_(small_font)
         self._mode_label.setTextColor_(label_color)
-        content.addSubview_(self._mode_label)
+        content_view.addSubview_(self._mode_label)
 
         y += self._DETAIL_LABEL_HEIGHT + 4
+        return y
 
-        # Final text (editable NSTextField)
+    def _build_final_text(self, content_view, y, inner_w):
+        """Build Final text editable field."""
+        from AppKit import NSColor, NSFont, NSTextField
+        from Foundation import NSMakeRect
+
         final_label = NSTextField.labelWithString_("Final:")
         final_label.setFrame_(
             NSMakeRect(self._PADDING, y + self._FIELD_HEIGHT, 50, self._DETAIL_LABEL_HEIGHT)
         )
         final_label.setFont_(NSFont.boldSystemFontOfSize_(11.0))
         final_label.setTextColor_(NSColor.labelColor())
-        content.addSubview_(final_label)
+        content_view.addSubview_(final_label)
 
         self._final_text_field = NSTextField.alloc().initWithFrame_(
             NSMakeRect(self._PADDING, y, inner_w, self._FIELD_HEIGHT)
@@ -413,7 +425,7 @@ class HistoryBrowserPanel:
         self._final_text_field.setEditable_(False)
         self._final_text_field.setBezeled_(True)
         self._final_text_field.setFont_(NSFont.systemFontOfSize_(13.0))
-        content.addSubview_(self._final_text_field)
+        content_view.addSubview_(self._final_text_field)
 
         # NSTextField delegate for detecting edits (NSObject subclass)
         tf_delegate_cls = _get_text_field_delegate_class()
@@ -422,15 +434,27 @@ class HistoryBrowserPanel:
         self._final_text_field.setDelegate_(self._text_field_delegate)
 
         y += self._FIELD_HEIGHT + self._DETAIL_LABEL_HEIGHT + 6
+        return y
 
-        # Enhanced text (read-only NSTextView in scroll)
+    def _build_enhanced_text(self, content_view, y, inner_w):
+        """Build Enhanced text read-only view."""
+        from AppKit import (
+            NSBezelBorder,
+            NSColor,
+            NSFont,
+            NSScrollView,
+            NSTextField,
+            NSTextView,
+        )
+        from Foundation import NSMakeRect
+
         self._enhanced_label = NSTextField.labelWithString_("Enhanced:")
         self._enhanced_label.setFrame_(
             NSMakeRect(self._PADDING, y + self._TEXT_VIEW_HEIGHT, inner_w, self._DETAIL_LABEL_HEIGHT)
         )
         self._enhanced_label.setFont_(NSFont.boldSystemFontOfSize_(11.0))
         self._enhanced_label.setTextColor_(NSColor.labelColor())
-        content.addSubview_(self._enhanced_label)
+        content_view.addSubview_(self._enhanced_label)
 
         enhanced_scroll = NSScrollView.alloc().initWithFrame_(
             NSMakeRect(self._PADDING, y, inner_w, self._TEXT_VIEW_HEIGHT)
@@ -445,19 +469,31 @@ class HistoryBrowserPanel:
         tv.setBackgroundColor_(NSColor.textBackgroundColor())
         tv.setTextColor_(NSColor.labelColor())
         enhanced_scroll.setDocumentView_(tv)
-        content.addSubview_(enhanced_scroll)
+        content_view.addSubview_(enhanced_scroll)
         self._enhanced_text_view = tv
 
         y += self._TEXT_VIEW_HEIGHT + self._DETAIL_LABEL_HEIGHT + 6
+        return y
 
-        # ASR text (read-only NSTextView in scroll)
+    def _build_asr_text(self, content_view, y, inner_w):
+        """Build ASR text read-only view."""
+        from AppKit import (
+            NSBezelBorder,
+            NSColor,
+            NSFont,
+            NSScrollView,
+            NSTextField,
+            NSTextView,
+        )
+        from Foundation import NSMakeRect
+
         self._asr_label = NSTextField.labelWithString_("ASR:")
         self._asr_label.setFrame_(
             NSMakeRect(self._PADDING, y + self._TEXT_VIEW_HEIGHT, inner_w, self._DETAIL_LABEL_HEIGHT)
         )
         self._asr_label.setFont_(NSFont.boldSystemFontOfSize_(11.0))
         self._asr_label.setTextColor_(NSColor.labelColor())
-        content.addSubview_(self._asr_label)
+        content_view.addSubview_(self._asr_label)
 
         asr_scroll = NSScrollView.alloc().initWithFrame_(
             NSMakeRect(self._PADDING, y, inner_w, self._TEXT_VIEW_HEIGHT)
@@ -472,12 +508,24 @@ class HistoryBrowserPanel:
         tv2.setBackgroundColor_(NSColor.textBackgroundColor())
         tv2.setTextColor_(NSColor.labelColor())
         asr_scroll.setDocumentView_(tv2)
-        content.addSubview_(asr_scroll)
+        content_view.addSubview_(asr_scroll)
         self._asr_text_view = tv2
 
         y += self._TEXT_VIEW_HEIGHT + self._DETAIL_LABEL_HEIGHT + 8
+        return y
 
-        # --- Table view (list of records) ---
+    def _build_table_view(self, content_view, y, inner_w):
+        """Build Records table."""
+        from AppKit import (
+            NSBezelBorder,
+            NSScrollView,
+            NSTableColumn,
+            NSTableView,
+            NSViewWidthSizable,
+            NSViewHeightSizable,
+        )
+        from Foundation import NSMakeRect, NSMakeSize
+
         table_height = (
             self._PANEL_HEIGHT
             - y
@@ -523,13 +571,25 @@ class HistoryBrowserPanel:
         table.setRowHeight_(22)
 
         table_scroll.setDocumentView_(table)
-        content.addSubview_(table_scroll)
+        content_view.addSubview_(table_scroll)
         self._table_view = table
         self._scroll_view = table_scroll
 
         y += table_height + self._PADDING
+        return y
 
-        # --- Top toolbar: Search + Mode + Model + Corrected checkbox ---
+    def _build_toolbar(self, content_view, y, inner_w):
+        """Build Search, filters, and corrected checkbox."""
+        from AppKit import (
+            NSButton,
+            NSFont,
+            NSPopUpButton,
+            NSSearchField,
+            NSViewWidthSizable,
+            NSViewMinYMargin,
+        )
+        from Foundation import NSMakeRect
+
         mode_popup_w = 120
         model_popup_w = 140
         corrected_cb_w = 90
@@ -542,7 +602,7 @@ class HistoryBrowserPanel:
         search.setTarget_(self)
         search.setAction_(b"searchChanged:")
         search.setAutoresizingMask_(NSViewWidthSizable | NSViewMinYMargin)
-        content.addSubview_(search)
+        content_view.addSubview_(search)
         self._search_field = search
 
         mode_popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
@@ -558,7 +618,7 @@ class HistoryBrowserPanel:
         mode_popup.setTarget_(self)
         mode_popup.setAction_(b"modeFilterChanged:")
         mode_popup.setAutoresizingMask_(NSViewMinYMargin)
-        content.addSubview_(mode_popup)
+        content_view.addSubview_(mode_popup)
         self._mode_popup = mode_popup
 
         model_popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
@@ -574,7 +634,7 @@ class HistoryBrowserPanel:
         model_popup.setTarget_(self)
         model_popup.setAction_(b"modelFilterChanged:")
         model_popup.setAutoresizingMask_(NSViewMinYMargin)
-        content.addSubview_(model_popup)
+        content_view.addSubview_(model_popup)
         self._model_popup = model_popup
 
         corrected_cb = NSButton.alloc().initWithFrame_(
@@ -592,10 +652,10 @@ class HistoryBrowserPanel:
         corrected_cb.setTarget_(self)
         corrected_cb.setAction_(b"correctedFilterChanged:")
         corrected_cb.setAutoresizingMask_(NSViewMinYMargin)
-        content.addSubview_(corrected_cb)
+        content_view.addSubview_(corrected_cb)
         self._corrected_checkbox = corrected_cb
 
-        self._panel = panel
+        return y
 
     # --- Data access for NSObject delegates ---
 

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from voicetext.app import EnhanceCacheEntry
+from voicetext.enhance_controller import EnhanceCacheEntry
 
 
 # ---------------------------------------------------------------------------
@@ -192,8 +192,7 @@ class TestCacheClear:
 
 
 class TestReplayCachedResult:
-    def test_replay_sets_panel_state(self):
-        """replay_cached_result should set text view, labels, and buttons."""
+    def _make_panel(self, user_edited=False):
         panel = MagicMock()
         panel._enhance_text_view = MagicMock()
         panel._enhance_label = MagicMock()
@@ -201,85 +200,62 @@ class TestReplayCachedResult:
         panel._thinking_button = MagicMock()
         panel._thinking_text = ""
         panel._system_prompt = ""
-        panel._user_edited = False
+        panel._user_edited = user_edited
         panel._final_text_field = MagicMock()
         panel._llm_models = None
+        return panel
+
+    def test_replay_sets_panel_state(self, mock_appkit_modules):
+        """replay_cached_result should set text view, labels, and buttons."""
+        panel = self._make_panel()
 
         from voicetext.result_window import ResultPreviewPanel
 
-        # Call the real method but patch AppHelper.callAfter to run immediately
-        with patch("PyObjCTools.AppHelper") as mock_helper:
-            mock_helper.callAfter = lambda fn: fn()
-
-            ResultPreviewPanel.replay_cached_result(
-                panel,
-                display_text="cached text",
-                usage={"total_tokens": 100, "prompt_tokens": 60, "completion_tokens": 40},
-                system_prompt="sys prompt",
-                thinking_text="think",
-                final_text="final",
-            )
+        ResultPreviewPanel.replay_cached_result(
+            panel,
+            display_text="cached text",
+            usage={"total_tokens": 100, "prompt_tokens": 60, "completion_tokens": 40},
+            system_prompt="sys prompt",
+            thinking_text="think",
+            final_text="final",
+        )
 
         panel._enhance_text_view.setString_.assert_called_once_with("cached text")
         assert panel._system_prompt == "sys prompt"
         assert panel._thinking_text == "think"
         panel._final_text_field.setStringValue_.assert_called_once_with("final")
 
-    def test_replay_uses_display_text_when_no_final(self):
+    def test_replay_uses_display_text_when_no_final(self, mock_appkit_modules):
         """When final_text is None, display_text should be used for final field."""
-        panel = MagicMock()
-        panel._enhance_text_view = MagicMock()
-        panel._enhance_label = MagicMock()
-        panel._prompt_button = MagicMock()
-        panel._thinking_button = MagicMock()
-        panel._thinking_text = ""
-        panel._system_prompt = ""
-        panel._user_edited = False
-        panel._final_text_field = MagicMock()
-        panel._llm_models = None
+        panel = self._make_panel()
 
         from voicetext.result_window import ResultPreviewPanel
 
-        with patch("PyObjCTools.AppHelper") as mock_helper:
-            mock_helper.callAfter = lambda fn: fn()
-
-            ResultPreviewPanel.replay_cached_result(
-                panel,
-                display_text="display text",
-                usage=None,
-                system_prompt="",
-                thinking_text="",
-                final_text=None,
-            )
+        ResultPreviewPanel.replay_cached_result(
+            panel,
+            display_text="display text",
+            usage=None,
+            system_prompt="",
+            thinking_text="",
+            final_text=None,
+        )
 
         panel._final_text_field.setStringValue_.assert_called_once_with("display text")
 
-    def test_replay_skipped_when_user_edited(self):
+    def test_replay_skipped_when_user_edited(self, mock_appkit_modules):
         """When user has edited final field, replay should not overwrite it."""
-        panel = MagicMock()
-        panel._enhance_text_view = MagicMock()
-        panel._enhance_label = MagicMock()
-        panel._prompt_button = MagicMock()
-        panel._thinking_button = MagicMock()
-        panel._thinking_text = ""
-        panel._system_prompt = ""
-        panel._user_edited = True
-        panel._final_text_field = MagicMock()
-        panel._llm_models = None
+        panel = self._make_panel(user_edited=True)
 
         from voicetext.result_window import ResultPreviewPanel
 
-        with patch("PyObjCTools.AppHelper") as mock_helper:
-            mock_helper.callAfter = lambda fn: fn()
-
-            ResultPreviewPanel.replay_cached_result(
-                panel,
-                display_text="cached",
-                usage=None,
-                system_prompt="",
-                thinking_text="",
-                final_text="final",
-            )
+        ResultPreviewPanel.replay_cached_result(
+            panel,
+            display_text="cached",
+            usage=None,
+            system_prompt="",
+            thinking_text="",
+            final_text="final",
+        )
 
         panel._final_text_field.setStringValue_.assert_not_called()
 

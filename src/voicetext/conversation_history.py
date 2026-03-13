@@ -312,11 +312,22 @@ class ConversationHistory:
 
         return results
 
-    def format_for_prompt(self, entries: List[Dict[str, Any]]) -> str:
+    # Maximum total characters for formatted history injected into the
+    # system prompt.  Keeps token usage bounded regardless of entry count.
+    _MAX_PROMPT_CHARS = 2000
+
+    def format_for_prompt(
+        self, entries: List[Dict[str, Any]], max_chars: int = 0
+    ) -> str:
         """Format conversation history entries for injection into LLM prompt.
 
+        Entries are added from newest to oldest.  Once the total formatted
+        length would exceed *max_chars*, older entries are dropped.
+
         Args:
-            entries: List of record dicts from get_recent().
+            entries: List of record dicts from get_recent(), oldest first.
+            max_chars: Maximum total characters for the output.  Defaults to
+                ``_MAX_PROMPT_CHARS`` when 0 or negative.
 
         Returns:
             Formatted string for system prompt, or empty string if no entries.
@@ -324,19 +335,42 @@ class ConversationHistory:
         if not entries:
             return ""
 
-        lines = [
+        if max_chars <= 0:
+            max_chars = self._MAX_PROMPT_CHARS
+
+        header_lines = [
             "---",
             "以下是用户近期的对话记录，用于学习纠错偏好和话题上下文。",
             "若 ASR 识别与最终确认不同则用→分隔（识别→确认），相同则表示无需纠错：",
             "",
         ]
+        footer = "---"
+        header_text = "\n".join(header_lines) + "\n"
+        overhead = len(header_text) + len(footer) + 1  # +1 for trailing \n
+
+        # Format all entry lines, then select from newest backwards
+        formatted: List[str] = []
         for entry in entries:
             asr = entry.get("asr_text", "").replace("\n", "\u23ce")
             final = entry.get("final_text", "").replace("\n", "\u23ce")
             if asr == final:
-                lines.append(f"- {final}")
+                formatted.append(f"- {final}")
             else:
-                lines.append(f"- {asr} → {final}")
+                formatted.append(f"- {asr} → {final}")
 
-        lines.append("---")
-        return "\n".join(lines)
+        # Select entries from newest (end) to oldest, respecting budget
+        budget = max_chars - overhead
+        selected: List[str] = []
+        for line in reversed(formatted):
+            # +1 for the newline after the entry line
+            cost = len(line) + 1
+            if budget - cost < 0 and selected:
+                break
+            selected.append(line)
+            budget -= cost
+
+        if not selected:
+            return ""
+
+        selected.reverse()
+        return header_text + "\n".join(selected) + "\n" + footer

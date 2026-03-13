@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import logging
 import logging.handlers
 import os
@@ -18,6 +17,7 @@ from CoreFoundation import kCFBooleanTrue
 
 from .auto_vocab_builder import AutoVocabBuilder
 from .config import load_config, save_config
+from .enhance_controller import EnhanceController
 from .conversation_history import ConversationHistory
 from .usage_stats import UsageStats
 from .enhancer import MODE_OFF, create_enhancer
@@ -64,17 +64,6 @@ from .ui_helpers import (
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclasses.dataclass
-class EnhanceCacheEntry:
-    """Cached result of an AI enhancement run."""
-
-    display_text: str
-    usage: dict | None
-    system_prompt: str
-    thinking_text: str
-    final_text: str | None
 
 
 LOG_DIR = Path.home() / "Library" / "Logs" / "VoiceText"
@@ -177,8 +166,6 @@ class VoiceTextApp(StatusBarApp):
         self._hotkey_listener: Optional[MultiHotkeyListener] = None
         self._busy = False
         self._preview_panel = ResultPreviewPanel()
-        self._enhance_cancel_event: threading.Event | None = None
-        self._enhance_cache: dict[tuple, EnhanceCacheEntry] = {}
         self._conversation_history = ConversationHistory()
         self._usage_stats = UsageStats()
 
@@ -234,6 +221,13 @@ class VoiceTextApp(StatusBarApp):
         self._enhance_mode: str = ai_cfg.get("mode", "proofread")
         if self._enhancer and not ai_cfg.get("enabled", False):
             self._enhance_mode = MODE_OFF
+
+        self._enhance_controller = EnhanceController(
+            enhancer=self._enhancer,
+            preview_panel=self._preview_panel,
+            usage_stats=self._usage_stats,
+        )
+        self._enhance_controller.enhance_mode = self._enhance_mode
 
         # Auto vocabulary builder
         vocab_cfg = ai_cfg.get("vocabulary", {})
@@ -1040,7 +1034,7 @@ class VoiceTextApp(StatusBarApp):
             logger.error("Failed to record usage stats: %s", e)
 
         self._current_preview_asr_text = asr_text or ""
-        self._enhance_cache.clear()
+        self._enhance_controller.clear_cache()
 
         result_event = threading.Event()
         result_holder = {"text": None, "confirmed": False, "enhanced_text": None}
@@ -1065,8 +1059,7 @@ class VoiceTextApp(StatusBarApp):
         def on_cancel() -> None:
             result_holder["confirmed"] = False
             # Stop any in-flight streaming enhancement
-            if self._enhance_cancel_event is not None:
-                self._enhance_cancel_event.set()
+            self._enhance_controller.cancel()
             try:
                 self._usage_stats.record_cancel()
             except Exception as e:
@@ -1195,7 +1188,7 @@ class VoiceTextApp(StatusBarApp):
                 elif use_enhance:
                     # ASR already available, start enhancement immediately
                     self._preview_panel.enhance_request_id += 1
-                    self._run_enhance_in_background(
+                    self._enhance_controller.run(
                         asr_text, self._preview_panel.enhance_request_id, result_holder
                     )
 
@@ -1222,7 +1215,7 @@ class VoiceTextApp(StatusBarApp):
                     logger.warning("Transcription returned empty text")
 
                 self._current_preview_asr_text = stt_text
-                self._enhance_cache.clear()
+                self._enhance_controller.clear_cache()
 
                 # Build ASR info
                 parts = []
@@ -1242,7 +1235,7 @@ class VoiceTextApp(StatusBarApp):
                     # Start enhancement now that ASR is ready
                     if use_enhance and stt_text != "(empty)":
                         self._preview_panel.enhance_request_id += 1
-                        self._run_enhance_in_background(
+                        self._enhance_controller.run(
                             stt_text, self._preview_panel.enhance_request_id,
                             result_holder,
                         )
@@ -1387,7 +1380,7 @@ class VoiceTextApp(StatusBarApp):
             logger.error("Failed to record clipboard enhance: %s", e)
 
         self._current_preview_asr_text = clipboard_text
-        self._enhance_cache.clear()
+        self._enhance_controller.clear_cache()
 
         result_event = threading.Event()
         result_holder = {"text": None, "confirmed": False, "enhanced_text": None}
@@ -1408,8 +1401,7 @@ class VoiceTextApp(StatusBarApp):
         def on_cancel() -> None:
             result_holder["confirmed"] = False
             # Stop any in-flight streaming enhancement
-            if self._enhance_cancel_event is not None:
-                self._enhance_cancel_event.set()
+            self._enhance_controller.cancel()
             result_event.set()
 
         # Build mode list for the segmented control
@@ -1474,7 +1466,7 @@ class VoiceTextApp(StatusBarApp):
             )
             if use_enhance:
                 self._preview_panel.enhance_request_id += 1
-                self._run_enhance_in_background(
+                self._enhance_controller.run(
                     clipboard_text, self._preview_panel.enhance_request_id, result_holder
                 )
 
@@ -1531,305 +1523,13 @@ class VoiceTextApp(StatusBarApp):
                 logger.error("Failed to record clipboard cancel: %s", e)
             logger.info("Clipboard enhance cancelled by user")
 
-    def _enhance_cache_key(self) -> tuple:
-        """Build cache key from current enhance settings."""
-        return (
-            self._enhance_mode,
-            self._enhancer.provider_name if self._enhancer else "",
-            self._enhancer.model_name if self._enhancer else "",
-            self._enhancer.thinking if self._enhancer else False,
-        )
-
-    def _run_enhance_in_background(
-        self, asr_text: str, request_id: int, result_holder: dict | None = None,
-    ) -> None:
-        """Run AI enhancement in a background thread with streaming."""
-        # Cancel any in-flight enhancement and create a fresh cancel event
-        if self._enhance_cancel_event is not None:
-            self._enhance_cancel_event.set()
-        cancel_event = threading.Event()
-        self._enhance_cancel_event = cancel_event
-
-        # Resolve chain steps
-        current_mode_def = self._enhancer.get_mode_definition(self._enhance_mode)
-        chain_steps: list[str] = []
-        if current_mode_def and current_mode_def.steps:
-            for step_id in current_mode_def.steps:
-                step_def = self._enhancer.get_mode_definition(step_id)
-                if step_def:
-                    chain_steps.append(step_id)
-                else:
-                    logger.warning("Chain step '%s' not found, skipping", step_id)
-
-        def _enhance():
-            try:
-                if chain_steps:
-                    self._run_chain_enhance(
-                        asr_text, request_id, result_holder, cancel_event,
-                        chain_steps, current_mode_def.mode_id,
-                    )
-                else:
-                    self._run_single_enhance(
-                        asr_text, request_id, result_holder, cancel_event,
-                    )
-            except Exception as e:
-                logger.error("AI enhancement failed: %s", e)
-                self._preview_panel.set_enhance_result(
-                    f"(error: {e})", request_id=request_id
-                )
-
-        threading.Thread(target=_enhance, daemon=True).start()
-
-    def _run_single_enhance(
-        self, asr_text: str, request_id: int,
-        result_holder: dict | None, cancel_event: threading.Event,
-    ) -> None:
-        """Run a single-step streaming enhancement."""
-        loop = asyncio.new_event_loop()
-        collected: list[str] = []
-        usage = None
-        cancelled = False
-
-        async def _stream():
-            nonlocal usage, cancelled
-            gen = self._enhancer.enhance_stream(asr_text)
-            completion_tokens = 0
-            thinking_tokens = 0
-            had_thinking = False
-            first_chunk = True
-            try:
-                async for chunk, chunk_usage, is_thinking in gen:
-                    if first_chunk:
-                        first_chunk = False
-                        self._preview_panel.update_system_prompt(
-                            self._enhancer.last_system_prompt
-                        )
-                    if cancel_event is not None and cancel_event.is_set():
-                        cancelled = True
-                        return
-                    if is_thinking == "retry" and chunk:
-                        # Retry status — show as gray italic, update label as retry
-                        had_thinking = True
-                        self._preview_panel.append_thinking_text(
-                            chunk, request_id=request_id,
-                            thinking_tokens=0,
-                        )
-                        label = chunk.strip().strip("()\n")
-                        self._preview_panel.set_enhance_label(
-                            f"\u23f3 {label}", request_id=request_id,
-                        )
-                    elif is_thinking and chunk:
-                        had_thinking = True
-                        thinking_tokens += 1
-                        self._preview_panel.append_thinking_text(
-                            chunk, request_id=request_id,
-                            thinking_tokens=thinking_tokens,
-                        )
-                    elif chunk:
-                        if had_thinking:
-                            had_thinking = False
-                            self._preview_panel.clear_enhance_text(
-                                request_id=request_id,
-                            )
-                        collected.append(chunk)
-                        completion_tokens += 1
-                        self._preview_panel.append_enhance_text(
-                            chunk, request_id=request_id,
-                            completion_tokens=completion_tokens,
-                        )
-                    if chunk_usage is not None:
-                        usage = chunk_usage
-            finally:
-                await gen.aclose()
-
-        loop.run_until_complete(_stream())
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.close()
-
-        if cancelled:
-            logger.info("AI enhancement cancelled by user")
-            return
-
-        enhanced = "".join(collected).strip() or asr_text
-        if result_holder is not None:
-            result_holder["enhanced_text"] = enhanced
-
-        if collected:
-            try:
-                self._usage_stats.record_token_usage(usage)
-            except Exception as e:
-                logger.error("Failed to record token usage: %s", e)
-            system_prompt = self._enhancer.last_system_prompt
-            self._preview_panel.set_enhance_complete(
-                request_id=request_id, usage=usage,
-                system_prompt=system_prompt,
-            )
-            display_text = "".join(collected)
-            cache_key = self._enhance_cache_key()
-            self._enhance_cache[cache_key] = EnhanceCacheEntry(
-                display_text=display_text,
-                usage=usage,
-                system_prompt=system_prompt,
-                thinking_text=self._preview_panel._thinking_text,
-                final_text=None,
-            )
-        else:
-            # All retries failed — update label, don't touch Final Result
-            self._preview_panel.set_enhance_label(
-                "Connection failed", request_id=request_id,
-            )
-
-    def _run_chain_enhance(
-        self, asr_text: str, request_id: int,
-        result_holder: dict | None, cancel_event: threading.Event,
-        chain_steps: list[str], original_mode_id: str,
-    ) -> None:
-        """Run a multi-step chain enhancement with streaming."""
-        loop = asyncio.new_event_loop()
-        total_steps = len(chain_steps)
-        input_text = asr_text
-        total_usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        cancelled = False
-
-        try:
-            for step_idx, step_id in enumerate(chain_steps, 1):
-                if cancel_event is not None and cancel_event.is_set():
-                    cancelled = True
-                    break
-
-                step_def = self._enhancer.get_mode_definition(step_id)
-                step_label = step_def.label if step_def else step_id
-
-                # Show step info in the label
-                self._preview_panel.set_enhance_step_info(step_idx, total_steps, step_label)
-
-                # Append separator before non-first steps
-                if step_idx > 1:
-                    separator = f"\n\n--- {step_label} ---\n\n"
-                    self._preview_panel.append_enhance_text(
-                        separator, request_id=request_id, completion_tokens=0,
-                    )
-
-                # Set enhancer mode to this step
-                self._enhancer.mode = step_id
-
-                collected: list[str] = []
-                step_usage = None
-
-                async def _stream_step(text_input: str) -> None:
-                    nonlocal step_usage, cancelled
-                    gen = self._enhancer.enhance_stream(text_input)
-                    completion_tokens = 0
-                    thinking_tokens = 0
-                    had_thinking = False
-                    first_chunk = True
-                    try:
-                        async for chunk, chunk_usage, is_thinking in gen:
-                            if first_chunk:
-                                first_chunk = False
-                                self._preview_panel.update_system_prompt(
-                                    self._enhancer.last_system_prompt
-                                )
-                            if cancel_event is not None and cancel_event.is_set():
-                                cancelled = True
-                                return
-                            if is_thinking == "retry" and chunk:
-                                had_thinking = True
-                                self._preview_panel.append_thinking_text(
-                                    chunk, request_id=request_id,
-                                    thinking_tokens=0,
-                                )
-                                label = chunk.strip().strip("()\n")
-                                self._preview_panel.set_enhance_label(
-                                    f"\u23f3 {label}", request_id=request_id,
-                                )
-                            elif is_thinking and chunk:
-                                had_thinking = True
-                                thinking_tokens += 1
-                                self._preview_panel.append_thinking_text(
-                                    chunk, request_id=request_id,
-                                    thinking_tokens=thinking_tokens,
-                                )
-                            elif chunk:
-                                if had_thinking:
-                                    had_thinking = False
-                                    # For chain mode, don't clear previous steps' content
-                                collected.append(chunk)
-                                completion_tokens += 1
-                                self._preview_panel.append_enhance_text(
-                                    chunk, request_id=request_id,
-                                    completion_tokens=completion_tokens,
-                                )
-                            if chunk_usage is not None:
-                                step_usage = chunk_usage
-                    finally:
-                        await gen.aclose()
-
-                loop.run_until_complete(_stream_step(input_text))
-
-                if cancelled:
-                    break
-
-                # This step's output becomes next step's input
-                step_result = "".join(collected).strip()
-                if step_result:
-                    input_text = step_result
-
-                # Accumulate token usage
-                if step_usage:
-                    total_usage["prompt_tokens"] += step_usage.get("prompt_tokens", 0)
-                    total_usage["completion_tokens"] += step_usage.get("completion_tokens", 0)
-                    total_usage["total_tokens"] += step_usage.get("total_tokens", 0)
-                try:
-                    self._usage_stats.record_token_usage(step_usage)
-                except Exception as e:
-                    logger.error("Failed to record token usage: %s", e)
-
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.close()
-
-            if cancelled:
-                logger.info("AI enhancement chain cancelled by user")
-                return
-
-            # Final result is the last step's output
-            enhanced = input_text.strip() or asr_text
-            if result_holder is not None:
-                result_holder["enhanced_text"] = enhanced
-            system_prompt = self._enhancer.last_system_prompt
-            self._preview_panel.set_enhance_complete(
-                request_id=request_id,
-                usage=total_usage if total_usage["total_tokens"] > 0 else None,
-                system_prompt=system_prompt,
-                final_text=enhanced,
-            )
-            display_text = (
-                str(self._preview_panel._enhance_text_view.string())
-                if self._preview_panel._enhance_text_view else ""
-            )
-            cache_key = (
-                original_mode_id,
-                self._enhancer.provider_name,
-                self._enhancer.model_name,
-                self._enhancer.thinking,
-            )
-            self._enhance_cache[cache_key] = EnhanceCacheEntry(
-                display_text=display_text,
-                usage=total_usage if total_usage["total_tokens"] > 0 else None,
-                system_prompt=system_prompt,
-                thinking_text=self._preview_panel._thinking_text,
-                final_text=enhanced,
-            )
-        finally:
-            # Restore enhancer mode to the original chain mode id
-            self._enhancer.mode = original_mode_id
-
     def _on_preview_mode_change(self, mode_id: str) -> None:
         """Handle mode switch from the preview panel's segmented control."""
         from PyObjCTools import AppHelper
 
         # Update enhance mode
         self._enhance_mode = mode_id
+        self._enhance_controller.enhance_mode = mode_id
 
         # Sync menu bar checkmarks
         for m, item in self._enhance_menu_items.items():
@@ -1854,8 +1554,7 @@ class VoiceTextApp(StatusBarApp):
         if mode_id == MODE_OFF:
             AppHelper.callAfter(self._preview_panel.set_enhance_off)
         else:
-            cache_key = self._enhance_cache_key()
-            cached = self._enhance_cache.get(cache_key)
+            cached = self._enhance_controller.get_cached()
             if cached is not None:
                 self._preview_panel.replay_cached_result(
                     display_text=cached.display_text,
@@ -1868,7 +1567,7 @@ class VoiceTextApp(StatusBarApp):
                 AppHelper.callAfter(self._preview_panel.set_enhance_loading)
                 self._preview_panel.enhance_request_id += 1
                 asr_text = getattr(self, "_current_preview_asr_text", "")
-                self._run_enhance_in_background(
+                self._enhance_controller.run(
                     asr_text, self._preview_panel.enhance_request_id
                 )
 
@@ -1970,13 +1669,13 @@ class VoiceTextApp(StatusBarApp):
                         new_text, asr_info=new_asr_info, request_id=request_id,
                     )
                     self._current_preview_asr_text = new_text
-                    self._enhance_cache.clear()
+                    self._enhance_controller.clear_cache()
 
                     # Re-run enhance if mode is not Off
                     if self._enhance_mode != MODE_OFF and self._enhancer:
                         self._preview_panel.set_enhance_loading()
                         self._preview_panel.enhance_request_id += 1
-                        self._run_enhance_in_background(
+                        self._enhance_controller.run(
                             new_text, self._preview_panel.enhance_request_id
                         )
 
@@ -2031,8 +1730,7 @@ class VoiceTextApp(StatusBarApp):
 
         # Re-run enhance if mode is not Off
         if self._enhance_mode != MODE_OFF:
-            cache_key = self._enhance_cache_key()
-            cached = self._enhance_cache.get(cache_key)
+            cached = self._enhance_controller.get_cached()
             if cached is not None:
                 self._preview_panel.replay_cached_result(
                     display_text=cached.display_text,
@@ -2045,7 +1743,7 @@ class VoiceTextApp(StatusBarApp):
                 self._preview_panel.set_enhance_loading()
                 self._preview_panel.enhance_request_id += 1
                 asr_text = getattr(self, "_current_preview_asr_text", "")
-                self._run_enhance_in_background(
+                self._enhance_controller.run(
                     asr_text, self._preview_panel.enhance_request_id
                 )
 
@@ -2075,13 +1773,13 @@ class VoiceTextApp(StatusBarApp):
                         new_text, asr_info=new_asr_info, request_id=request_id,
                     )
                     self._current_preview_asr_text = new_text
-                    self._enhance_cache.clear()
+                    self._enhance_controller.clear_cache()
 
                     # Re-run enhance if mode is not Off
                     if self._enhance_mode != MODE_OFF and self._enhancer:
                         self._preview_panel.set_enhance_loading()
                         self._preview_panel.enhance_request_id += 1
-                        self._run_enhance_in_background(
+                        self._enhance_controller.run(
                             new_text, self._preview_panel.enhance_request_id
                         )
 
@@ -2108,6 +1806,7 @@ class VoiceTextApp(StatusBarApp):
             item.state = 1 if m == mode else 0
 
         self._enhance_mode = mode
+        self._enhance_controller.enhance_mode = mode
 
         # Update enhancer state
         if self._enhancer:
@@ -2269,8 +1968,7 @@ Output only the processed text without any explanation."""
 
         # Re-trigger enhancement if currently active
         if self._enhance_mode != MODE_OFF:
-            cache_key = self._enhance_cache_key()
-            cached = self._enhance_cache.get(cache_key)
+            cached = self._enhance_controller.get_cached()
             if cached is not None:
                 self._preview_panel.replay_cached_result(
                     display_text=cached.display_text,
@@ -2283,7 +1981,7 @@ Output only the processed text without any explanation."""
                 AppHelper.callAfter(self._preview_panel.set_enhance_loading)
                 self._preview_panel.enhance_request_id += 1
                 asr_text = getattr(self, "_current_preview_asr_text", "")
-                self._run_enhance_in_background(
+                self._enhance_controller.run(
                     asr_text, self._preview_panel.enhance_request_id
                 )
 
@@ -2627,6 +2325,7 @@ Output only the processed text without any explanation."""
             if not ai_cfg.get("enabled", False):
                 new_mode = MODE_OFF
             self._enhance_mode = new_mode
+            self._enhance_controller.enhance_mode = new_mode
             if new_mode == MODE_OFF:
                 self._enhancer._enabled = False
             else:
@@ -3187,6 +2886,7 @@ Output only the processed text without any explanation."""
             item.state = 1 if m == mode_id else 0
 
         self._enhance_mode = mode_id
+        self._enhance_controller.enhance_mode = mode_id
 
         if self._enhancer:
             if mode_id == MODE_OFF:
