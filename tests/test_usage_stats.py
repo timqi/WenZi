@@ -233,6 +233,7 @@ class TestInitialStateNewCounters:
         assert s["totals"]["clipboard_enhance_cancel"] == 0
         assert s["totals"]["output_type_text"] == 0
         assert s["totals"]["output_copy_clipboard"] == 0
+        assert s["totals"]["google_translate_opens"] == 0
 
 
 class TestRecordClipboardEnhance:
@@ -318,6 +319,25 @@ class TestRecordOutputMethod:
         stats.record_output_method(copy_to_clipboard=True)
         today = stats.get_today_stats()
         assert today["totals"]["output_copy_clipboard"] == 1
+
+
+class TestRecordGoogleTranslateOpen:
+    def test_record_google_translate_open(self, stats):
+        stats.record_google_translate_open()
+        s = stats.get_stats()
+        assert s["totals"]["google_translate_opens"] == 1
+
+    def test_record_google_translate_open_multiple(self, stats):
+        stats.record_google_translate_open()
+        stats.record_google_translate_open()
+        stats.record_google_translate_open()
+        s = stats.get_stats()
+        assert s["totals"]["google_translate_opens"] == 3
+
+    def test_record_google_translate_open_daily(self, stats):
+        stats.record_google_translate_open()
+        today = stats.get_today_stats()
+        assert today["totals"]["google_translate_opens"] == 1
 
 
 class TestThreadSafety:

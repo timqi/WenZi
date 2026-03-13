@@ -17,6 +17,7 @@ dependencies = [
     "openai-agents>=0.11.0",
     "fastembed>=0.7.0",
     "pyobjc-framework-Speech>=10.0",
+    "pyobjc-framework-webkit>=12.1",
 ]
 # NOTE: funasr-onnx declares numpy<=1.26.4 while fastembed declares numpy>=2.1.0,
 # but fastembed works fine at runtime with numpy 1.26.4. The override below

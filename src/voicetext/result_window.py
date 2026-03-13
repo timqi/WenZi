@@ -97,6 +97,9 @@ class ResultPreviewPanel:
         self._confirm_btn = None
         self._flags_monitor = None
         self._cmd_held = False
+        self._google_translate_button = None
+        self._translate_webview = None
+        self._on_google_translate: Optional[Callable[[], None]] = None
 
     def show(
         self,
@@ -121,6 +124,7 @@ class ResultPreviewPanel:
         on_punc_toggle: Optional[Callable[[bool], None]] = None,
         thinking_enabled: bool = False,
         on_thinking_toggle: Optional[Callable[[bool], None]] = None,
+        on_google_translate: Optional[Callable[[], None]] = None,
     ) -> None:
         """Show the preview panel with ASR text.
 
@@ -146,6 +150,7 @@ class ResultPreviewPanel:
             on_punc_toggle: Callback when user toggles the Punc checkbox.
             thinking_enabled: Whether AI thinking mode is enabled.
             on_thinking_toggle: Callback when user toggles the Thinking checkbox.
+            on_google_translate: Callback when user opens Google Translate WebView.
         """
         self._on_confirm = on_confirm
         self._on_cancel = on_cancel
@@ -156,6 +161,7 @@ class ResultPreviewPanel:
         self._punc_enabled = punc_enabled
         self._on_thinking_toggle = on_thinking_toggle
         self._thinking_enabled = thinking_enabled
+        self._on_google_translate = on_google_translate
         self._user_edited = False
         self._show_enhance = show_enhance
         self._asr_text = asr_text
@@ -800,11 +806,31 @@ class ResultPreviewPanel:
 
         # Final result label — prominent blue to highlight the primary editing area
         from AppKit import NSColor as _NSColor
+        translate_btn_width = 86
+        label_width = inner_width - translate_btn_width - 4
         final_label = NSTextField.labelWithString_("Final Result (editable)")
-        final_label.setFrame_(NSMakeRect(self._PADDING, y + self._EDIT_HEIGHT, inner_width, self._LABEL_HEIGHT))
+        final_label.setFrame_(NSMakeRect(self._PADDING, y + self._EDIT_HEIGHT, label_width, self._LABEL_HEIGHT))
         final_label.setFont_(NSFont.boldSystemFontOfSize_(13))
         final_label.setTextColor_(_NSColor.systemBlueColor())
         content_view.addSubview_(final_label)
+
+        # "Translate ↗" button to open Google Translate for verification
+        translate_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(
+                self._PANEL_WIDTH - self._PADDING - translate_btn_width,
+                y + self._EDIT_HEIGHT - 2,
+                translate_btn_width,
+                self._LABEL_HEIGHT + 4,
+            )
+        )
+        translate_btn.setTitle_("Translate \u2197")
+        translate_btn.setBezelStyle_(1)
+        translate_btn.setBordered_(True)
+        translate_btn.setFont_(NSFont.systemFontOfSize_(10))
+        translate_btn.setTarget_(self)
+        translate_btn.setAction_(b"googleTranslateClicked:")
+        content_view.addSubview_(translate_btn)
+        self._google_translate_button = translate_btn
 
         # Final result editable text field (NSTextField with wrapping)
         final_field = NSTextField.alloc().initWithFrame_(
@@ -1270,6 +1296,23 @@ class ResultPreviewPanel:
         self.close()
         if callback is not None:
             callback()
+
+    def googleTranslateClicked_(self, sender) -> None:
+        """Handle Translate ↗ button click — open Google Translate in a WebView."""
+        if self._final_text_field is None:
+            return
+        text = self._final_text_field.stringValue()
+        if not text or not text.strip():
+            return
+
+        from .translate_webview import TranslateWebViewPanel
+
+        if self._translate_webview is None:
+            self._translate_webview = TranslateWebViewPanel()
+        self._translate_webview.show(text.strip())
+
+        if self._on_google_translate is not None:
+            self._on_google_translate()
 
     def playAudioClicked_(self, sender) -> None:
         """Handle Play ▶ button click — play back the recorded WAV audio."""

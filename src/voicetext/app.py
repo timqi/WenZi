@@ -811,6 +811,7 @@ class VoiceTextApp(rumps.App):
                 on_punc_toggle=self._on_preview_punc_toggle if wav_data else None,
                 thinking_enabled=self._enhancer.thinking if self._enhancer else False,
                 on_thinking_toggle=self._on_preview_thinking_toggle if self._enhancer else None,
+                on_google_translate=lambda: self._usage_stats.record_google_translate_open(),
             )
             if need_stt:
                 # Show loading state and disable STT popup during transcription
@@ -1086,6 +1087,7 @@ class VoiceTextApp(rumps.App):
                 source="clipboard",
                 thinking_enabled=self._enhancer.thinking if self._enhancer else False,
                 on_thinking_toggle=self._on_preview_thinking_toggle if self._enhancer else None,
+                on_google_translate=lambda: self._usage_stats.record_google_translate_open(),
             )
             if use_enhance:
                 self._preview_panel.enhance_request_id += 1
@@ -3567,6 +3569,10 @@ models:
                 lines.append(
                     f"Output: Type {ot}  |  Clipboard {oc}"
                 )
+
+            gt = t.get("google_translate_opens", 0)
+            if gt:
+                lines.append(f"Google Translate: {gt}")
 
             if em:
                 lines.append("Enhance modes:")
