@@ -960,8 +960,15 @@ class VoiceTextApp(rumps.App):
                     completion_tokens = 0
                     thinking_tokens = 0
                     had_thinking = False
+                    first_chunk = True
                     try:
                         async for chunk, chunk_usage, is_thinking in gen:
+                            # Update system prompt as soon as streaming starts
+                            if first_chunk:
+                                first_chunk = False
+                                self._preview_panel.update_system_prompt(
+                                    self._enhancer.last_system_prompt
+                                )
                             # Check cancellation between chunks
                             if cancel_event is not None and cancel_event.is_set():
                                 cancelled = True

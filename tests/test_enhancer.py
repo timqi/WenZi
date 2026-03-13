@@ -8,7 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from voicetext.conversation_history import ConversationHistory
-from voicetext.enhancer import MODE_OFF, TextEnhancer, build_disable_thinking_body, create_enhancer
+from voicetext.enhancer import (
+    MODE_OFF,
+    TextEnhancer,
+    build_thinking_body,
+    _is_deepseek_reasoning_model,
+    _is_openai_reasoning_model,
+    create_enhancer,
+)
 from voicetext.mode_loader import ModeDefinition
 from voicetext.vocabulary import VocabularyEntry, VocabularyIndex
 
@@ -704,9 +711,45 @@ class TestThinkingAndExtraBody:
         result = enhancer._build_extra_body({})
         assert result == {"thinking": {"type": "disabled"}}
 
-    def test_build_extra_body_thinking_on(self):
+    def test_build_extra_body_thinking_on_qwen(self):
         with patch("voicetext.enhancer.TextEnhancer._init_providers"):
             enhancer = TextEnhancer(_make_config(thinking=True))
+            enhancer._active_model = "qwen2.5:7b"
+        result = enhancer._build_extra_body({})
+        assert result == {"chat_template_kwargs": {"enable_thinking": True}}
+
+    def test_build_extra_body_thinking_on_glm(self):
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(thinking=True))
+            enhancer._active_model = "glm-4-flash"
+        result = enhancer._build_extra_body({})
+        assert result == {"thinking": {"type": "enabled"}}
+
+    def test_build_extra_body_thinking_on_unknown_model(self):
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(thinking=True))
+            enhancer._active_model = "llama-3.1:8b"
+        result = enhancer._build_extra_body({})
+        assert result == {}
+
+    def test_build_extra_body_thinking_off_unknown_model(self):
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(thinking=False))
+            enhancer._active_model = "llama-3.1:8b"
+        result = enhancer._build_extra_body({})
+        assert result == {}
+
+    def test_build_extra_body_thinking_on_openai_reasoning(self):
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(thinking=True))
+            enhancer._active_model = "o3-mini"
+        result = enhancer._build_extra_body({})
+        assert result == {"reasoning_effort": "low"}
+
+    def test_build_extra_body_thinking_off_openai_reasoning(self):
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(thinking=False))
+            enhancer._active_model = "o3-mini"
         result = enhancer._build_extra_body({})
         assert result == {}
 
@@ -736,21 +779,84 @@ class TestThinkingAndExtraBody:
         assert result["chat_template_kwargs"] == {"enable_thinking": False}
         assert result["custom_field"] == "value"
 
-    def test_build_disable_thinking_body_qwen(self):
-        result = build_disable_thinking_body("qwen2.5:7b")
+    # --- build_thinking_body tests ---
+
+    def test_build_thinking_body_qwen_disabled(self):
+        result = build_thinking_body("qwen2.5:7b", enabled=False)
         assert result == {"chat_template_kwargs": {"enable_thinking": False}}
 
-    def test_build_disable_thinking_body_glm(self):
-        result = build_disable_thinking_body("glm-4-flash")
+    def test_build_thinking_body_qwen_enabled(self):
+        result = build_thinking_body("qwen2.5:7b", enabled=True)
+        assert result == {"chat_template_kwargs": {"enable_thinking": True}}
+
+    def test_build_thinking_body_glm_disabled(self):
+        result = build_thinking_body("glm-4-flash", enabled=False)
         assert result == {"thinking": {"type": "disabled"}}
 
-    def test_build_disable_thinking_body_glm_case_insensitive(self):
-        result = build_disable_thinking_body("GLM-4")
+    def test_build_thinking_body_glm_enabled(self):
+        result = build_thinking_body("glm-4-flash", enabled=True)
+        assert result == {"thinking": {"type": "enabled"}}
+
+    def test_build_thinking_body_glm_case_insensitive(self):
+        result = build_thinking_body("GLM-4", enabled=False)
         assert result == {"thinking": {"type": "disabled"}}
 
-    def test_build_disable_thinking_body_empty(self):
-        result = build_disable_thinking_body("")
-        assert result == {"chat_template_kwargs": {"enable_thinking": False}}
+    def test_build_thinking_body_openai_o1_enabled(self):
+        result = build_thinking_body("o1-preview", enabled=True)
+        assert result == {"reasoning_effort": "low"}
+
+    def test_build_thinking_body_openai_o3_enabled(self):
+        result = build_thinking_body("o3-mini", enabled=True)
+        assert result == {"reasoning_effort": "low"}
+
+    def test_build_thinking_body_openai_o4_mini_enabled(self):
+        result = build_thinking_body("o4-mini", enabled=True)
+        assert result == {"reasoning_effort": "low"}
+
+    def test_build_thinking_body_openai_reasoning_disabled(self):
+        result = build_thinking_body("o3-mini", enabled=False)
+        assert result == {}
+
+    def test_build_thinking_body_deepseek_r1_enabled(self):
+        result = build_thinking_body("deepseek-r1", enabled=True)
+        assert result == {"reasoning_effort": "low"}
+
+    def test_build_thinking_body_deepseek_reasoner_enabled(self):
+        result = build_thinking_body("deepseek-reasoner", enabled=True)
+        assert result == {"reasoning_effort": "low"}
+
+    def test_build_thinking_body_deepseek_reasoning_disabled(self):
+        result = build_thinking_body("deepseek-r1", enabled=False)
+        assert result == {}
+
+    def test_build_thinking_body_unknown_model(self):
+        result = build_thinking_body("llama-3.1:8b", enabled=False)
+        assert result == {}
+
+    def test_build_thinking_body_unknown_model_enabled(self):
+        result = build_thinking_body("llama-3.1:8b", enabled=True)
+        assert result == {}
+
+    def test_build_thinking_body_empty_model(self):
+        result = build_thinking_body("", enabled=False)
+        assert result == {}
+
+    # --- helper function tests ---
+
+    def test_is_openai_reasoning_model(self):
+        assert _is_openai_reasoning_model("o1") is True
+        assert _is_openai_reasoning_model("o1-preview") is True
+        assert _is_openai_reasoning_model("o3-mini") is True
+        assert _is_openai_reasoning_model("o4-mini") is True
+        assert _is_openai_reasoning_model("gpt-4o") is False
+        assert _is_openai_reasoning_model("qwen") is False
+
+    def test_is_deepseek_reasoning_model(self):
+        assert _is_deepseek_reasoning_model("deepseek-r1") is True
+        assert _is_deepseek_reasoning_model("deepseek-r1-distill") is True
+        assert _is_deepseek_reasoning_model("deepseek-reasoner") is True
+        assert _is_deepseek_reasoning_model("deepseek-chat") is False
+        assert _is_deepseek_reasoning_model("deepseek-v3") is False
 
     def test_enhance_passes_extra_body_when_thinking_off(self):
         mock_client = _make_mock_client("enhanced")
@@ -784,7 +890,7 @@ class TestThinkingAndExtraBody:
             "thinking": {"type": "disabled"}
         }
 
-    def test_enhance_no_extra_body_when_thinking_on(self):
+    def test_enhance_extra_body_when_thinking_on_qwen(self):
         mock_client = _make_mock_client("enhanced")
         with patch("voicetext.enhancer.TextEnhancer._init_providers"):
             enhancer = TextEnhancer(_make_config(enabled=True, thinking=True))
@@ -793,6 +899,36 @@ class TestThinkingAndExtraBody:
             }
             enhancer._active_provider = "ollama"
             enhancer._active_model = "qwen2.5:7b"
+
+        asyncio.get_event_loop().run_until_complete(enhancer.enhance("hello"))
+        call_kwargs = mock_client.chat.completions.create.call_args
+        assert call_kwargs.kwargs.get("extra_body") == {
+            "chat_template_kwargs": {"enable_thinking": True}
+        }
+
+    def test_enhance_no_extra_body_when_thinking_on_unknown(self):
+        mock_client = _make_mock_client("enhanced")
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(enabled=True, thinking=True))
+            enhancer._providers = {
+                "ollama": (mock_client, ["llama-3.1:8b"], {}),
+            }
+            enhancer._active_provider = "ollama"
+            enhancer._active_model = "llama-3.1:8b"
+
+        asyncio.get_event_loop().run_until_complete(enhancer.enhance("hello"))
+        call_kwargs = mock_client.chat.completions.create.call_args
+        assert "extra_body" not in call_kwargs.kwargs
+
+    def test_enhance_no_extra_body_when_thinking_off_unknown(self):
+        mock_client = _make_mock_client("enhanced")
+        with patch("voicetext.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(_make_config(enabled=True, thinking=False))
+            enhancer._providers = {
+                "ollama": (mock_client, ["llama-3.1:8b"], {}),
+            }
+            enhancer._active_provider = "ollama"
+            enhancer._active_model = "llama-3.1:8b"
 
         asyncio.get_event_loop().run_until_complete(enhancer.enhance("hello"))
         call_kwargs = mock_client.chat.completions.create.call_args

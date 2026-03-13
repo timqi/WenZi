@@ -344,6 +344,20 @@ class ResultPreviewPanel:
 
         AppHelper.callAfter(_update)
 
+    def update_system_prompt(self, system_prompt: str) -> None:
+        """Update the stored system prompt and enable the prompt button."""
+        if not system_prompt:
+            return
+
+        from PyObjCTools import AppHelper
+
+        def _update():
+            self._system_prompt = system_prompt
+            if self._prompt_button is not None:
+                self._prompt_button.setEnabled_(True)
+
+        AppHelper.callAfter(_update)
+
     def set_enhance_complete(
         self, request_id: int = 0, usage: dict | None = None,
         system_prompt: str = "",

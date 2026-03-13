@@ -26,15 +26,55 @@ THINKING_BREVITY_HINT = (
 )
 
 
-def build_disable_thinking_body(model: str) -> Dict[str, Any]:
-    """Build extra_body parameters to disable thinking for a given model.
+def _is_openai_reasoning_model(model_lower: str) -> bool:
+    """Check if model is an OpenAI reasoning model (o1, o3, o4-mini, etc.)."""
+    for prefix in ("o1", "o3", "o4-mini"):
+        if model_lower.startswith(prefix):
+            return True
+    return False
 
-    - GLM models: {"thinking": {"type": "disabled"}}
-    - Other models (Qwen etc.): {"chat_template_kwargs": {"enable_thinking": False}}
+
+def _is_deepseek_reasoning_model(model_lower: str) -> bool:
+    """Check if model is a DeepSeek reasoning model."""
+    return model_lower.startswith("deepseek-r1") or model_lower.startswith(
+        "deepseek-reasoner"
+    )
+
+
+def build_thinking_body(model: str, enabled: bool) -> Dict[str, Any]:
+    """Build extra_body parameters to control thinking for a given model.
+
+    Returns model-specific parameters, or empty dict if the model does not
+    support a thinking toggle.
+
+    | Model type        | enabled=True                              | enabled=False                             |
+    |-------------------|-------------------------------------------|-------------------------------------------|
+    | GLM               | {"thinking": {"type": "enabled"}}         | {"thinking": {"type": "disabled"}}        |
+    | Qwen              | chat_template_kwargs enable_thinking=True | chat_template_kwargs enable_thinking=False|
+    | OpenAI reasoning  | {"reasoning_effort": "low"}               | {} (no param)                             |
+    | DeepSeek reasoning| {"reasoning_effort": "low"}               | {} (no param)                             |
+    | Other             | {} (no param)                             | {} (no param)                             |
     """
-    if model and "glm" in model.lower():
-        return {"thinking": {"type": "disabled"}}
-    return {"chat_template_kwargs": {"enable_thinking": False}}
+    if not model:
+        return {}
+    model_lower = model.lower()
+
+    if "glm" in model_lower:
+        state = "enabled" if enabled else "disabled"
+        return {"thinking": {"type": state}}
+
+    if "qwen" in model_lower:
+        return {"chat_template_kwargs": {"enable_thinking": enabled}}
+
+    if _is_openai_reasoning_model(model_lower) or _is_deepseek_reasoning_model(
+        model_lower
+    ):
+        if enabled:
+            return {"reasoning_effort": "low"}
+        return {}
+
+    # Unknown model: don't send thinking parameters
+    return {}
 
 
 class TextEnhancer:
@@ -339,9 +379,9 @@ class TextEnhancer:
 
         Provider-level extra_body takes precedence over thinking toggle.
         """
-        result: Dict[str, Any] = {}
-        if not self._thinking:
-            result = build_disable_thinking_body(self._active_model)
+        result: Dict[str, Any] = build_thinking_body(
+            self._active_model, self._thinking
+        )
         if provider_extra_body:
             result.update(provider_extra_body)
         return result
@@ -584,8 +624,12 @@ class TextEnhancer:
                     if chunk.choices:
                         delta = chunk.choices[0].delta
                         if delta:
-                            # Thinking/reasoning tokens (Qwen, GLM, DeepSeek)
-                            reasoning = getattr(delta, "reasoning_content", None)
+                            # Thinking/reasoning tokens (Qwen, GLM, DeepSeek, OpenAI)
+                            reasoning = (
+                                getattr(delta, "reasoning_content", None)
+                                or getattr(delta, "reasoning", None)
+                                or getattr(delta, "reasoning_text", None)
+                            )
                             if reasoning:
                                 yield reasoning, None, True
                             if delta.content:
