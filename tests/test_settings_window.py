@@ -86,7 +86,7 @@ def _make_callbacks():
         "on_visual_toggle", "on_preview_toggle", "on_stt_select",
         "on_stt_remote_select", "on_stt_add_provider", "on_stt_remove_provider",
         "on_llm_select", "on_llm_add_provider", "on_llm_remove_provider",
-        "on_enhance_mode_select", "on_enhance_add_mode",
+        "on_enhance_mode_select", "on_enhance_add_mode", "on_enhance_mode_edit",
         "on_thinking_toggle", "on_vocab_toggle", "on_auto_build_toggle",
         "on_history_toggle", "on_vocab_build",
         "on_show_config", "on_edit_config", "on_reload_config",
@@ -301,6 +301,15 @@ class TestSettingsCallbacks:
 
         cbs["on_llm_add_provider"].assert_called_once()
 
+    def test_enhance_mode_edit_calls_callback(self):
+        panel, cbs = self._make_panel()
+
+        sender = MagicMock()
+        panel._set_meta(sender, mode_id="proofread")
+        panel.enhanceModeEditClicked_(sender)
+
+        cbs["on_enhance_mode_edit"].assert_called_once_with("proofread")
+
 
 class TestSettingsStateUpdate:
     """Tests for state update methods."""
@@ -335,6 +344,45 @@ class TestSettingsStateUpdate:
         panel = self._make_panel()
 
         panel.update_hotkey("fn", False)
+
+
+class TestHintHelpers:
+    """Tests for _make_hint and _add_hint helper methods."""
+
+    def test_make_hint_returns_label(self):
+        from voicetext.settings_window import SettingsPanel
+
+        hint = SettingsPanel._make_hint("test hint", 10, 100, 200)
+        # Should call labelWithString_ and configure font/color
+        assert hint is not None
+
+    def test_make_hint_sets_font_and_color(self):
+        from AppKit import NSColor, NSFont
+        from voicetext.settings_window import SettingsPanel
+
+        hint = SettingsPanel._make_hint("hello", 0, 0, 100)
+        hint.setFont_.assert_called_once()
+        hint.setTextColor_.assert_called_once_with(NSColor.secondaryLabelColor())
+
+    def test_add_hint_returns_updated_y(self):
+        from voicetext.settings_window import SettingsPanel
+
+        panel = SettingsPanel()
+        parent = MagicMock()
+        initial_y = 200
+        new_y = panel._add_hint("some hint", 10, initial_y, 300, parent)
+
+        expected_y = initial_y - (panel._HINT_HEIGHT + panel._HINT_GAP)
+        assert new_y == expected_y
+
+    def test_add_hint_adds_subview(self):
+        from voicetext.settings_window import SettingsPanel
+
+        panel = SettingsPanel()
+        parent = MagicMock()
+        panel._add_hint("some hint", 10, 200, 300, parent)
+
+        parent.addSubview_.assert_called_once()
 
 
 class TestSettingsCallbackErrorHandling:

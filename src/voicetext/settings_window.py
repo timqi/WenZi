@@ -69,6 +69,8 @@ class SettingsPanel:
     _CONTROL_HEIGHT = 22
     _SECTION_GAP = 16
     _ROW_GAP = 4
+    _HINT_HEIGHT = 14
+    _HINT_GAP = 2
 
     def __init__(self) -> None:
         self._panel = None
@@ -92,6 +94,7 @@ class SettingsPanel:
         self._stt_remote_buttons: Dict[Tuple[str, str], object] = {}
         self._llm_buttons: Dict[Tuple[str, str], object] = {}
         self._enhance_mode_buttons: Dict[str, object] = {}
+        self._enhance_edit_buttons: Dict[str, object] = {}
         self._thinking_check = None
         self._vocab_check = None
         self._auto_build_check = None
@@ -287,26 +290,35 @@ class SettingsPanel:
         )
         from Foundation import NSMakeRect
 
-        # Tab content view dimensions (approximate inner area of NSTabViewItem)
         content_w = tab_width - 24
         content_h = self._PANEL_HEIGHT - self._TOOLBAR_HEIGHT - self._PADDING * 2 - 80
-        container = NSView.alloc().initWithFrame_(
+
+        scroll = NSScrollView.alloc().initWithFrame_(
             NSMakeRect(0, 0, content_w, content_h)
         )
+        scroll.setHasVerticalScroller_(True)
+        scroll.setHasHorizontalScroller_(False)
 
         pad = 12
-        y = content_h - pad
         label_font = NSFont.boldSystemFontOfSize_(13.0)
         small_font = NSFont.systemFontOfSize_(12.0)
+
+        hotkeys = state.get("hotkeys", {})
+        n_rows = len(hotkeys) + 8
+        total_h = max(content_h, n_rows * (self._CONTROL_HEIGHT + self._ROW_GAP) + 160)
+
+        doc_view = NSView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, content_w - 20, total_h)
+        )
+        y = total_h - pad
 
         # --- Hotkeys section ---
         y -= self._LABEL_HEIGHT
         hotkey_label = self._make_label("Hotkeys", pad, y, content_w, label_font)
-        container.addSubview_(hotkey_label)
+        doc_view.addSubview_(hotkey_label)
 
-        hotkeys = state.get("hotkeys", {})
         self._hotkey_checks.clear()
-        for key_name, enabled in hotkeys.items():
+        for key_name, enabled in sorted(hotkeys.items()):
             y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
             check = NSButton.alloc().initWithFrame_(
                 NSMakeRect(pad + 12, y, content_w - 24, self._CONTROL_HEIGHT)
@@ -318,7 +330,7 @@ class SettingsPanel:
             check.setTarget_(self)
             check.setAction_(b"hotkeyCheckChanged:")
             self._set_meta(check, key_name=key_name)
-            container.addSubview_(check)
+            doc_view.addSubview_(check)
             self._hotkey_checks[key_name] = check
 
         # Record Hotkey button
@@ -331,27 +343,35 @@ class SettingsPanel:
         record_btn.setFont_(small_font)
         record_btn.setTarget_(self)
         record_btn.setAction_(b"recordHotkeyClicked:")
-        container.addSubview_(record_btn)
+        doc_view.addSubview_(record_btn)
 
         y -= self._SECTION_GAP
 
         # --- Feedback section ---
         y -= self._LABEL_HEIGHT
         fb_label = self._make_label("Feedback", pad, y, content_w, label_font)
-        container.addSubview_(fb_label)
+        doc_view.addSubview_(fb_label)
 
         y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
         self._sound_check = self._make_switch(
             "Sound Feedback", pad + 12, y, content_w - 24,
             state.get("sound_enabled", True), small_font,
-            b"soundCheckChanged:", container,
+            b"soundCheckChanged:", doc_view,
+        )
+        y = self._add_hint(
+            "Play sound effects when recording starts and stops",
+            pad + 12, y, content_w - 24, doc_view,
         )
 
         y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
         self._visual_check = self._make_switch(
             "Visual Indicator", pad + 12, y, content_w - 24,
             state.get("visual_indicator", True), small_font,
-            b"visualCheckChanged:", container,
+            b"visualCheckChanged:", doc_view,
+        )
+        y = self._add_hint(
+            "Show a floating indicator while recording",
+            pad + 12, y, content_w - 24, doc_view,
         )
 
         y -= self._SECTION_GAP
@@ -359,16 +379,21 @@ class SettingsPanel:
         # --- Output section ---
         y -= self._LABEL_HEIGHT
         out_label = self._make_label("Output", pad, y, content_w, label_font)
-        container.addSubview_(out_label)
+        doc_view.addSubview_(out_label)
 
         y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
         self._preview_check = self._make_switch(
             "Preview", pad + 12, y, content_w - 24,
             state.get("preview", True), small_font,
-            b"previewCheckChanged:", container,
+            b"previewCheckChanged:", doc_view,
+        )
+        y = self._add_hint(
+            "Show a preview panel before inserting text, allowing edits",
+            pad + 12, y, content_w - 24, doc_view,
         )
 
-        tab_item.setView_(container)
+        scroll.setDocumentView_(doc_view)
+        tab_item.setView_(scroll)
 
     def _build_stt_tab(self, tab_item, state: Dict, tab_width: float) -> None:
         """Build the STT tab: local presets + remote providers."""
@@ -406,11 +431,15 @@ class SettingsPanel:
         doc_view.addSubview_(
             self._make_label("Local", pad, y, content_w, label_font)
         )
+        y = self._add_hint(
+            "Speech recognition models running on your device",
+            pad + 12, y, content_w - 24, doc_view,
+        )
 
         self._stt_buttons.clear()
         self._stt_remote_buttons.clear()
 
-        for preset_id, display_name, available in stt_presets:
+        for preset_id, display_name, available in sorted(stt_presets, key=lambda x: x[1]):
             y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
             is_selected = (
                 current_remote_asr is None and preset_id == current_preset
@@ -432,9 +461,13 @@ class SettingsPanel:
         doc_view.addSubview_(
             self._make_label("Remote", pad, y, content_w, label_font)
         )
+        y = self._add_hint(
+            "Cloud-based speech recognition services",
+            pad + 12, y, content_w - 24, doc_view,
+        )
 
         if stt_remote:
-            for provider, model, display_name in stt_remote:
+            for provider, model, display_name in sorted(stt_remote, key=lambda x: x[2]):
                 y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
                 key = (provider, model)
                 is_selected = current_remote_asr == key
@@ -507,9 +540,13 @@ class SettingsPanel:
         doc_view.addSubview_(
             self._make_label("Provider / Model", pad, y, content_w, label_font)
         )
+        y = self._add_hint(
+            "Language model used for AI enhancement features",
+            pad + 12, y, content_w - 24, doc_view,
+        )
 
         self._llm_buttons.clear()
-        for provider, model, display_name in llm_models:
+        for provider, model, display_name in sorted(llm_models, key=lambda x: x[2]):
             y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
             key = (provider, model)
             is_selected = current_llm == key
@@ -555,6 +592,7 @@ class SettingsPanel:
             NSButton,
             NSColor,
             NSFont,
+            NSScrollView,
             NSView,
             NSSwitchButton,
         )
@@ -562,45 +600,75 @@ class SettingsPanel:
 
         content_w = tab_width - 24
         content_h = self._PANEL_HEIGHT - self._TOOLBAR_HEIGHT - self._PADDING * 2 - 80
-        container = NSView.alloc().initWithFrame_(
+
+        scroll = NSScrollView.alloc().initWithFrame_(
             NSMakeRect(0, 0, content_w, content_h)
         )
+        scroll.setHasVerticalScroller_(True)
+        scroll.setHasHorizontalScroller_(False)
 
         pad = 12
-        y = content_h - pad
         label_font = NSFont.boldSystemFontOfSize_(13.0)
         small_font = NSFont.systemFontOfSize_(12.0)
+
+        enhance_modes = state.get("enhance_modes", [])
+        n_rows = len(enhance_modes) + 10
+        total_h = max(content_h, n_rows * (self._CONTROL_HEIGHT + self._ROW_GAP) + 200)
+
+        doc_view = NSView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, content_w - 20, total_h)
+        )
+        y = total_h - pad
 
         # --- Enhance Mode section ---
         y -= self._LABEL_HEIGHT
         mode_label = self._make_label("Enhance Mode", pad, y, content_w, label_font)
-        container.addSubview_(mode_label)
+        doc_view.addSubview_(mode_label)
+        y = self._add_hint(
+            "AI post-processing mode applied to transcribed text",
+            pad + 12, y, content_w - 24, doc_view,
+        )
 
-        enhance_modes = state.get("enhance_modes", [])
         current_mode = state.get("current_enhance_mode", "off")
         self._enhance_mode_buttons.clear()
+        self._enhance_edit_buttons.clear()
 
         # Always include "Off"
         y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
         off_btn = self._make_radio(
             "Off", pad + 12, y, content_w - 24,
-            current_mode == "off", small_font, container,
+            current_mode == "off", small_font, doc_view,
         )
         off_btn.setTarget_(self)
         off_btn.setAction_(b"enhanceModeSelected:")
         self._set_meta(off_btn, mode_id="off")
         self._enhance_mode_buttons["off"] = off_btn
 
-        for mode_id, label in enhance_modes:
+        edit_btn_w = 52
+        edit_font = NSFont.systemFontOfSize_(11.0)
+        edit_x = pad + 12 + 168
+        for mode_id, label in sorted(enhance_modes, key=lambda x: x[1]):
             y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
             btn = self._make_radio(
-                label, pad + 12, y, content_w - 24,
-                current_mode == mode_id, small_font, container,
+                label, pad + 12, y, 160,
+                current_mode == mode_id, small_font, doc_view,
             )
             btn.setTarget_(self)
             btn.setAction_(b"enhanceModeSelected:")
             self._set_meta(btn, mode_id=mode_id)
             self._enhance_mode_buttons[mode_id] = btn
+
+            edit_btn = NSButton.alloc().initWithFrame_(
+                NSMakeRect(edit_x, y, edit_btn_w, self._CONTROL_HEIGHT)
+            )
+            edit_btn.setTitle_("Edit")
+            edit_btn.setBezelStyle_(1)
+            edit_btn.setFont_(edit_font)
+            edit_btn.setTarget_(self)
+            edit_btn.setAction_(b"enhanceModeEditClicked:")
+            self._set_meta(edit_btn, mode_id=mode_id)
+            doc_view.addSubview_(edit_btn)
+            self._enhance_edit_buttons[mode_id] = edit_btn
 
         # Add Mode button
         y -= (28 + self._ROW_GAP)
@@ -612,20 +680,46 @@ class SettingsPanel:
         add_mode_btn.setFont_(small_font)
         add_mode_btn.setTarget_(self)
         add_mode_btn.setAction_(b"addModeClicked:")
-        container.addSubview_(add_mode_btn)
+        doc_view.addSubview_(add_mode_btn)
 
         y -= self._SECTION_GAP
 
         # --- Options section ---
         y -= self._LABEL_HEIGHT
         opt_label = self._make_label("Options", pad, y, content_w, label_font)
-        container.addSubview_(opt_label)
+        doc_view.addSubview_(opt_label)
+
+        y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
+        self._auto_build_check = self._make_switch(
+            "Auto Build Vocabulary", pad + 12, y, content_w - 24,
+            state.get("auto_build", True), small_font,
+            b"autoBuildCheckChanged:", doc_view,
+        )
+        y = self._add_hint(
+            "Automatically update vocabulary from your text input history",
+            pad + 12, y, content_w - 24, doc_view,
+        )
+
+        y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
+        self._history_check = self._make_switch(
+            "Conversation History", pad + 12, y, content_w - 24,
+            state.get("history_enabled", False), small_font,
+            b"historyCheckChanged:", doc_view,
+        )
+        y = self._add_hint(
+            "Include recent conversation context for better AI enhancement",
+            pad + 12, y, content_w - 24, doc_view,
+        )
 
         y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
         self._thinking_check = self._make_switch(
             "Thinking", pad + 12, y, content_w - 24,
             state.get("thinking", False), small_font,
-            b"thinkingCheckChanged:", container,
+            b"thinkingCheckChanged:", doc_view,
+        )
+        y = self._add_hint(
+            "Enable extended thinking for more accurate AI processing (slower)",
+            pad + 12, y, content_w - 24, doc_view,
         )
 
         vocab_count = state.get("vocab_count", 0)
@@ -634,21 +728,11 @@ class SettingsPanel:
         self._vocab_check = self._make_switch(
             vocab_title, pad + 12, y, content_w - 24,
             state.get("vocab_enabled", False), small_font,
-            b"vocabCheckChanged:", container,
+            b"vocabCheckChanged:", doc_view,
         )
-
-        y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
-        self._auto_build_check = self._make_switch(
-            "Auto Build Vocabulary", pad + 12, y, content_w - 24,
-            state.get("auto_build", True), small_font,
-            b"autoBuildCheckChanged:", container,
-        )
-
-        y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
-        self._history_check = self._make_switch(
-            "Conversation History", pad + 12, y, content_w - 24,
-            state.get("history_enabled", False), small_font,
-            b"historyCheckChanged:", container,
+        y = self._add_hint(
+            "Use a custom vocabulary to improve recognition of domain-specific terms",
+            pad + 12, y, content_w - 24, doc_view,
         )
 
         # Build Vocabulary button
@@ -661,9 +745,10 @@ class SettingsPanel:
         build_btn.setFont_(small_font)
         build_btn.setTarget_(self)
         build_btn.setAction_(b"buildVocabClicked:")
-        container.addSubview_(build_btn)
+        doc_view.addSubview_(build_btn)
 
-        tab_item.setView_(container)
+        scroll.setDocumentView_(doc_view)
+        tab_item.setView_(scroll)
 
     # ── Helper methods ───────────────────────────────────────────────
 
@@ -682,6 +767,25 @@ class SettingsPanel:
         label.setFrame_(NSMakeRect(x, y, width, 18))
         label.setFont_(font)
         return label
+
+    @staticmethod
+    def _make_hint(text, x, y, width):
+        """Create a 10pt secondary-color hint label."""
+        from AppKit import NSColor, NSFont, NSTextField
+        from Foundation import NSMakeRect
+
+        hint = NSTextField.labelWithString_(text)
+        hint.setFrame_(NSMakeRect(x, y, width, SettingsPanel._HINT_HEIGHT))
+        hint.setFont_(NSFont.systemFontOfSize_(10.0))
+        hint.setTextColor_(NSColor.secondaryLabelColor())
+        return hint
+
+    def _add_hint(self, text, x, y, width, parent):
+        """Add a hint label below the current y and return the updated y."""
+        y -= (self._HINT_HEIGHT + self._HINT_GAP)
+        hint = self._make_hint(text, x, y, width)
+        parent.addSubview_(hint)
+        return y
 
     def _make_switch(self, title, x, y, width, state_on, font, action, parent):
         """Create a NSSwitchButton checkbox and add to parent."""
@@ -815,6 +919,12 @@ class SettingsPanel:
 
     def llmRemoveProviderClicked_(self, sender):
         self._call("on_llm_remove_provider")
+
+    def enhanceModeEditClicked_(self, sender):
+        meta = self._get_meta(sender)
+        mode_id = meta.get("mode_id")
+        if mode_id:
+            self._call("on_enhance_mode_edit", mode_id)
 
     def enhanceModeSelected_(self, sender):
         meta = self._get_meta(sender)

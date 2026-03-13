@@ -3972,6 +3972,7 @@ models:
             "on_llm_add_provider": lambda: self._on_enhance_add_provider(None),
             "on_llm_remove_provider": self._settings_llm_remove_provider,
             "on_enhance_mode_select": self._settings_enhance_mode_select,
+            "on_enhance_mode_edit": self._settings_enhance_mode_edit,
             "on_enhance_add_mode": lambda: self._on_enhance_add_mode(None),
             "on_thinking_toggle": self._settings_thinking_toggle,
             "on_vocab_toggle": self._settings_vocab_toggle,
@@ -4220,6 +4221,18 @@ models:
                 item = self._llm_remove_provider_items.get(first_name)
                 if item:
                     self._on_enhance_remove_provider(item)
+
+    def _settings_enhance_mode_edit(self, mode_id: str) -> None:
+        """Open the enhance mode markdown file in TextEdit."""
+        try:
+            from .config import DEFAULT_ENHANCE_MODES_DIR
+
+            modes_dir = os.path.expanduser(DEFAULT_ENHANCE_MODES_DIR)
+            md_path = os.path.join(modes_dir, f"{mode_id}.md")
+            logger.info("Opening mode file: %s", md_path)
+            subprocess.Popen(["open", "-a", "TextEdit", md_path])
+        except Exception as e:
+            logger.error("Failed to open mode file in TextEdit: %s", e, exc_info=True)
 
     def _settings_enhance_mode_select(self, mode_id: str) -> None:
         """Handle enhance mode selection from Settings panel."""
