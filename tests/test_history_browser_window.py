@@ -125,19 +125,95 @@ class TestHistoryBrowserPanel:
 
         # All mode
         panel._filter_mode = _MODE_ALL
-        panel._apply_mode_filter()
+        panel._apply_filters()
         assert len(panel._filtered_records) == 3
 
         # Filter by proofread
         panel._filter_mode = "proofread"
-        panel._apply_mode_filter()
+        panel._apply_filters()
         assert len(panel._filtered_records) == 2
         assert all(r["enhance_mode"] == "proofread" for r in panel._filtered_records)
 
         # Filter by translate_en
         panel._filter_mode = "translate_en"
-        panel._apply_mode_filter()
+        panel._apply_filters()
         assert len(panel._filtered_records) == 1
+
+    def test_model_filter(self):
+        from voicetext.history_browser_window import HistoryBrowserPanel, _MODEL_ALL
+
+        panel = HistoryBrowserPanel()
+        panel._all_records = [
+            {"timestamp": "t1", "enhance_mode": "proofread", "final_text": "a",
+             "stt_model": "whisper-large", "llm_model": "gpt-4"},
+            {"timestamp": "t2", "enhance_mode": "proofread", "final_text": "b",
+             "stt_model": "whisper-large", "llm_model": "qwen2.5"},
+            {"timestamp": "t3", "enhance_mode": "off", "final_text": "c",
+             "stt_model": "whisper-small", "llm_model": ""},
+        ]
+
+        # All models
+        panel._filter_model = _MODEL_ALL
+        panel._apply_filters()
+        assert len(panel._filtered_records) == 3
+
+        # Filter by stt_model
+        panel._filter_model = "whisper-large"
+        panel._apply_filters()
+        assert len(panel._filtered_records) == 2
+
+        # Filter by llm_model
+        panel._filter_model = "gpt-4"
+        panel._apply_filters()
+        assert len(panel._filtered_records) == 1
+        assert panel._filtered_records[0]["timestamp"] == "t1"
+
+        # Filter by model not present
+        panel._filter_model = "nonexistent"
+        panel._apply_filters()
+        assert len(panel._filtered_records) == 0
+
+    def test_combined_mode_and_model_filter(self):
+        from voicetext.history_browser_window import HistoryBrowserPanel, _MODE_ALL, _MODEL_ALL
+
+        panel = HistoryBrowserPanel()
+        panel._all_records = [
+            {"timestamp": "t1", "enhance_mode": "proofread", "final_text": "a",
+             "stt_model": "whisper", "llm_model": "gpt-4"},
+            {"timestamp": "t2", "enhance_mode": "translate_en", "final_text": "b",
+             "stt_model": "whisper", "llm_model": "gpt-4"},
+            {"timestamp": "t3", "enhance_mode": "proofread", "final_text": "c",
+             "stt_model": "whisper", "llm_model": "qwen"},
+        ]
+
+        panel._filter_mode = "proofread"
+        panel._filter_model = "gpt-4"
+        panel._apply_filters()
+        assert len(panel._filtered_records) == 1
+        assert panel._filtered_records[0]["timestamp"] == "t1"
+
+    def test_corrected_only_filter(self):
+        from voicetext.history_browser_window import HistoryBrowserPanel
+
+        panel = HistoryBrowserPanel()
+        panel._all_records = [
+            {"timestamp": "t1", "enhance_mode": "proofread", "final_text": "a",
+             "user_corrected": True},
+            {"timestamp": "t2", "enhance_mode": "proofread", "final_text": "b",
+             "user_corrected": False},
+            {"timestamp": "t3", "enhance_mode": "proofread", "final_text": "c",
+             "enhanced_text": "x", "final_text": "y"},  # legacy inferred
+        ]
+
+        panel._filter_corrected_only = False
+        panel._apply_filters()
+        assert len(panel._filtered_records) == 3
+
+        panel._filter_corrected_only = True
+        panel._apply_filters()
+        assert len(panel._filtered_records) == 2
+        assert panel._filtered_records[0]["timestamp"] == "t1"
+        assert panel._filtered_records[1]["timestamp"] == "t3"
 
     def test_format_timestamp(self):
         from voicetext.history_browser_window import _format_timestamp

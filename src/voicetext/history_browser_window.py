@@ -7,8 +7,9 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
-# Mode filter: "All" plus known modes
+# Filter labels
 _MODE_ALL = "All"
+_MODEL_ALL = "All Models"
 
 
 def _format_timestamp(ts: str) -> str:
@@ -17,6 +18,25 @@ def _format_timestamp(ts: str) -> str:
         return ts[:16].replace("T", " ")
     except Exception:
         return ts
+
+
+def _corrected_row_color():
+    """Return a dynamic light-blue color that adapts to dark mode."""
+    from AppKit import (
+        NSAppearanceNameAqua,
+        NSAppearanceNameDarkAqua,
+        NSColor,
+    )
+
+    def provider(appearance):
+        name = appearance.bestMatchFromAppearancesWithNames_([
+            NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
+        ])
+        if name == NSAppearanceNameDarkAqua:
+            return NSColor.colorWithSRGBRed_green_blue_alpha_(0.15, 0.25, 0.45, 1.0)
+        return NSColor.colorWithSRGBRed_green_blue_alpha_(0.85, 0.93, 1.0, 1.0)
+
+    return NSColor.colorWithName_dynamicProvider_("correctedRow", provider)
 
 
 class HistoryBrowserPanel:
@@ -53,6 +73,7 @@ class HistoryBrowserPanel:
         self._panel = None
         self._search_field = None
         self._mode_popup = None
+        self._model_popup = None
         self._table_view = None
         self._scroll_view = None
         self._asr_label = None
@@ -74,6 +95,9 @@ class HistoryBrowserPanel:
         self._on_save: Optional[Callable[[str, str], None]] = None
         self._search_text: str = ""
         self._filter_mode: str = _MODE_ALL
+        self._filter_model: str = _MODEL_ALL
+        self._filter_corrected_only: bool = False
+        self._corrected_checkbox = None
 
     def show(
         self,
@@ -128,7 +152,8 @@ class HistoryBrowserPanel:
             self._all_records = self._conversation_history.get_all(limit=500)
 
         self._rebuild_mode_popup()
-        self._apply_mode_filter()
+        self._rebuild_model_popup()
+        self._apply_filters()
 
         self._selected_index = -1
         if self._table_view is not None:
@@ -159,15 +184,51 @@ class HistoryBrowserPanel:
             else:
                 self._filter_mode = _MODE_ALL
 
-    def _apply_mode_filter(self) -> None:
-        """Filter _all_records by selected mode into _filtered_records."""
-        if self._filter_mode == _MODE_ALL:
-            self._filtered_records = self._all_records
-        else:
-            self._filtered_records = [
-                r for r in self._all_records
+    def _rebuild_model_popup(self) -> None:
+        """Rebuild model filter popup items from current data."""
+        if self._model_popup is None:
+            return
+        models: Set[str] = set()
+        for r in self._all_records:
+            for key in ("stt_model", "llm_model"):
+                m = r.get(key, "")
+                if m:
+                    models.add(m)
+
+        self._model_popup.removeAllItems()
+        self._model_popup.addItemWithTitle_(_MODEL_ALL)
+        for m in sorted(models):
+            self._model_popup.addItemWithTitle_(m)
+
+        if self._filter_model != _MODEL_ALL:
+            idx = self._model_popup.indexOfItemWithTitle_(self._filter_model)
+            if idx >= 0:
+                self._model_popup.selectItemAtIndex_(idx)
+            else:
+                self._filter_model = _MODEL_ALL
+
+    def _apply_filters(self) -> None:
+        """Filter _all_records by selected mode, model and corrected flag."""
+        from .conversation_history import ConversationHistory
+
+        records = self._all_records
+        if self._filter_mode != _MODE_ALL:
+            records = [
+                r for r in records
                 if r.get("enhance_mode", "") == self._filter_mode
             ]
+        if self._filter_model != _MODEL_ALL:
+            records = [
+                r for r in records
+                if r.get("stt_model", "") == self._filter_model
+                or r.get("llm_model", "") == self._filter_model
+            ]
+        if self._filter_corrected_only:
+            records = [
+                r for r in records
+                if ConversationHistory._is_corrected(r)
+            ]
+        self._filtered_records = records
 
     def _clear_detail(self) -> None:
         """Clear the detail section."""
@@ -458,6 +519,7 @@ class HistoryBrowserPanel:
         table.setDataSource_(self._table_delegate)
         table.setDelegate_(self._table_delegate)
         table.setUsesAlternatingRowBackgroundColors_(True)
+        table.setIntercellSpacing_(NSMakeSize(0, 2))
         table.setRowHeight_(22)
 
         table_scroll.setDocumentView_(table)
@@ -467,9 +529,11 @@ class HistoryBrowserPanel:
 
         y += table_height + self._PADDING
 
-        # --- Top toolbar: Search field + Mode filter popup ---
-        mode_popup_w = 140
-        search_w = inner_w - mode_popup_w - 8
+        # --- Top toolbar: Search + Mode + Model + Corrected checkbox ---
+        mode_popup_w = 120
+        model_popup_w = 140
+        corrected_cb_w = 90
+        search_w = inner_w - mode_popup_w - model_popup_w - corrected_cb_w - 24
 
         search = NSSearchField.alloc().initWithFrame_(
             NSMakeRect(self._PADDING, y, search_w, self._SEARCH_HEIGHT)
@@ -497,6 +561,40 @@ class HistoryBrowserPanel:
         content.addSubview_(mode_popup)
         self._mode_popup = mode_popup
 
+        model_popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
+            NSMakeRect(
+                self._PADDING + search_w + 8 + mode_popup_w + 8,
+                y,
+                model_popup_w,
+                self._SEARCH_HEIGHT,
+            ),
+            False,
+        )
+        model_popup.addItemWithTitle_(_MODEL_ALL)
+        model_popup.setTarget_(self)
+        model_popup.setAction_(b"modelFilterChanged:")
+        model_popup.setAutoresizingMask_(NSViewMinYMargin)
+        content.addSubview_(model_popup)
+        self._model_popup = model_popup
+
+        corrected_cb = NSButton.alloc().initWithFrame_(
+            NSMakeRect(
+                self._PADDING + search_w + 8 + mode_popup_w + 8 + model_popup_w + 8,
+                y,
+                corrected_cb_w,
+                self._SEARCH_HEIGHT,
+            )
+        )
+        corrected_cb.setButtonType_(3)  # NSSwitchButton
+        corrected_cb.setTitle_("Corrected")
+        corrected_cb.setFont_(NSFont.systemFontOfSize_(11.0))
+        corrected_cb.setState_(0)
+        corrected_cb.setTarget_(self)
+        corrected_cb.setAction_(b"correctedFilterChanged:")
+        corrected_cb.setAutoresizingMask_(NSViewMinYMargin)
+        content.addSubview_(corrected_cb)
+        self._corrected_checkbox = corrected_cb
+
         self._panel = panel
 
     # --- Data access for NSObject delegates ---
@@ -518,6 +616,21 @@ class HistoryBrowserPanel:
             text = text.replace("\n", " ")
             return text[:80] if len(text) > 80 else text
         return ""
+
+    def tableView_willDisplayCell_forTableColumn_row_(
+        self, table_view, cell, column, row,
+    ) -> None:
+        """Set light blue background for user-corrected rows."""
+        if row < 0 or row >= len(self._filtered_records):
+            return
+        record = self._filtered_records[row]
+        from .conversation_history import ConversationHistory
+
+        if ConversationHistory._is_corrected(record):
+            cell.setDrawsBackground_(True)
+            cell.setBackgroundColor_(_corrected_row_color())
+        else:
+            cell.setDrawsBackground_(False)
 
     def tableViewSelectionDidChange_(self, notification) -> None:
         table = notification.object()
@@ -551,7 +664,25 @@ class HistoryBrowserPanel:
     def modeFilterChanged_(self, sender) -> None:
         """Mode filter popup changed."""
         self._filter_mode = sender.titleOfSelectedItem() or _MODE_ALL
-        self._apply_mode_filter()
+        self._apply_filters()
+        self._selected_index = -1
+        if self._table_view is not None:
+            self._table_view.reloadData()
+        self._clear_detail()
+
+    def modelFilterChanged_(self, sender) -> None:
+        """Model filter popup changed."""
+        self._filter_model = sender.titleOfSelectedItem() or _MODEL_ALL
+        self._apply_filters()
+        self._selected_index = -1
+        if self._table_view is not None:
+            self._table_view.reloadData()
+        self._clear_detail()
+
+    def correctedFilterChanged_(self, sender) -> None:
+        """Corrected-only checkbox toggled."""
+        self._filter_corrected_only = sender.state() == 1
+        self._apply_filters()
         self._selected_index = -1
         if self._table_view is not None:
             self._table_view.reloadData()
@@ -632,6 +763,14 @@ def _get_table_delegate_class():
                         table_view, column, row
                     )
                 return ""
+
+            def tableView_willDisplayCell_forTableColumn_row_(
+                self, table_view, cell, column, row,
+            ):
+                if self._panel_ref is not None:
+                    self._panel_ref.tableView_willDisplayCell_forTableColumn_row_(
+                        table_view, cell, column, row,
+                    )
 
             def tableViewSelectionDidChange_(self, notification):
                 if self._panel_ref is not None:
