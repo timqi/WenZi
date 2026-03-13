@@ -22,6 +22,7 @@ from .conversation_history import ConversationHistory
 from .correction_log import CorrectionLogger
 from .usage_stats import UsageStats
 from .enhancer import MODE_OFF, TextEnhancer, create_enhancer
+from .log_viewer_window import LogViewerPanel
 from .result_window import ResultPreviewPanel
 from .hotkey import HoldHotkeyListener, TapHotkeyListener
 from .input import (
@@ -270,41 +271,10 @@ class VoiceTextApp(rumps.App):
             "Enhance Clipboard", callback=self._on_clipboard_enhance
         )
 
-        # Debug submenu
-        self._debug_menu = rumps.MenuItem("Debug")
-
-        # Log level submenu
-        self._debug_level_menu = rumps.MenuItem("Log Level")
-        self._debug_level_items: Dict[str, rumps.MenuItem] = {}
-        current_level = self._config["logging"]["level"]
-        for level_name in ("DEBUG", "INFO", "WARNING", "ERROR"):
-            item = rumps.MenuItem(level_name)
-            item._log_level = level_name
-            item.set_callback(self._on_debug_level_select)
-            if level_name == current_level:
-                item.state = 1
-            self._debug_level_items[level_name] = item
-            self._debug_level_menu.add(item)
-        self._debug_menu.add(self._debug_level_menu)
-
-        # Print Prompt toggle
-        self._debug_print_prompt_item = rumps.MenuItem(
-            "Print Prompt", callback=self._on_debug_print_prompt_toggle
+        # View Logs top-level item (replaces Debug submenu)
+        self._view_logs_item = rumps.MenuItem(
+            "View Logs...", callback=self._on_view_logs
         )
-        self._debug_menu.add(self._debug_print_prompt_item)
-
-        # Print Request Body toggle
-        self._debug_print_request_body_item = rumps.MenuItem(
-            "Print Request Body", callback=self._on_debug_print_request_body_toggle
-        )
-        self._debug_menu.add(self._debug_print_request_body_item)
-
-        # Copy Log Path (moved into Debug)
-        self._debug_menu.add(rumps.separator)
-        self._copy_log_item = rumps.MenuItem(
-            "Copy Log Path", callback=self._on_copy_log_path
-        )
-        self._debug_menu.add(self._copy_log_item)
 
         # Show Config / Reload Config items
         self._show_config_item = rumps.MenuItem(
@@ -336,7 +306,7 @@ class VoiceTextApp(rumps.App):
             self._enhance_history_item,
             None,
             self._ai_settings_menu,
-            self._debug_menu,
+            self._view_logs_item,
             None,
             self._show_config_item,
             self._reload_config_item,
@@ -2725,15 +2695,30 @@ models:
         except Exception as e:
             logger.error("Failed to open config file: %s", e, exc_info=True)
 
-    def _on_copy_log_path(self, _) -> None:
-        """Copy the log file path to clipboard."""
-        path_str = str(LOG_FILE)
-        subprocess.run(["pbcopy"], input=path_str.encode(), check=True)
-        rumps.notification("VoiceText", "Log path copied", path_str)
+    def _on_view_logs(self, _) -> None:
+        """Open the in-app log viewer panel."""
+        if not hasattr(self, "_log_viewer") or self._log_viewer is None:
+            self._log_viewer = LogViewerPanel(
+                LOG_FILE,
+                on_log_level_change=self._on_log_level_change,
+                on_print_prompt_toggle=self._on_print_prompt_change,
+                on_print_request_body_toggle=self._on_print_request_body_change,
+            )
+        current_level = self._config["logging"]["level"]
+        print_prompt = bool(
+            self._enhancer and self._enhancer.debug_print_prompt
+        )
+        print_request_body = bool(
+            self._enhancer and self._enhancer.debug_print_request_body
+        )
+        self._log_viewer.show(
+            current_level=current_level,
+            print_prompt=print_prompt,
+            print_request_body=print_request_body,
+        )
 
-    def _on_debug_level_select(self, sender) -> None:
-        """Handle debug log level selection."""
-        level_name = sender._log_level
+    def _on_log_level_change(self, level_name: str) -> None:
+        """Handle log level change from the log viewer panel."""
         log_level = getattr(logging, level_name, logging.INFO)
 
         # Update all loggers
@@ -2741,29 +2726,22 @@ models:
         for handler in logging.getLogger().handlers:
             handler.setLevel(log_level)
 
-        # Update checkmarks
-        for item in self._debug_level_items.values():
-            item.state = 0
-        sender.state = 1
-
         # Persist to config
         self._config["logging"]["level"] = level_name
         save_config(self._config, self._config_path)
         logger.info("Log level changed to: %s", level_name)
 
-    def _on_debug_print_prompt_toggle(self, sender) -> None:
-        """Toggle printing prompts to log."""
-        sender.state = not sender.state
+    def _on_print_prompt_change(self, enabled: bool) -> None:
+        """Handle print prompt toggle from the log viewer panel."""
         if self._enhancer:
-            self._enhancer.debug_print_prompt = bool(sender.state)
-        logger.info("Debug print prompt: %s", bool(sender.state))
+            self._enhancer.debug_print_prompt = enabled
+        logger.info("Debug print prompt: %s", enabled)
 
-    def _on_debug_print_request_body_toggle(self, sender) -> None:
-        """Toggle printing AI request body to log."""
-        sender.state = not sender.state
+    def _on_print_request_body_change(self, enabled: bool) -> None:
+        """Handle print request body toggle from the log viewer panel."""
         if self._enhancer:
-            self._enhancer.debug_print_request_body = bool(sender.state)
-        logger.info("Debug print request body: %s", bool(sender.state))
+            self._enhancer.debug_print_request_body = enabled
+        logger.info("Debug print request body: %s", enabled)
 
     def _on_model_select(self, sender) -> None:
         """Handle local model menu item click."""
