@@ -293,6 +293,28 @@ class TestSettingsCallbacks:
         cbs["on_enhance_mode_edit"].assert_called_once_with("proofread")
 
 
+class TestEnhanceModeOrder:
+    """Tests that enhance modes preserve insertion order from state."""
+
+    def test_modes_follow_state_order(self):
+        from voicetext.ui.settings_window import SettingsPanel
+
+        panel = SettingsPanel()
+        state = _make_state()
+        # Provide modes whose alphabetical label order differs from list order
+        state["enhance_modes"] = [
+            ("proofread", "纠错"),      # order=10
+            ("translate", "翻译为英文"),  # order=20
+            ("format", "格式化"),        # order=30
+        ]
+        callbacks = _make_callbacks()
+        panel.show(state, callbacks)
+
+        # _enhance_mode_buttons is an ordered dict: "off" first, then modes
+        keys = list(panel._enhance_mode_buttons.keys())
+        assert keys == ["off", "proofread", "translate", "format"]
+
+
 class TestSettingsStateUpdate:
     """Tests for state update methods."""
 
