@@ -98,6 +98,8 @@ class SettingsPanel:
         self._enhance_edit_buttons: Dict[str, object] = {}
         self._thinking_check = None
         self._vocab_check = None
+        self._restart_key_popup = None
+        self._cancel_key_popup = None
         self._auto_build_check = None
         self._history_check = None
         self._config_dir_field = None
@@ -352,6 +354,41 @@ class SettingsPanel:
         record_btn.setTarget_(self)
         record_btn.setAction_(b"recordHotkeyClicked:")
         doc_view.addSubview_(record_btn)
+
+        # Restart / Cancel key dropdowns
+        _key_choices = [
+            ("space", "Space"), ("cmd", "Command"), ("ctrl", "Control"),
+            ("alt", "Option"), ("shift", "Shift"), ("esc", "Esc"),
+        ]
+        label_w = 80
+        popup_w = 140
+
+        y -= (self._CONTROL_HEIGHT + self._ROW_GAP + 6)
+        restart_label = self._make_label(
+            "Restart Key", pad + 12, y, label_w, small_font
+        )
+        doc_view.addSubview_(restart_label)
+        self._restart_key_popup = self._make_popup(
+            _key_choices, state.get("restart_key", "cmd"),
+            pad + 12 + label_w + 4, y - 2, popup_w, small_font,
+            b"restartKeyChanged:", doc_view,
+        )
+
+        y -= (self._CONTROL_HEIGHT + self._ROW_GAP + 4)
+        cancel_label = self._make_label(
+            "Cancel Key", pad + 12, y, label_w, small_font
+        )
+        doc_view.addSubview_(cancel_label)
+        self._cancel_key_popup = self._make_popup(
+            _key_choices, state.get("cancel_key", "space"),
+            pad + 12 + label_w + 4, y - 2, popup_w, small_font,
+            b"cancelKeyChanged:", doc_view,
+        )
+
+        y = self._add_hint(
+            "Hold hotkey + press key to restart or cancel recording",
+            pad + 12, y, content_w - 24, doc_view,
+        )
 
         y -= self._SECTION_GAP
 
@@ -914,6 +951,34 @@ class SettingsPanel:
         parent.addSubview_(btn)
         return btn
 
+    def _make_popup(self, items, selected, x, y, width, font, action, parent):
+        """Create an NSPopUpButton dropdown and add to parent.
+
+        Args:
+            items: list of (value, display_label) tuples.
+            selected: the value that should be initially selected.
+            width: width of the popup button.
+        """
+        from AppKit import NSPopUpButton
+        from Foundation import NSMakeRect
+
+        popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
+            NSMakeRect(x, y, width, self._CONTROL_HEIGHT + 4), False,
+        )
+        popup.setFont_(font)
+        for value, label in items:
+            popup.addItemWithTitle_(label)
+            popup.lastItem().setRepresentedObject_(value)
+        # Select current value
+        for i, (value, _label) in enumerate(items):
+            if value == selected:
+                popup.selectItemAtIndex_(i)
+                break
+        popup.setTarget_(self)
+        popup.setAction_(action)
+        parent.addSubview_(popup)
+        return popup
+
     def _set_meta(self, btn, **kwargs) -> None:
         """Store metadata for a button (NSButton doesn't allow arbitrary attrs)."""
         self._btn_meta[id(btn)] = kwargs
@@ -986,6 +1051,16 @@ class SettingsPanel:
 
     def recordHotkeyClicked_(self, sender):
         self._call("on_record_hotkey")
+
+    def restartKeyChanged_(self, sender):
+        value = sender.selectedItem().representedObject()
+        if value:
+            self._call("on_restart_key_select", str(value))
+
+    def cancelKeyChanged_(self, sender):
+        value = sender.selectedItem().representedObject()
+        if value:
+            self._call("on_cancel_key_select", str(value))
 
     def soundCheckChanged_(self, sender):
         self._call("on_sound_toggle", bool(sender.state()))

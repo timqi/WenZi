@@ -31,6 +31,7 @@ def _empty_totals() -> Dict[str, int]:
         "sound_feedback_plays": 0,
         "history_browse_opens": 0,
         "history_edits": 0,
+        "recording_seconds": 0.0,
     }
 
 
@@ -231,6 +232,14 @@ class UsageStats:
         """Record a history edit (final_text update) event."""
         self._record(lambda data: data["totals"].__setitem__(
             "history_edits", data["totals"]["history_edits"] + 1
+        ))
+
+    def record_recording_duration(self, seconds: float) -> None:
+        """Record audio recording duration in seconds."""
+        if seconds <= 0:
+            return
+        self._record(lambda data: data["totals"].__setitem__(
+            "recording_seconds", data["totals"]["recording_seconds"] + seconds
         ))
 
     def record_output_method(self, copy_to_clipboard: bool) -> None:

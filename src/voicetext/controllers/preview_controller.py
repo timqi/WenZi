@@ -346,6 +346,7 @@ class PreviewController:
                     stt_model=app._current_stt_model(),
                     llm_model=app._current_llm_model(),
                     user_corrected=bool(result_holder.get("user_corrected")),
+                    audio_duration=getattr(app, "_preview_audio_duration", 0.0),
                 )
             except Exception as e:
                 logger.error("Failed to log conversation: %s", e)

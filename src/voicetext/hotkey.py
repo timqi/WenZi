@@ -473,12 +473,17 @@ class MultiHotkeyListener:
         on_press: Callable[[], None],
         on_release: Callable[[], None],
         on_restart: Optional[Callable[[], None]] = None,
-        restart_key: str = "space",
+        restart_key: str = "cmd",
+        on_cancel: Optional[Callable[[], None]] = None,
+        cancel_key: str = "space",
     ) -> None:
         self._on_press = on_press
         self._on_release = on_release
         self._on_restart = on_restart
         self._restart_key = restart_key.strip().lower()
+        self._on_cancel = on_cancel
+        self._cancel_key = cancel_key.strip().lower()
+        self._cancel_requested = False
         self._target_vks: Dict[int, str] = {}  # vk -> name
         self._enabled_names: set = set()
         self._held: set = set()  # set of currently held key names
@@ -502,8 +507,8 @@ class MultiHotkeyListener:
             self._enabled_names.add(n)
 
     def start(self) -> None:
-        # Use active tap when on_restart is set so we can swallow the restart key
-        listen_only = self._on_restart is None
+        # Use active tap when on_restart or on_cancel is set so we can swallow keys
+        listen_only = self._on_restart is None and self._on_cancel is None
         self._listener = _QuartzAllKeysListener(
             on_press=self._handle_press,
             on_release=self._handle_release,
@@ -614,6 +619,26 @@ class MultiHotkeyListener:
             self._held.discard(n)
         logger.info("Hotkey %s disabled", n)
 
+    def set_restart_key(self, key_name: str) -> None:
+        """Change the restart key at runtime."""
+        n = key_name.strip().lower()
+        if n == "option":
+            n = "alt"
+        elif n == "command":
+            n = "cmd"
+        self._restart_key = n
+        logger.info("Restart key set to: %s", n)
+
+    def set_cancel_key(self, key_name: str) -> None:
+        """Change the cancel key at runtime."""
+        n = key_name.strip().lower()
+        if n == "option":
+            n = "alt"
+        elif n == "command":
+            n = "cmd"
+        self._cancel_key = n
+        logger.info("Cancel key set to: %s", n)
+
     def _handle_press(self, name: str) -> bool:
         """Handle key press. Returns True if the event should be swallowed."""
         try:
@@ -642,6 +667,8 @@ class MultiHotkeyListener:
                     action = "press"
                 elif self._on_restart and self._held and name == self._restart_key:
                     action = "restart"
+                elif self._on_cancel and self._held and name == self._cancel_key:
+                    action = "cancel"
                 else:
                     return False
 
@@ -656,9 +683,22 @@ class MultiHotkeyListener:
                 except Exception as e:
                     logger.error("on_restart callback error: %s", e)
                 return True  # swallow the restart key event
+            elif action == "cancel":
+                self._cancel_requested = True
+                threading.Thread(
+                    target=self._run_cancel, daemon=True
+                ).start()
+                return True  # swallow the cancel key event
         except Exception:
             logger.warning("_handle_press exception", exc_info=True)
         return False
+
+    def _run_cancel(self) -> None:
+        """Run on_cancel callback in a background thread."""
+        try:
+            self._on_cancel()
+        except Exception as e:
+            logger.error("on_cancel callback error: %s", e)
 
     def _handle_release(self, name: str) -> None:
         try:
@@ -667,6 +707,10 @@ class MultiHotkeyListener:
                     self._held.discard(name)
                 else:
                     return
+                cancel = self._cancel_requested
+                self._cancel_requested = False
+            if cancel:
+                return
             try:
                 self._on_release()
             except Exception as e:

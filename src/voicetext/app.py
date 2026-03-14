@@ -18,7 +18,6 @@ from .controllers.enhance_controller import EnhanceController
 from .enhance.conversation_history import ConversationHistory
 from .usage_stats import UsageStats
 from .enhance.enhancer import MODE_OFF, create_enhancer
-from .ui.history_browser_window import HistoryBrowserPanel
 from .ui.result_window import ResultPreviewPanel as NativeResultPreviewPanel
 from .ui.result_window_web import ResultPreviewPanel as WebResultPreviewPanel
 from .ui.settings_window import SettingsPanel
@@ -371,7 +370,7 @@ class VoiceTextApp(StatusBarApp):
         self._about_item = StatusMenuItem("About VoiceText", callback=self._on_about)
 
         # History browser (lazy-created)
-        self._history_browser: Optional[HistoryBrowserPanel] = None
+        self._history_browser = None
 
         # Settings panel
         self._settings_panel = SettingsPanel()
@@ -475,6 +474,9 @@ class VoiceTextApp(StatusBarApp):
 
     def _start_hotkey_listeners(self) -> None:
         hotkeys: Dict[str, bool] = self._config.get("hotkeys", {"fn": True})
+        fb_cfg = self._config.get("feedback", {})
+        restart_key = fb_cfg.get("restart_key", "cmd")
+        cancel_key = fb_cfg.get("cancel_key", "space")
         active_keys = [k for k, v in hotkeys.items() if v]
         if active_keys:
             self._hotkey_listener = MultiHotkeyListener(
@@ -482,6 +484,9 @@ class VoiceTextApp(StatusBarApp):
                 on_press=self._recording_controller.on_hotkey_press,
                 on_release=self._recording_controller.on_hotkey_release,
                 on_restart=self._recording_controller.on_restart_recording,
+                on_cancel=self._recording_controller.on_cancel_recording,
+                restart_key=restart_key,
+                cancel_key=cancel_key,
             )
             self._hotkey_listener.start()
 

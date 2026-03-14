@@ -129,6 +129,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "sound_enabled": True,
         "sound_volume": 0.4,
         "visual_indicator": True,
+        "restart_key": "cmd",
+        "cancel_key": "space",
     },
     "ui": {
         "settings_last_tab": "general",
@@ -231,6 +233,12 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
         ("ai_enhance.connection_timeout", (int, float), lambda v: v > 0,
          DEFAULT_CONFIG["ai_enhance"]["connection_timeout"]),
         ("ai_enhance.max_retries", int, lambda v: v >= 0, DEFAULT_CONFIG["ai_enhance"]["max_retries"]),
+        ("feedback.restart_key", str,
+         lambda v: v in {"space", "cmd", "ctrl", "alt", "shift", "esc"},
+         DEFAULT_CONFIG["feedback"]["restart_key"]),
+        ("feedback.cancel_key", str,
+         lambda v: v in {"space", "cmd", "ctrl", "alt", "shift", "esc"},
+         DEFAULT_CONFIG["feedback"]["cancel_key"]),
     ]
 
     for path, expected_type, constraint, default in rules:

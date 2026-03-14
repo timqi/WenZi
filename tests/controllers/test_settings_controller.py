@@ -111,6 +111,38 @@ class TestHotkeyToggle:
         mock_save.assert_called_once()
 
 
+class TestRestartKeySelect:
+    @patch("voicetext.controllers.settings_controller.save_config")
+    def test_set_restart_key(self, mock_save, ctrl, mock_app):
+        ctrl.restart_key_select("space")
+
+        assert mock_app._config["feedback"]["restart_key"] == "space"
+        mock_save.assert_called_once()
+        mock_app._hotkey_listener.set_restart_key.assert_called_with("space")
+
+    @patch("voicetext.controllers.settings_controller.save_config")
+    def test_no_listener(self, mock_save, ctrl, mock_app):
+        mock_app._hotkey_listener = None
+        ctrl.restart_key_select("ctrl")  # Should not raise
+        mock_save.assert_called_once()
+
+
+class TestCancelKeySelect:
+    @patch("voicetext.controllers.settings_controller.save_config")
+    def test_set_cancel_key(self, mock_save, ctrl, mock_app):
+        ctrl.cancel_key_select("esc")
+
+        assert mock_app._config["feedback"]["cancel_key"] == "esc"
+        mock_save.assert_called_once()
+        mock_app._hotkey_listener.set_cancel_key.assert_called_with("esc")
+
+    @patch("voicetext.controllers.settings_controller.save_config")
+    def test_no_listener(self, mock_save, ctrl, mock_app):
+        mock_app._hotkey_listener = None
+        ctrl.cancel_key_select("cmd")  # Should not raise
+        mock_save.assert_called_once()
+
+
 class TestSoundToggle:
     @patch("voicetext.controllers.settings_controller.save_config")
     def test_toggle_sound(self, mock_save, ctrl, mock_app):

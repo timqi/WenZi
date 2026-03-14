@@ -103,6 +103,34 @@ class RecordingController:
             self.start_recording_indicator()
             app._recording_started.set()
 
+    def on_cancel_recording(self) -> None:
+        """Called when cancel key (cmd) is pressed during recording — discard and stop."""
+        app = self._app
+        if not app._recorder.is_recording:
+            return
+        logger.info("Cancel key pressed, cancelling recording")
+
+        # Stop streaming if active
+        if self._streaming_active:
+            app._recorder.clear_on_audio_chunk()
+            try:
+                app._transcriber.stop_streaming()
+            except Exception:
+                logger.exception("Failed to stop streaming during cancel")
+            self._streaming_active = False
+            self._hide_live_overlay()
+
+        # Stop current recording and discard audio
+        app._recorder.stop()
+
+        # Stop indicator
+        self.stop_recording_indicator()
+
+        # Reset state
+        app._recording_started.clear()
+        app._busy = False
+        app._set_status("VT")
+
     def on_hotkey_release(self) -> None:
         """Called when hotkey is released - stop recording and transcribe."""
         app = self._app
@@ -119,6 +147,17 @@ class RecordingController:
         app._recorder.clear_on_audio_chunk()
 
         wav_data = app._recorder.stop()
+
+        # Record audio duration for usage statistics
+        audio_duration = 0.0
+        if wav_data:
+            try:
+                from voicetext.transcription.base import BaseTranscriber
+                audio_duration = BaseTranscriber.wav_duration_seconds(wav_data)
+                app._usage_stats.record_recording_duration(audio_duration)
+            except Exception as e:
+                logger.error("Failed to record recording duration: %s", e)
+        app._last_audio_duration = audio_duration
 
         if streaming_active:
             # Streaming path: get final text from the streaming session
@@ -167,10 +206,10 @@ class RecordingController:
             app._set_status("VT")
             return
         use_enhance = bool(app._enhancer and app._enhancer.is_active)
-        # Keep indicator alive for animation when preview or direct+enhance
-        self.stop_recording_indicator(
-            animate=app._preview_enabled or use_enhance
-        )
+        # Always keep indicator alive for animate-out: preview mode animates
+        # into preview panel; direct mode animates into the streaming overlay
+        # (which is now shown immediately after recording ends)
+        self.stop_recording_indicator(animate=True)
 
         app._busy = True
 
@@ -193,25 +232,65 @@ class RecordingController:
             threading.Thread(target=_do_preview, daemon=True).start()
         else:
             app._set_status("Transcribing...")
+            # Show overlay immediately so user knows recording has ended;
+            # register cancel_event so ESC can abort transcription too
+            stt_info = app._current_stt_model()
+            llm_info = app._current_llm_model()
+            direct_cancel = threading.Event()
+
+            from PyObjCTools import AppHelper
+
+            def _on_esc_cancel():
+                app._busy = False
+                app._set_status("VT")
+
+            def _show_direct_overlay():
+                app._recording_indicator.hide()
+                app._streaming_overlay.show(
+                    asr_text="",
+                    cancel_event=direct_cancel,
+                    stt_info=stt_info,
+                    llm_info=llm_info if use_enhance else "",
+                    on_cancel=_on_esc_cancel,
+                )
+
+            AppHelper.callAfter(_show_direct_overlay)
+
             # Run transcription in background to keep UI responsive
             def _do_transcribe():
                 try:
+                    if direct_cancel.is_set():
+                        logger.info("Transcription cancelled via ESC (before start)")
+                        return
                     app._transcriber.skip_punc = bool(
                         app._enhancer and app._enhancer.is_active
                     )
                     text = app._transcriber.transcribe(wav_data)
+                    if direct_cancel.is_set():
+                        logger.info("Transcription cancelled via ESC (after transcribe)")
+                        return
                     if text and text.strip():
                         asr_text = text.strip()
-                        use_enhance = bool(app._enhancer and app._enhancer.is_active)
-                        self.do_transcribe_direct(asr_text, use_enhance)
+                        use_enhance_now = bool(
+                            app._enhancer and app._enhancer.is_active
+                        )
+                        self.do_transcribe_direct(
+                            asr_text, use_enhance_now,
+                            overlay_already_shown=True,
+                        )
                     else:
+                        AppHelper.callAfter(app._streaming_overlay.close)
                         app._set_status("(empty)")
                         logger.warning("Transcription returned empty text")
                 except Exception as e:
                     logger.error("Transcription failed: %s", e)
+                    AppHelper.callAfter(app._streaming_overlay.close)
                     app._set_status("Error")
                 finally:
-                    app._busy = False
+                    # Only reset _busy if not cancelled — on_cancel already
+                    # reset it, and a new recording may have started since.
+                    if not direct_cancel.is_set():
+                        app._busy = False
 
             threading.Thread(target=_do_transcribe, daemon=True).start()
 
@@ -327,8 +406,21 @@ class RecordingController:
         fb_cfg["visual_indicator"] = app._recording_indicator.enabled
         save_config(app._config, app._config_path)
 
-    def do_transcribe_direct(self, asr_text: str, use_enhance: bool) -> None:
-        """Original flow: enhance (if enabled) and type directly."""
+    def do_transcribe_direct(
+        self,
+        asr_text: str,
+        use_enhance: bool,
+        overlay_already_shown: bool = False,
+    ) -> None:
+        """Original flow: enhance (if enabled) and type directly.
+
+        Args:
+            asr_text: Transcribed text from ASR.
+            use_enhance: Whether to run AI enhancement.
+            overlay_already_shown: If True, the streaming overlay is already
+                visible (shown immediately after recording ended). The method
+                will update ASR text and reuse it instead of creating a new one.
+        """
         from PyObjCTools import AppHelper
 
         app = self._app
@@ -346,24 +438,30 @@ class RecordingController:
 
         if use_enhance:
             app._set_status("Enhancing...")
-            # Animate recording indicator out, then show streaming overlay
-            indicator_frame = app._recording_indicator.current_frame
 
-            stt_info = app._current_stt_model()
-            llm_info = app._current_llm_model()
+            if overlay_already_shown:
+                # Overlay already visible — update ASR text and register
+                # cancel event for ESC key support
+                app._streaming_overlay.set_asr_text(asr_text)
+                app._streaming_overlay.set_cancel_event(cancel_event)
+            else:
+                # Legacy path (streaming transcription): show overlay now
+                indicator_frame = app._recording_indicator.current_frame
+                stt_info = app._current_stt_model()
+                llm_info = app._current_llm_model()
 
-            def _show_overlay():
-                app._recording_indicator.animate_out(
-                    completion=lambda: app._streaming_overlay.show(
-                        asr_text=asr_text,
-                        cancel_event=cancel_event,
-                        animate_from_frame=indicator_frame,
-                        stt_info=stt_info,
-                        llm_info=llm_info,
+                def _show_overlay():
+                    app._recording_indicator.animate_out(
+                        completion=lambda: app._streaming_overlay.show(
+                            asr_text=asr_text,
+                            cancel_event=cancel_event,
+                            animate_from_frame=indicator_frame,
+                            stt_info=stt_info,
+                            llm_info=llm_info,
+                        )
                     )
-                )
 
-            AppHelper.callAfter(_show_overlay)
+                AppHelper.callAfter(_show_overlay)
 
             try:
                 current_mode_def = app._enhancer.get_mode_definition(app._enhance_mode)
@@ -392,7 +490,15 @@ class RecordingController:
                 logger.error("AI enhancement failed: %s", e)
                 text = asr_text
             finally:
-                AppHelper.callAfter(app._streaming_overlay.close)
+                if cancel_event.is_set():
+                    AppHelper.callAfter(app._streaming_overlay.close)
+                else:
+                    app._streaming_overlay.close_with_delay()
+        else:
+            # No enhancement — update overlay with ASR result, then fade out
+            if overlay_already_shown:
+                app._streaming_overlay.set_asr_text(asr_text)
+                app._streaming_overlay.close_with_delay()
 
         if cancel_event.is_set():
             app._set_status("VT")
@@ -424,6 +530,7 @@ class RecordingController:
                 preview_enabled=False,
                 stt_model=app._current_stt_model(),
                 llm_model=app._current_llm_model(),
+                audio_duration=getattr(app, "_last_audio_duration", 0.0),
             )
         except Exception as e:
             logger.error("Failed to log conversation: %s", e)
@@ -446,6 +553,7 @@ class RecordingController:
             try:
                 async for chunk, chunk_usage, is_thinking in gen:
                     if cancel_event.is_set():
+                        app._enhancer.cancel_stream()
                         return
                     if is_thinking == "retry" and chunk:
                         had_thinking = True
@@ -529,6 +637,7 @@ class RecordingController:
                     try:
                         async for chunk, chunk_usage, is_thinking in gen:
                             if cancel_event.is_set():
+                                app._enhancer.cancel_stream()
                                 return
                             if is_thinking == "retry" and chunk:
                                 had_thinking = True

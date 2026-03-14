@@ -287,6 +287,28 @@ class TestValidateConfig:
         validate_config(config)
         assert config["ai_enhance"]["max_retries"] == 0
 
+    def test_invalid_restart_key(self):
+        config = self._make_config({"feedback.restart_key": "nonsense"})
+        validate_config(config)
+        assert config["feedback"]["restart_key"] == "cmd"
+
+    def test_valid_restart_keys(self):
+        for key in ("space", "cmd", "ctrl", "alt", "shift", "esc"):
+            config = self._make_config({"feedback.restart_key": key})
+            validate_config(config)
+            assert config["feedback"]["restart_key"] == key
+
+    def test_invalid_cancel_key(self):
+        config = self._make_config({"feedback.cancel_key": 123})
+        validate_config(config)
+        assert config["feedback"]["cancel_key"] == "space"
+
+    def test_valid_cancel_keys(self):
+        for key in ("space", "cmd", "ctrl", "alt", "shift", "esc"):
+            config = self._make_config({"feedback.cancel_key": key})
+            validate_config(config)
+            assert config["feedback"]["cancel_key"] == key
+
 
 class TestResolveConfigDir:
     """Tests for resolve_config_dir with NSUserDefaults priority."""

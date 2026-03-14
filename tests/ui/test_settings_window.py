@@ -53,7 +53,9 @@ def _make_state():
 def _make_callbacks():
     """Create a dict of mock callbacks."""
     names = [
-        "on_hotkey_toggle", "on_record_hotkey", "on_sound_toggle",
+        "on_hotkey_toggle", "on_record_hotkey",
+        "on_restart_key_select", "on_cancel_key_select",
+        "on_sound_toggle",
         "on_visual_toggle", "on_preview_toggle", "on_preview_type_toggle",
         "on_stt_select",
         "on_stt_remote_select", "on_stt_add_provider", "on_stt_remove_provider",
@@ -232,6 +234,28 @@ class TestSettingsCallbacks:
         panel.recordHotkeyClicked_(sender)
 
         cbs["on_record_hotkey"].assert_called_once()
+
+    def test_restart_key_changed_calls_callback(self):
+        panel, cbs = self._make_panel()
+
+        sender = MagicMock()
+        item = MagicMock()
+        item.representedObject.return_value = "ctrl"
+        sender.selectedItem.return_value = item
+        panel.restartKeyChanged_(sender)
+
+        cbs["on_restart_key_select"].assert_called_once_with("ctrl")
+
+    def test_cancel_key_changed_calls_callback(self):
+        panel, cbs = self._make_panel()
+
+        sender = MagicMock()
+        item = MagicMock()
+        item.representedObject.return_value = "esc"
+        sender.selectedItem.return_value = item
+        panel.cancelKeyChanged_(sender)
+
+        cbs["on_cancel_key_select"].assert_called_once_with("esc")
 
     def test_build_vocab_calls_callback(self):
         panel, cbs = self._make_panel()

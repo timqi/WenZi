@@ -265,6 +265,7 @@ class TestInitialStateNewCounters:
         assert s["totals"]["output_copy_clipboard"] == 0
         assert s["totals"]["google_translate_opens"] == 0
         assert s["totals"]["sound_feedback_plays"] == 0
+        assert s["totals"]["recording_seconds"] == 0.0
 
 
 class TestRecordClipboardEnhance:
@@ -407,6 +408,34 @@ class TestRecordHistoryBrowseOpen:
         stats.record_history_browse_open()
         today = stats.get_today_stats()
         assert today["totals"]["history_browse_opens"] == 1
+
+
+class TestRecordRecordingDuration:
+    def test_record_recording_duration(self, stats):
+        stats.record_recording_duration(5.3)
+        s = stats.get_stats()
+        assert s["totals"]["recording_seconds"] == pytest.approx(5.3)
+
+    def test_record_recording_duration_accumulates(self, stats):
+        stats.record_recording_duration(3.5)
+        stats.record_recording_duration(2.1)
+        s = stats.get_stats()
+        assert s["totals"]["recording_seconds"] == pytest.approx(5.6)
+
+    def test_record_recording_duration_zero_ignored(self, stats):
+        stats.record_recording_duration(0.0)
+        s = stats.get_stats()
+        assert s["totals"]["recording_seconds"] == 0.0
+
+    def test_record_recording_duration_negative_ignored(self, stats):
+        stats.record_recording_duration(-1.0)
+        s = stats.get_stats()
+        assert s["totals"]["recording_seconds"] == 0.0
+
+    def test_record_recording_duration_daily(self, stats):
+        stats.record_recording_duration(10.5)
+        today = stats.get_today_stats()
+        assert today["totals"]["recording_seconds"] == pytest.approx(10.5)
 
 
 class TestRecordHistoryEdit:

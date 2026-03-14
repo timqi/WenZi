@@ -83,9 +83,12 @@ class SettingsController:
         ui_cfg = app._config.get("ui", {})
         last_tab = ui_cfg.get("settings_last_tab", "general")
 
+        fb_cfg = app._config.get("feedback", {})
         state = {
             "last_tab": last_tab,
             "hotkeys": hotkeys,
+            "restart_key": fb_cfg.get("restart_key", "cmd"),
+            "cancel_key": fb_cfg.get("cancel_key", "space"),
             "sound_enabled": app._sound_manager.enabled,
             "visual_indicator": app._recording_indicator.enabled,
             "preview": app._preview_enabled,
@@ -111,6 +114,8 @@ class SettingsController:
         callbacks = {
             "on_hotkey_toggle": self.hotkey_toggle,
             "on_record_hotkey": lambda: app._on_record_hotkey(None),
+            "on_restart_key_select": self.restart_key_select,
+            "on_cancel_key_select": self.cancel_key_select,
             "on_sound_toggle": self.sound_toggle,
             "on_visual_toggle": self.visual_toggle,
             "on_preview_toggle": self.preview_toggle,
@@ -159,6 +164,28 @@ class SettingsController:
         menu_item = app._hotkey_menu_items.get(key_name)
         if menu_item:
             menu_item.state = 1 if enabled else 0
+
+    def restart_key_select(self, key_name: str) -> None:
+        """Handle restart key selection from Settings panel."""
+        app = self._app
+        fb_cfg = app._config.setdefault("feedback", {})
+        fb_cfg["restart_key"] = key_name
+        save_config(app._config, app._config_path)
+
+        if app._hotkey_listener:
+            app._hotkey_listener.set_restart_key(key_name)
+        logger.info("Restart key set to: %s (from settings)", key_name)
+
+    def cancel_key_select(self, key_name: str) -> None:
+        """Handle cancel key selection from Settings panel."""
+        app = self._app
+        fb_cfg = app._config.setdefault("feedback", {})
+        fb_cfg["cancel_key"] = key_name
+        save_config(app._config, app._config_path)
+
+        if app._hotkey_listener:
+            app._hotkey_listener.set_cancel_key(key_name)
+        logger.info("Cancel key set to: %s (from settings)", key_name)
 
     def sound_toggle(self, enabled: bool) -> None:
         """Handle sound toggle from Settings panel."""

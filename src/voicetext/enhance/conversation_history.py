@@ -16,9 +16,13 @@ logger = logging.getLogger(__name__)
 class ConversationHistory:
     """Append-only JSONL logger and reader for conversation history."""
 
+    _MAX_RECORDS = 20000
+    _ROTATE_SIZE_THRESHOLD = 4 * 1024 * 1024  # 4 MB — cheap pre-check
+
     def __init__(self, config_dir: str = DEFAULT_CONFIG_DIR) -> None:
         self._config_dir = os.path.expanduser(config_dir)
         self._history_path = os.path.join(self._config_dir, "conversation_history.jsonl")
+        self._archive_path = os.path.join(self._config_dir, "conversation_history.1.jsonl")
 
     def log(
         self,
@@ -30,6 +34,7 @@ class ConversationHistory:
         stt_model: str = "",
         llm_model: str = "",
         user_corrected: bool = False,
+        audio_duration: float = 0.0,
     ) -> None:
         """Write a single conversation record to the JSONL file."""
         os.makedirs(self._config_dir, exist_ok=True)
@@ -44,12 +49,50 @@ class ConversationHistory:
             "stt_model": stt_model,
             "llm_model": llm_model,
             "user_corrected": user_corrected,
+            "audio_duration": round(audio_duration, 1),
         }
 
         with open(self._history_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         logger.debug("Conversation logged: %s", self._history_path)
+        self._maybe_rotate()
+
+    def _maybe_rotate(self) -> None:
+        """Archive old records when the history file exceeds _MAX_RECORDS."""
+        try:
+            size = os.path.getsize(self._history_path)
+        except OSError:
+            return
+        if size < self._ROTATE_SIZE_THRESHOLD:
+            return
+
+        try:
+            with open(self._history_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            return
+
+        if len(lines) <= self._MAX_RECORDS:
+            return
+
+        old_lines = lines[: len(lines) - self._MAX_RECORDS]
+        keep_lines = lines[len(lines) - self._MAX_RECORDS :]
+
+        # Append old records to archive
+        with open(self._archive_path, "a", encoding="utf-8") as f:
+            f.writelines(old_lines)
+
+        # Rewrite main file with recent records only
+        tmp_path = self._history_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.writelines(keep_lines)
+        os.replace(tmp_path, self._history_path)
+
+        logger.info(
+            "Rotated conversation history: archived %d records, kept %d",
+            len(old_lines), len(keep_lines),
+        )
 
     def count(self) -> int:
         """Return the number of conversation records in the log file."""
@@ -258,6 +301,55 @@ class ConversationHistory:
                 record["edited_at"] = datetime.now(timezone.utc).isoformat()
                 new_lines.append(json.dumps(record, ensure_ascii=False) + "\n")
                 found = True
+            else:
+                new_lines.append(line)
+
+        if not found:
+            return False
+
+        tmp_path = self._history_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+        os.replace(tmp_path, self._history_path)
+        return True
+
+    def delete_record(self, timestamp: str) -> bool:
+        """Delete a record identified by timestamp.
+
+        Uses atomic file replacement via a temporary file + os.replace().
+
+        Args:
+            timestamp: The ISO timestamp identifying the record.
+
+        Returns:
+            True if record was found and deleted, False otherwise.
+        """
+        if not os.path.exists(self._history_path):
+            return False
+
+        try:
+            with open(self._history_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception as e:
+            logger.warning("Failed to read conversation history: %s", e)
+            return False
+
+        found = False
+        new_lines: List[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                new_lines.append(line)
+                continue
+            try:
+                record = json.loads(stripped)
+            except json.JSONDecodeError:
+                new_lines.append(line)
+                continue
+
+            if record.get("timestamp") == timestamp and not found:
+                found = True
+                # Skip this line (delete)
             else:
                 new_lines.append(line)
 
