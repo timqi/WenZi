@@ -769,8 +769,33 @@ class TestFormatTokenSuffix:
             "completion_tokens": 400,
         })
         assert "1,000" in result
-        assert "600" in result
-        assert "400" in result
+        assert "\u2191600" in result
+        assert "\u2193400" in result
+
+    def test_with_cache_tokens(self):
+        from voicetext.ui.result_window_web import ResultPreviewPanel
+
+        result = ResultPreviewPanel._format_token_suffix({
+            "total_tokens": 1000,
+            "prompt_tokens": 600,
+            "completion_tokens": 400,
+            "cache_read_tokens": 200,
+        })
+        assert "1,000" in result
+        assert "\u2191200+400" in result
+        assert "\u2193400" in result
+
+    def test_with_zero_cache_tokens(self):
+        from voicetext.ui.result_window_web import ResultPreviewPanel
+
+        result = ResultPreviewPanel._format_token_suffix({
+            "total_tokens": 1000,
+            "prompt_tokens": 600,
+            "completion_tokens": 400,
+            "cache_read_tokens": 0,
+        })
+        assert "\u2191600" in result
+        assert "+" not in result
 
 
 class TestBrowseHistoryAndTranslate:

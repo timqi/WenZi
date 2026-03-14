@@ -230,6 +230,64 @@ class TestStreamingIntegration:
         assert ctrl._live_overlay is None
 
 
+class TestOnRestartRecording:
+    def test_not_recording_returns_early(self, ctrl, mock_app):
+        mock_app._recorder.is_recording = False
+        ctrl.on_restart_recording()
+        mock_app._recorder.stop.assert_not_called()
+
+    @patch("PyObjCTools.AppHelper")
+    def test_restart_stops_and_restarts_no_sound(self, mock_apphelper, ctrl, mock_app):
+        mock_apphelper.callAfter = lambda fn, *a, **kw: fn(*a, **kw)
+        mock_app._sound_manager.enabled = False
+
+        ctrl.on_restart_recording()
+
+        # Should stop old recording
+        mock_app._recorder.stop.assert_called_once()
+        # Should replay prompt sound
+        mock_app._sound_manager.play.assert_called_with("start")
+        # Should start new recording
+        mock_app._recorder.start.assert_called_once()
+        assert mock_app._recording_started.is_set()
+
+    @patch("PyObjCTools.AppHelper")
+    def test_restart_stops_streaming(self, mock_apphelper, ctrl, mock_app):
+        mock_apphelper.callAfter = lambda fn, *a, **kw: fn(*a, **kw)
+        mock_app._sound_manager.enabled = False
+        mock_app._transcriber.supports_streaming = True
+
+        # Simulate active streaming
+        ctrl._streaming_active = True
+
+        ctrl.on_restart_recording()
+
+        # Old streaming should be stopped before restarting
+        mock_app._recorder.clear_on_audio_chunk.assert_called_once()
+        mock_app._transcriber.stop_streaming.assert_called_once()
+        # Streaming is restarted because transcriber supports it
+        mock_app._transcriber.start_streaming.assert_called_once()
+        assert ctrl._streaming_active is True
+
+    @patch("PyObjCTools.AppHelper")
+    def test_restart_sets_status(self, mock_apphelper, ctrl, mock_app):
+        mock_apphelper.callAfter = lambda fn, *a, **kw: fn(*a, **kw)
+        mock_app._sound_manager.enabled = False
+
+        ctrl.on_restart_recording()
+
+        mock_app._set_status.assert_called_with("Recording...")
+
+    @patch("PyObjCTools.AppHelper")
+    def test_restart_records_sound_feedback_stat(self, mock_apphelper, ctrl, mock_app):
+        mock_apphelper.callAfter = lambda fn, *a, **kw: fn(*a, **kw)
+        mock_app._sound_manager.enabled = True
+
+        ctrl.on_restart_recording()
+
+        mock_app._usage_stats.record_sound_feedback.assert_called_once()
+
+
 class TestDoTranscribeDirect:
     @patch("voicetext.controllers.recording_controller.type_text")
     @patch("PyObjCTools.AppHelper")

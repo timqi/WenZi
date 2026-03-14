@@ -100,6 +100,7 @@ class SettingsPanel:
         self._vocab_check = None
         self._auto_build_check = None
         self._history_check = None
+        self._config_dir_field = None
 
     def show(
         self,
@@ -164,6 +165,12 @@ class SettingsPanel:
             self._panel = None
 
         self._build_panel(state)
+
+        # Restore last active tab
+        last_tab = state.get("last_tab", "general")
+        if self._tab_view is not None and last_tab != "general":
+            self._tab_view.selectTabViewItemWithIdentifier_(last_tab)
+
         self._panel.makeKeyAndOrderFront_(None)
         NSApp.activateIgnoringOtherApps_(True)
 
@@ -305,8 +312,8 @@ class SettingsPanel:
         small_font = NSFont.systemFontOfSize_(12.0)
 
         hotkeys = state.get("hotkeys", {})
-        n_rows = len(hotkeys) + 8
-        total_h = max(content_h, n_rows * (self._CONTROL_HEIGHT + self._ROW_GAP) + 160)
+        n_rows = len(hotkeys) + 13
+        total_h = max(content_h, n_rows * (self._CONTROL_HEIGHT + self._ROW_GAP) + 200)
 
         doc_view = NSView.alloc().initWithFrame_(
             NSMakeRect(0, 0, content_w - 20, total_h)
@@ -401,6 +408,48 @@ class SettingsPanel:
         )
         y = self._add_hint(
             "Use web-based preview (HTML/CSS); disable for native AppKit preview",
+            pad + 12, y, content_w - 24, doc_view,
+        )
+
+        y -= self._SECTION_GAP
+
+        # --- Config Directory section ---
+        y -= self._LABEL_HEIGHT
+        cfg_label = self._make_label("Config Directory", pad, y, content_w, label_font)
+        doc_view.addSubview_(cfg_label)
+
+        config_dir = state.get("config_dir", "~/.config/VoiceText")
+        y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
+        self._config_dir_field = self._make_readonly_field(
+            config_dir, pad + 12, y, content_w - 24, small_font,
+        )
+        doc_view.addSubview_(self._config_dir_field)
+
+        y -= (28 + self._ROW_GAP + 4)
+        bx = pad + 12
+        browse_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(bx, y, 100, 28)
+        )
+        browse_btn.setTitle_("Browse...")
+        browse_btn.setBezelStyle_(1)
+        browse_btn.setFont_(small_font)
+        browse_btn.setTarget_(self)
+        browse_btn.setAction_(b"configDirBrowseClicked:")
+        doc_view.addSubview_(browse_btn)
+
+        bx += 108
+        reset_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(bx, y, 80, 28)
+        )
+        reset_btn.setTitle_("Reset")
+        reset_btn.setBezelStyle_(1)
+        reset_btn.setFont_(small_font)
+        reset_btn.setTarget_(self)
+        reset_btn.setAction_(b"configDirResetClicked:")
+        doc_view.addSubview_(reset_btn)
+
+        y = self._add_hint(
+            "Changes require app restart to take effect",
             pad + 12, y, content_w - 24, doc_view,
         )
 
@@ -666,10 +715,11 @@ class SettingsPanel:
         edit_btn_w = 52
         edit_font = NSFont.systemFontOfSize_(11.0)
         edit_x = pad + 12 + 168
-        for mode_id, label in sorted(enhance_modes, key=lambda x: x[1]):
+        for mode_id, label, order in enhance_modes:
             y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
+            display_label = f"{label} (#{order})"
             btn = self._make_radio(
-                label, pad + 12, y, 160,
+                display_label, pad + 12, y, 160,
                 current_mode == mode_id, small_font, doc_view,
             )
             btn.setTarget_(self)
@@ -795,6 +845,25 @@ class SettingsPanel:
         return label
 
     @staticmethod
+    def _make_readonly_field(text, x, y, width, font):
+        """Create a selectable but non-editable text field with border."""
+        from AppKit import NSColor, NSTextField
+        from Foundation import NSMakeRect
+
+        field = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(x, y, width, 22)
+        )
+        field.setStringValue_(text)
+        field.setFont_(font)
+        field.setEditable_(False)
+        field.setSelectable_(True)
+        field.setBezeled_(True)
+        field.setDrawsBackground_(True)
+        field.setBackgroundColor_(NSColor.controlBackgroundColor())
+        field.setTextColor_(NSColor.labelColor())
+        return field
+
+    @staticmethod
     def _make_hint(text, x, y, width):
         """Create a 10pt secondary-color hint label."""
         from AppKit import NSColor, NSFont, NSTextField
@@ -867,7 +936,7 @@ class SettingsPanel:
     # ── Tab view delegate ──────────────────────────────────────────────
 
     def tabView_didSelectTabViewItem_(self, tab_view, tab_item):
-        """Scroll to top when switching tabs."""
+        """Scroll to top when switching tabs and notify controller."""
         try:
             view = tab_item.view()
             if view is not None and hasattr(view, "documentView"):
@@ -879,6 +948,13 @@ class SettingsPanel:
                     doc_view.scrollPoint_(NSMakePoint(0, total_h))
         except Exception:
             logger.debug("Tab scroll reset failed", exc_info=True)
+
+        try:
+            tab_id = tab_item.identifier()
+            if tab_id:
+                self._call("on_tab_change", str(tab_id))
+        except Exception:
+            logger.debug("Tab change callback failed", exc_info=True)
 
     # ── Radio group helpers ──────────────────────────────────────────
 
@@ -996,6 +1072,12 @@ class SettingsPanel:
     def buildVocabClicked_(self, sender):
         self._call("on_vocab_build")
 
+    def configDirBrowseClicked_(self, sender):
+        self._call("on_config_dir_browse")
+
+    def configDirResetClicked_(self, sender):
+        self._call("on_config_dir_reset")
+
     # ── State update methods (called from app.py for sync) ───────────
 
     def update_hotkey(self, key_name: str, enabled: bool) -> None:
@@ -1036,3 +1118,8 @@ class SettingsPanel:
     def update_llm_model(self, provider: str, model: str) -> None:
         """Update LLM model selection."""
         self._select_radio_in_group(self._llm_buttons, (provider, model))
+
+    def update_config_dir(self, path: str) -> None:
+        """Update the config directory display field."""
+        if self._config_dir_field:
+            self._config_dir_field.setStringValue_(path)

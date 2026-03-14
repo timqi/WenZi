@@ -248,6 +248,90 @@ class TestMultiHotkeyListener:
         on_release.assert_called_once()
 
 
+class TestMultiHotkeyRestartKey:
+    def test_restart_callback_when_hotkey_held(self):
+        on_press = MagicMock()
+        on_release = MagicMock()
+        on_restart = MagicMock()
+        listener = MultiHotkeyListener(
+            ["fn"], on_press, on_release, on_restart=on_restart
+        )
+
+        # Hold hotkey
+        listener._handle_press("fn")
+        on_press.assert_called_once()
+
+        # Press space while hotkey is held
+        result = listener._handle_press("space")
+        on_restart.assert_called_once()
+        assert result is True  # should signal swallow
+
+    def test_restart_not_called_when_hotkey_not_held(self):
+        on_restart = MagicMock()
+        listener = MultiHotkeyListener(
+            ["fn"], MagicMock(), MagicMock(), on_restart=on_restart
+        )
+
+        # Press space without holding hotkey
+        result = listener._handle_press("space")
+        on_restart.assert_not_called()
+        assert result is False
+
+    def test_restart_not_called_when_no_callback(self):
+        on_press = MagicMock()
+        listener = MultiHotkeyListener(["fn"], on_press, MagicMock())
+
+        listener._handle_press("fn")
+        # Press space - should be ignored (no on_restart callback)
+        result = listener._handle_press("space")
+        # on_press called only once (for fn)
+        assert on_press.call_count == 1
+        assert result is False
+
+    def test_restart_with_custom_key(self):
+        on_restart = MagicMock()
+        listener = MultiHotkeyListener(
+            ["fn"], MagicMock(), MagicMock(),
+            on_restart=on_restart, restart_key="f5",
+        )
+
+        listener._handle_press("fn")
+        result = listener._handle_press("f5")
+        on_restart.assert_called_once()
+        assert result is True
+
+    def test_restart_ignores_non_restart_keys(self):
+        on_restart = MagicMock()
+        listener = MultiHotkeyListener(
+            ["fn"], MagicMock(), MagicMock(), on_restart=on_restart
+        )
+
+        listener._handle_press("fn")
+        # Press a non-restart key
+        result = listener._handle_press("a")
+        on_restart.assert_not_called()
+        assert result is False
+
+    def test_restart_multiple_times(self):
+        on_restart = MagicMock()
+        listener = MultiHotkeyListener(
+            ["fn"], MagicMock(), MagicMock(), on_restart=on_restart
+        )
+
+        listener._handle_press("fn")
+        listener._handle_press("space")
+        listener._handle_press("space")
+        listener._handle_press("space")
+        assert on_restart.call_count == 3
+
+    def test_press_returns_false_for_normal_key(self):
+        listener = MultiHotkeyListener(
+            ["fn"], MagicMock(), MagicMock(), on_restart=MagicMock()
+        )
+        result = listener._handle_press("fn")
+        assert result is False  # normal hotkey press should not swallow
+
+
 class TestHoldHotkeyThreadSafety:
     """Test that _held state is protected by a lock."""
 

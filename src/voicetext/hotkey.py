@@ -156,6 +156,10 @@ class _QuartzAllKeysListener:
 
     Monitors kCGEventKeyDown, kCGEventKeyUp, and kCGEventFlagsChanged.
     Callbacks receive the key name (str) and are called on a background thread.
+
+    When ``listen_only=False`` (active tap), the ``on_press`` callback may
+    return ``True`` to swallow the event (prevent it from reaching the
+    focused application).
     """
 
     def __init__(
@@ -190,7 +194,9 @@ class _QuartzAllKeysListener:
             if event_type == Quartz.kCGEventKeyDown:
                 name = _VK_TO_NAME.get(keycode)
                 if name:
-                    self._on_press(name)
+                    swallow = self._on_press(name)
+                    if swallow and not self._listen_only:
+                        return None
 
             elif event_type == Quartz.kCGEventKeyUp:
                 name = _VK_TO_NAME.get(keycode)
@@ -466,9 +472,13 @@ class MultiHotkeyListener:
         key_names: List[str],
         on_press: Callable[[], None],
         on_release: Callable[[], None],
+        on_restart: Optional[Callable[[], None]] = None,
+        restart_key: str = "space",
     ) -> None:
         self._on_press = on_press
         self._on_release = on_release
+        self._on_restart = on_restart
+        self._restart_key = restart_key.strip().lower()
         self._target_vks: Dict[int, str] = {}  # vk -> name
         self._enabled_names: set = set()
         self._held: set = set()  # set of currently held key names
@@ -492,14 +502,17 @@ class MultiHotkeyListener:
             self._enabled_names.add(n)
 
     def start(self) -> None:
+        # Use active tap when on_restart is set so we can swallow the restart key
+        listen_only = self._on_restart is None
         self._listener = _QuartzAllKeysListener(
             on_press=self._handle_press,
             on_release=self._handle_release,
+            listen_only=listen_only,
         )
         self._listener.start()
         logger.info(
-            "Multi-hotkey listener started, keys=%s",
-            list(self._enabled_names),
+            "Multi-hotkey listener started, keys=%s, listen_only=%s",
+            list(self._enabled_names), listen_only,
         )
 
     def stop(self) -> None:
@@ -601,7 +614,8 @@ class MultiHotkeyListener:
             self._held.discard(n)
         logger.info("Hotkey %s disabled", n)
 
-    def _handle_press(self, name: str) -> None:
+    def _handle_press(self, name: str) -> bool:
+        """Handle key press. Returns True if the event should be swallowed."""
         try:
             # Recording mode: capture any recognized key
             if self._record_cb is not None:
@@ -619,20 +633,32 @@ class MultiHotkeyListener:
                         self._record_unrecognized_cb(debug)
                     except Exception as e:
                         logger.error("on_unrecognized callback error: %s", e)
-                return
+                return False
 
             # Normal mode: check if this is a monitored key
             with self._held_lock:
                 if name in self._enabled_names and name not in self._held:
                     self._held.add(name)
+                    action = "press"
+                elif self._on_restart and self._held and name == self._restart_key:
+                    action = "restart"
                 else:
-                    return
-            try:
-                self._on_press()
-            except Exception as e:
-                logger.error("on_press callback error: %s", e)
+                    return False
+
+            if action == "press":
+                try:
+                    self._on_press()
+                except Exception as e:
+                    logger.error("on_press callback error: %s", e)
+            elif action == "restart":
+                try:
+                    self._on_restart()
+                except Exception as e:
+                    logger.error("on_restart callback error: %s", e)
+                return True  # swallow the restart key event
         except Exception:
             logger.warning("_handle_press exception", exc_info=True)
+        return False
 
     def _handle_release(self, name: str) -> None:
         try:

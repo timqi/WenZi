@@ -65,10 +65,13 @@ class SettingsController:
                     llm_models.append((pname, mname, f"{pname} / {mname}"))
             current_llm = (app._enhancer.provider_name, app._enhancer.model_name)
 
-        # Enhance modes (excluding "off")
+        # Enhance modes (excluding "off") with order for display
         enhance_modes = []
         if app._enhancer:
-            enhance_modes = list(app._enhancer.available_modes)
+            for mode_id, label in app._enhancer.available_modes:
+                mode_def = app._enhancer.get_mode_definition(mode_id)
+                order = mode_def.order if mode_def else 50
+                enhance_modes.append((mode_id, label, order))
 
         # Vocabulary count
         vocab_count = 0
@@ -77,7 +80,11 @@ class SettingsController:
         if vocab_count == 0:
             vocab_count = get_vocab_entry_count(app._config_dir)
 
+        ui_cfg = app._config.get("ui", {})
+        last_tab = ui_cfg.get("settings_last_tab", "general")
+
         state = {
+            "last_tab": last_tab,
             "hotkeys": hotkeys,
             "sound_enabled": app._sound_manager.enabled,
             "visual_indicator": app._recording_indicator.enabled,
@@ -98,6 +105,7 @@ class SettingsController:
             "history_enabled": bool(
                 app._enhancer and app._enhancer.history_enabled
             ),
+            "config_dir": app._config_dir,
         }
 
         callbacks = {
@@ -122,9 +130,12 @@ class SettingsController:
             "on_auto_build_toggle": self.auto_build_toggle,
             "on_history_toggle": self.history_toggle,
             "on_vocab_build": lambda: app._on_vocab_build(None),
+            "on_tab_change": self.tab_change,
             "on_show_config": lambda: app._on_show_config(None),
             "on_edit_config": lambda: app._on_enhance_edit_config(None),
             "on_reload_config": lambda: app._on_reload_config(None),
+            "on_config_dir_browse": self.config_dir_browse,
+            "on_config_dir_reset": self.config_dir_reset,
         }
 
         # Call show() directly — do NOT use callAfter, because the menu
@@ -478,3 +489,106 @@ class SettingsController:
         app._config["ai_enhance"]["conversation_history"]["enabled"] = enabled
         save_config(app._config, app._config_path)
         logger.info("Conversation history set to: %s (from settings)", enabled)
+
+    def tab_change(self, tab_id: str) -> None:
+        """Persist the last active settings tab."""
+        app = self._app
+        app._config.setdefault("ui", {})["settings_last_tab"] = tab_id
+        save_config(app._config, app._config_path)
+
+    def config_dir_browse(self) -> None:
+        """Open a directory picker to choose a custom config directory."""
+        from AppKit import NSOpenPanel
+
+        panel = NSOpenPanel.openPanel()
+        panel.setCanChooseDirectories_(True)
+        panel.setCanChooseFiles_(False)
+        panel.setCanCreateDirectories_(True)
+        panel.setAllowsMultipleSelection_(False)
+        panel.setTitle_("Select Config Directory")
+        panel.setPrompt_("Select")
+
+        result = panel.runModal()
+        if result != 1:  # NSModalResponseOK
+            return
+
+        url = panel.URL()
+        if not url:
+            return
+
+        new_dir = str(url.path())
+        app = self._app
+
+        # Copy entire config directory (config, enhance_modes, sounds,
+        # vocabulary, history, stats, etc.) to the new location.
+        # Existing files in the target are not overwritten.
+        import shutil
+
+        old_dir = app._config_dir
+        if os.path.isdir(old_dir) and os.path.realpath(old_dir) != os.path.realpath(new_dir):
+            shutil.copytree(old_dir, new_dir, dirs_exist_ok=True)
+            logger.info("Copied config directory %s -> %s", old_dir, new_dir)
+
+        from voicetext.config import save_config_dir_preference
+
+        save_config_dir_preference(new_dir)
+        app._settings_panel.update_config_dir(new_dir)
+        logger.info("Config directory preference set to: %s", new_dir)
+
+        self._prompt_restart(
+            f"Config directory changed to:\n{new_dir}\n\n"
+            "A restart is required for this to take effect."
+        )
+
+    def config_dir_reset(self) -> None:
+        """Reset config directory to default."""
+        from voicetext.config import DEFAULT_CONFIG_DIR, reset_config_dir_preference
+
+        reset_config_dir_preference()
+        default_dir = os.path.expanduser(DEFAULT_CONFIG_DIR)
+        self._app._settings_panel.update_config_dir(default_dir)
+        logger.info("Config directory preference reset to default")
+
+        self._prompt_restart(
+            f"Config directory reset to default:\n{default_dir}\n\n"
+            "A restart is required for this to take effect."
+        )
+
+    def _prompt_restart(self, message: str) -> None:
+        """Show a dialog asking whether to restart now, and do so if confirmed."""
+        # Close settings panel first so the alert is not hidden behind it
+        self._app._settings_panel.close()
+
+        result = topmost_alert(
+            title="Restart Required",
+            message=message,
+            ok="Restart Now",
+            cancel="Later",
+        )
+        restore_accessory()
+        if result:
+            self._restart_app()
+
+    @staticmethod
+    def _restart_app() -> None:
+        """Spawn a shell watcher that waits for this process to exit, then relaunches."""
+        import shlex
+        import sys
+
+        pid = os.getpid()
+        cmd = shlex.join([sys.executable] + sys.argv)
+
+        # Use /bin/sh so the watcher is fully independent of the Python runtime.
+        # `kill -0` checks if the process is still alive; once it's gone, relaunch.
+        script = f"while kill -0 {pid} 2>/dev/null; do sleep 0.2; done; exec {cmd}"
+        subprocess.Popen(
+            ["/bin/sh", "-c", script],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info("Restart watcher spawned (pid=%d), quitting...", pid)
+
+        from voicetext.statusbar import quit_application
+        quit_application()

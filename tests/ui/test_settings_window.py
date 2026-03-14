@@ -38,8 +38,8 @@ def _make_state():
         ],
         "current_llm": ("ollama", "qwen2.5:7b"),
         "enhance_modes": [
-            ("proofread", "纠错"),
-            ("format", "格式化"),
+            ("proofread", "纠错", 10),
+            ("format", "格式化", 30),
         ],
         "current_enhance_mode": "proofread",
         "thinking": False,
@@ -61,6 +61,7 @@ def _make_callbacks():
         "on_enhance_mode_select", "on_enhance_add_mode", "on_enhance_mode_edit",
         "on_thinking_toggle", "on_vocab_toggle", "on_auto_build_toggle",
         "on_history_toggle", "on_vocab_build",
+        "on_tab_change",
         "on_show_config", "on_edit_config", "on_reload_config",
     ]
     return {name: MagicMock(name=name) for name in names}
@@ -292,6 +293,28 @@ class TestSettingsCallbacks:
         cbs["on_enhance_mode_edit"].assert_called_once_with("proofread")
 
 
+class TestEnhanceModeOrder:
+    """Tests that enhance modes preserve insertion order from state."""
+
+    def test_modes_follow_state_order(self):
+        from voicetext.ui.settings_window import SettingsPanel
+
+        panel = SettingsPanel()
+        state = _make_state()
+        # Provide modes whose alphabetical label order differs from list order
+        state["enhance_modes"] = [
+            ("proofread", "纠错", 10),
+            ("translate", "翻译为英文", 20),
+            ("format", "格式化", 30),
+        ]
+        callbacks = _make_callbacks()
+        panel.show(state, callbacks)
+
+        # _enhance_mode_buttons is an ordered dict: "off" first, then modes
+        keys = list(panel._enhance_mode_buttons.keys())
+        assert keys == ["off", "proofread", "translate", "format"]
+
+
 class TestSettingsStateUpdate:
     """Tests for state update methods."""
 
@@ -418,6 +441,43 @@ class TestTabScrollReset:
         # Simulate tab switch - should not raise
         mock_tab_item = MagicMock()
         panel.tabView_didSelectTabViewItem_(panel._tab_view, mock_tab_item)
+
+    def test_tab_change_fires_callback(self):
+        from voicetext.ui.settings_window import SettingsPanel
+
+        panel = SettingsPanel()
+        state = _make_state()
+        callbacks = _make_callbacks()
+        panel.show(state, callbacks)
+
+        mock_tab_item = MagicMock()
+        mock_tab_item.identifier.return_value = "stt"
+        panel.tabView_didSelectTabViewItem_(panel._tab_view, mock_tab_item)
+
+        callbacks["on_tab_change"].assert_called_once_with("stt")
+
+    def test_last_tab_restored_on_show(self):
+        from voicetext.ui.settings_window import SettingsPanel
+
+        panel = SettingsPanel()
+        state = _make_state()
+        state["last_tab"] = "llm"
+        callbacks = _make_callbacks()
+        panel.show(state, callbacks)
+
+        # Verify selectTabViewItemWithIdentifier_ was called with "llm"
+        panel._tab_view.selectTabViewItemWithIdentifier_.assert_called_with("llm")
+
+    def test_default_tab_no_extra_select(self):
+        from voicetext.ui.settings_window import SettingsPanel
+
+        panel = SettingsPanel()
+        state = _make_state()
+        # No last_tab or last_tab == "general" should not call selectTabViewItemWithIdentifier_
+        callbacks = _make_callbacks()
+        panel.show(state, callbacks)
+
+        panel._tab_view.selectTabViewItemWithIdentifier_.assert_not_called()
 
 
 class TestSettingsCallbackErrorHandling:

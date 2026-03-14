@@ -505,7 +505,10 @@ function setEnhanceResult(text) {
 }
 
 function setEnhanceInfo(text) {
-    document.getElementById('enhance-info').textContent = text;
+    const el = document.getElementById('enhance-info');
+    let safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    safe = safe.replace(/(\u2191[\d,]+)\+/g, '<span style="opacity:0.5">$1</span>+');
+    el.innerHTML = safe;
 }
 
 function setEnhanceLoading() {
@@ -523,7 +526,7 @@ function setEnhanceOff() {
 }
 
 function setEnhanceComplete(info, hasThinking, finalText) {
-    document.getElementById('enhance-info').textContent = info;
+    setEnhanceInfo(info);
     if (hasThinking) {
         const _tb = document.getElementById('thinking-btn');
         _tb.classList.remove('disabled'); _tb.style.opacity = '1';
@@ -550,7 +553,7 @@ function finishThinkingSpan() {
 function replayCachedResult(displayText, info, hasThinking, finalText) {
     const el = document.getElementById('enhance-text');
     el.textContent = displayText;
-    document.getElementById('enhance-info').textContent = info;
+    setEnhanceInfo(info);
     if (hasThinking) {
         const _tb = document.getElementById('thinking-btn');
         _tb.classList.remove('disabled'); _tb.style.opacity = '1';
@@ -969,12 +972,11 @@ class ResultPreviewPanel:
             self._stop_loading_timer()
             self._system_prompt = system_prompt
             self._thinking_text = thinking_text
-            suffix = "[cached]"
-            if usage and usage.get("total_tokens"):
-                total = usage["total_tokens"]
-                prompt = usage.get("prompt_tokens", 0)
-                completion = usage.get("completion_tokens", 0)
-                suffix = f"Tokens: {total:,} (\u2191{prompt:,} \u2193{completion:,}) [cached]"
+            suffix = self._format_token_suffix(usage)
+            if suffix:
+                suffix += " [cached]"
+            else:
+                suffix = "[cached]"
             has_thinking = bool(thinking_text)
             ft_json = json.dumps(final_text) if final_text is not None else "null"
             self._eval_js(
@@ -1402,7 +1404,13 @@ class ResultPreviewPanel:
         total = usage["total_tokens"]
         prompt = usage.get("prompt_tokens", 0)
         completion = usage.get("completion_tokens", 0)
-        return f"Tokens: {total:,} (\u2191{prompt:,} \u2193{completion:,})"
+        cached = usage.get("cache_read_tokens", 0)
+        if cached:
+            uncached = prompt - cached
+            prompt_part = f"\u2191{cached:,}+{uncached:,}"
+        else:
+            prompt_part = f"\u2191{prompt:,}"
+        return f"Tokens: {total:,} ({prompt_part} \u2193{completion:,})"
 
     def _stop_loading_timer(self) -> None:
         if self._loading_timer is not None:

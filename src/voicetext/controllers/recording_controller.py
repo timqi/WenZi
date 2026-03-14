@@ -54,6 +54,55 @@ class RecordingController:
             self.start_recording_indicator()
             app._recording_started.set()
 
+    def on_restart_recording(self) -> None:
+        """Called when restart key (space) is pressed during recording."""
+        app = self._app
+        if not app._recorder.is_recording:
+            return
+        logger.info("Restart key pressed, restarting recording")
+
+        # Stop streaming if active
+        if self._streaming_active:
+            app._recorder.clear_on_audio_chunk()
+            try:
+                app._transcriber.stop_streaming()
+            except Exception:
+                logger.exception("Failed to stop streaming during restart")
+            self._streaming_active = False
+            self._hide_live_overlay()
+
+        # Stop current recording and discard audio
+        app._recorder.stop()
+
+        # Stop indicator and level polling
+        self.stop_recording_indicator()
+
+        # Reset state
+        app._recording_started.clear()
+
+        # Replay prompt sound and restart recording
+        app._set_status("Recording...")
+        app._sound_manager.play("start")
+        if app._sound_manager.enabled:
+            app._usage_stats.record_sound_feedback()
+
+        def _delayed_start():
+            import time
+            time.sleep(0.35)
+            if not app._busy:
+                app._recorder.start()
+                self._start_streaming_if_supported()
+                self.start_recording_indicator()
+            app._recording_started.set()
+
+        if app._sound_manager.enabled:
+            threading.Thread(target=_delayed_start, daemon=True).start()
+        else:
+            app._recorder.start()
+            self._start_streaming_if_supported()
+            self.start_recording_indicator()
+            app._recording_started.set()
+
     def on_hotkey_release(self) -> None:
         """Called when hotkey is released - stop recording and transcribe."""
         app = self._app

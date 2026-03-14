@@ -481,6 +481,7 @@ class VoiceTextApp(StatusBarApp):
                 key_names=active_keys,
                 on_press=self._recording_controller.on_hotkey_press,
                 on_release=self._recording_controller.on_hotkey_release,
+                on_restart=self._recording_controller.on_restart_recording,
             )
             self._hotkey_listener.start()
 
