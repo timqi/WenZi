@@ -130,8 +130,8 @@ class TestBuildHtml:
 
         html = build_html({"cumulative": {}, "today": {}, "daily": []})
         assert "dailyTrend" in html
-        assert "modePie" in html
-        assert "tokenArea" in html
+        assert "actionBar" in html
+        assert "tokenBar" in html
         assert "enhanceBar" in html
 
     def test_html_has_dark_mode_support(self):
@@ -157,7 +157,7 @@ class TestHtmlTemplate:
     def test_template_has_canvas_elements(self):
         from voicetext.ui.stats_panel import _HTML_TEMPLATE
 
-        for canvas_id in ("dailyTrend", "modePie", "tokenArea", "enhanceBar"):
+        for canvas_id in ("dailyTrend", "actionBar", "tokenBar", "enhanceBar"):
             assert canvas_id in _HTML_TEMPLATE
 
 

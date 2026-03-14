@@ -81,13 +81,13 @@ body {
 }
 .chart-container {
     background: var(--card-bg); border-radius: 10px; padding: 16px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border); min-width: 0;
 }
 .chart-container h3 {
     font-size: 14px; font-weight: 600; margin-bottom: 12px;
 }
 .chart-wrap {
-    position: relative; height: 220px;
+    position: relative; height: 220px; overflow: hidden;
 }
 .empty-hint {
     color: var(--secondary); font-size: 13px; text-align: center;
@@ -122,12 +122,12 @@ body {
         <div class="chart-wrap"><canvas id="dailyTrend"></canvas></div>
     </div>
     <div class="chart-container">
-        <h3>Mode Distribution</h3>
-        <div class="chart-wrap"><canvas id="modePie"></canvas></div>
+        <h3>User Actions</h3>
+        <div class="chart-wrap"><canvas id="actionBar"></canvas></div>
     </div>
     <div class="chart-container">
         <h3>Token Usage</h3>
-        <div class="chart-wrap"><canvas id="tokenArea"></canvas></div>
+        <div class="chart-wrap"><canvas id="tokenBar"></canvas></div>
     </div>
     <div class="chart-container">
         <h3>Enhance Modes</h3>
@@ -144,7 +144,7 @@ Chart.defaults.borderColor = isDark ? 'rgba(72,72,74,0.5)' : 'rgba(210,210,215,0
 Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
 Chart.defaults.font.size = 12;
 Chart.defaults.plugins.legend.labels.usePointStyle = true;
-Chart.defaults.plugins.legend.labels.pointStyleWidth = 10;
+Chart.defaults.plugins.legend.labels.pointStyle = 'rectRounded';
 
 const COLORS = {
     accent: isDark ? '#0a84ff' : '#007aff',
@@ -196,6 +196,35 @@ function calcRate(num, denom) {
     return Math.round(num / denom * 100) + '%';
 }
 
+// --- Stacked bar chart options ---
+const STACKED_BAR_OPTS = {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { intersect: false, mode: 'index' },
+    scales: {
+        x: { stacked: true },
+        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+    },
+    plugins: {
+        legend: { position: 'bottom' },
+        tooltip: {
+            mode: 'index', intersect: false,
+            callbacks: {
+                footer: items => {
+                    const sum = items.reduce((s, i) => s + (i.parsed.y || 0), 0);
+                    return 'Total: ' + sum.toLocaleString();
+                }
+            }
+        },
+    },
+};
+
+const BAR_COLORS = [COLORS.accent, COLORS.green, COLORS.orange, COLORS.purple,
+                    COLORS.teal, COLORS.pink, COLORS.red];
+
+function stackedBarOpts(extraOpts) {
+    return JSON.parse(JSON.stringify({...STACKED_BAR_OPTS, ...extraOpts}));
+}
+
 // --- Charts ---
 let currentRange = 7;
 let chartInstances = {};
@@ -219,185 +248,125 @@ function renderCharts() {
         return parts.length === 3 ? parts[1] + '/' + parts[2] : d.date;
     });
 
-    // Daily Trend
+    // 1. Daily Transcriptions — stacked bar: Direct + Preview
     destroyChart('dailyTrend');
     chartInstances.dailyTrend = new Chart(document.getElementById('dailyTrend'), {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Transcriptions',
-                data: daily.map(d => (d.totals||{}).transcriptions || 0),
-                borderColor: COLORS.accent,
-                backgroundColor: COLORS.accent + '33',
-                fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 6,
-            }]
+            datasets: [
+                {
+                    label: 'Direct',
+                    data: daily.map(d => (d.totals||{}).direct_mode || 0),
+                    backgroundColor: COLORS.accent + 'cc',
+                    borderColor: COLORS.accent, borderWidth: 1, borderRadius: 2,
+                },
+                {
+                    label: 'Preview',
+                    data: daily.map(d => (d.totals||{}).preview_mode || 0),
+                    backgroundColor: COLORS.green + 'cc',
+                    borderColor: COLORS.green, borderWidth: 1, borderRadius: 2,
+                }
+            ]
         },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { intersect: false, mode: 'index' },
-            scales: {
-                y: { beginAtZero: true, ticks: { precision: 0 } },
-            },
-            plugins: { legend: { display: false } },
-        }
+        options: stackedBarOpts({}),
     });
 
-    // Mode Pie
-    destroyChart('modePie');
-    const cum = DATA.cumulative.totals || {};
-    const pieData = [
-        cum.direct_mode || 0, cum.preview_mode || 0
-    ];
-    const actionData = [
-        cum.direct_accept || 0, cum.user_modification || 0, cum.cancel || 0
-    ];
-    const hasPie = pieData.some(v => v > 0) || actionData.some(v => v > 0);
-
-    if (hasPie) {
-        chartInstances.modePie = new Chart(document.getElementById('modePie'), {
-            type: 'doughnut',
+    // 2. User Actions — stacked bar: Accept + Modified + Cancel
+    destroyChart('actionBar');
+    const hasActions = daily.some(d => {
+        const t = d.totals || {};
+        return (t.direct_accept || 0) + (t.user_modification || 0) + (t.cancel || 0) > 0;
+    });
+    if (hasActions) {
+        chartInstances.actionBar = new Chart(document.getElementById('actionBar'), {
+            type: 'bar',
             data: {
-                labels: ['Direct', 'Preview', 'Accept', 'Modified', 'Cancel'],
+                labels: labels,
                 datasets: [
                     {
-                        label: 'Input Mode',
-                        data: [...pieData, 0, 0, 0],
-                        backgroundColor: [COLORS.accent, COLORS.green, 'transparent', 'transparent', 'transparent'],
-                        weight: 1,
+                        label: 'Accept',
+                        data: daily.map(d => (d.totals||{}).direct_accept || 0),
+                        backgroundColor: COLORS.green + 'cc',
+                        borderColor: COLORS.green, borderWidth: 1, borderRadius: 2,
                     },
                     {
-                        label: 'User Action',
-                        data: [0, 0, ...actionData],
-                        backgroundColor: ['transparent', 'transparent', COLORS.teal, COLORS.orange, COLORS.red],
-                        weight: 1,
+                        label: 'Modified',
+                        data: daily.map(d => (d.totals||{}).user_modification || 0),
+                        backgroundColor: COLORS.orange + 'cc',
+                        borderColor: COLORS.orange, borderWidth: 1, borderRadius: 2,
+                    },
+                    {
+                        label: 'Cancel',
+                        data: daily.map(d => (d.totals||{}).cancel || 0),
+                        backgroundColor: COLORS.red + 'cc',
+                        borderColor: COLORS.red, borderWidth: 1, borderRadius: 2,
                     }
                 ]
             },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                cutout: '40%',
-                plugins: {
-                    legend: { position: 'bottom', labels: {
-                        generateLabels: function(chart) {
-                            const ds0 = chart.data.datasets[0];
-                            const ds1 = chart.data.datasets[1];
-                            const items = [];
-                            const mapping = [
-                                { idx: 0, ds: 0, text: 'Direct',   val: cum.direct_mode },
-                                { idx: 1, ds: 0, text: 'Preview',  val: cum.preview_mode },
-                                { idx: 2, ds: 1, text: 'Accept',   val: cum.direct_accept },
-                                { idx: 3, ds: 1, text: 'Modified', val: cum.user_modification },
-                                { idx: 4, ds: 1, text: 'Cancel',   val: cum.cancel },
-                            ];
-                            mapping.forEach(m => {
-                                if (m.val > 0) {
-                                    const src = m.ds === 0 ? ds0 : ds1;
-                                    items.push({
-                                        text: m.text,
-                                        fillStyle: src.backgroundColor[m.idx],
-                                        strokeStyle: src.backgroundColor[m.idx],
-                                        lineWidth: 0,
-                                        pointStyle: 'circle',
-                                        datasetIndex: m.ds,
-                                        index: m.idx,
-                                    });
-                                }
-                            });
-                            return items;
-                        }
-                    }},
-                    tooltip: {
-                        callbacks: {
-                            label: ctx => {
-                                const v = ctx.raw;
-                                if (!v) return null;
-                                return `${ctx.label}: ${v}`;
-                            }
-                        }
-                    }
-                },
-            }
+            options: stackedBarOpts({}),
         });
     } else {
-        document.getElementById('modePie').closest('.chart-container').innerHTML =
-            '<h3>Mode Distribution</h3><div class="empty-hint">No data yet</div>';
+        document.getElementById('actionBar').closest('.chart-container').innerHTML =
+            '<h3>User Actions</h3><div class="empty-hint">No action data yet</div>';
     }
 
-    // Token Area
-    destroyChart('tokenArea');
+    // 3. Token Usage — stacked bar: Prompt + Completion + Cached
+    destroyChart('tokenBar');
     const hasTokens = daily.some(d => (d.token_usage||{}).total_tokens > 0);
     if (hasTokens) {
-        chartInstances.tokenArea = new Chart(document.getElementById('tokenArea'), {
-            type: 'line',
+        chartInstances.tokenBar = new Chart(document.getElementById('tokenBar'), {
+            type: 'bar',
             data: {
                 labels: labels,
                 datasets: [
                     {
                         label: 'Prompt',
                         data: daily.map(d => (d.token_usage||{}).prompt_tokens || 0),
-                        borderColor: COLORS.purple,
-                        backgroundColor: COLORS.purple + '44',
-                        fill: true, tension: 0.3, pointRadius: 2,
+                        backgroundColor: COLORS.purple + 'cc',
+                        borderColor: COLORS.purple, borderWidth: 1, borderRadius: 2,
                     },
                     {
                         label: 'Completion',
                         data: daily.map(d => (d.token_usage||{}).completion_tokens || 0),
-                        borderColor: COLORS.teal,
-                        backgroundColor: COLORS.teal + '44',
-                        fill: true, tension: 0.3, pointRadius: 2,
+                        backgroundColor: COLORS.teal + 'cc',
+                        borderColor: COLORS.teal, borderWidth: 1, borderRadius: 2,
                     },
                     {
                         label: 'Cached',
                         data: daily.map(d => (d.token_usage||{}).cache_read_tokens || 0),
-                        borderColor: COLORS.green,
-                        backgroundColor: COLORS.green + '44',
-                        fill: true, tension: 0.3, pointRadius: 2,
+                        backgroundColor: COLORS.green + 'cc',
+                        borderColor: COLORS.green, borderWidth: 1, borderRadius: 2,
                     }
                 ]
             },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                interaction: { intersect: false, mode: 'index' },
-                scales: {
-                    y: { beginAtZero: true, stacked: true },
-                    x: {}
-                },
-                plugins: { legend: { position: 'bottom' } },
-            }
+            options: stackedBarOpts({}),
         });
     } else {
-        document.getElementById('tokenArea').closest('.chart-container').innerHTML =
+        document.getElementById('tokenBar').closest('.chart-container').innerHTML =
             '<h3>Token Usage</h3><div class="empty-hint">No token data yet</div>';
     }
 
-    // Enhance Mode Bar
+    // 4. Enhance Modes — stacked bar: one dataset per mode, stacked by day
     destroyChart('enhanceBar');
-    const em = DATA.cumulative.enhance_mode_usage || {};
-    const emKeys = Object.keys(em).sort((a, b) => em[b] - em[a]);
-    if (emKeys.length > 0) {
-        const barColors = [COLORS.accent, COLORS.green, COLORS.orange, COLORS.purple,
-                           COLORS.teal, COLORS.pink, COLORS.red];
+    // Collect all enhance mode names across the daily range
+    const modeSet = new Set();
+    daily.forEach(d => {
+        Object.keys(d.enhance_mode_usage || {}).forEach(k => modeSet.add(k));
+    });
+    const modeNames = Array.from(modeSet).sort();
+    if (modeNames.length > 0) {
+        const datasets = modeNames.map((mode, i) => ({
+            label: mode,
+            data: daily.map(d => (d.enhance_mode_usage || {})[mode] || 0),
+            backgroundColor: BAR_COLORS[i % BAR_COLORS.length] + 'cc',
+            borderColor: BAR_COLORS[i % BAR_COLORS.length],
+            borderWidth: 1, borderRadius: 2,
+        }));
         chartInstances.enhanceBar = new Chart(document.getElementById('enhanceBar'), {
             type: 'bar',
-            data: {
-                labels: emKeys,
-                datasets: [{
-                    label: 'Usage Count',
-                    data: emKeys.map(k => em[k]),
-                    backgroundColor: emKeys.map((_, i) => barColors[i % barColors.length] + 'cc'),
-                    borderColor: emKeys.map((_, i) => barColors[i % barColors.length]),
-                    borderWidth: 1, borderRadius: 4,
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                indexAxis: emKeys.length > 5 ? 'y' : 'x',
-                scales: {
-                    [emKeys.length > 5 ? 'x' : 'y']: { beginAtZero: true, ticks: { precision: 0 } },
-                },
-                plugins: { legend: { display: false } },
-            }
+            data: { labels: labels, datasets: datasets },
+            options: stackedBarOpts({}),
         });
     } else {
         document.getElementById('enhanceBar').closest('.chart-container').innerHTML =
