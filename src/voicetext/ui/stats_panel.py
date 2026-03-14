@@ -63,7 +63,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 body {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
     background: var(--bg); color: var(--text);
-    padding: 20px; overflow-y: auto;
+    padding: 16px; overflow-y: auto;
 }
 .cards-row {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
@@ -87,7 +87,7 @@ body {
     font-size: 14px; font-weight: 600; margin-bottom: 12px;
 }
 .chart-wrap {
-    position: relative; height: 250px;
+    position: relative; height: 220px;
 }
 .empty-hint {
     color: var(--secondary); font-size: 13px; text-align: center;
@@ -168,7 +168,8 @@ function renderCards() {
         { label: 'Total Transcriptions', value: t.transcriptions || 0,
           sub: `Today: ${td.transcriptions || 0}` },
         { label: 'Total Tokens', value: formatNum(tk.total_tokens || 0),
-          sub: `\u2191${formatNum(tk.prompt_tokens || 0)} \u2193${formatNum(tk.completion_tokens || 0)}` },
+          sub: `\u2191${formatNum(tk.prompt_tokens || 0)} \u2193${formatNum(tk.completion_tokens || 0)}`
+            + (tk.cache_read_tokens ? ` | Cached: ${formatNum(tk.cache_read_tokens)}` : '') },
         { label: 'Accept Rate',
           value: calcRate(t.direct_accept, t.direct_accept + t.user_modification + t.cancel),
           sub: `Accept: ${t.direct_accept || 0} | Modified: ${t.user_modification || 0}` },
@@ -345,6 +346,13 @@ function renderCharts() {
                         borderColor: COLORS.teal,
                         backgroundColor: COLORS.teal + '44',
                         fill: true, tension: 0.3, pointRadius: 2,
+                    },
+                    {
+                        label: 'Cached',
+                        data: daily.map(d => (d.token_usage||{}).cache_read_tokens || 0),
+                        borderColor: COLORS.green,
+                        backgroundColor: COLORS.green + '44',
+                        fill: true, tension: 0.3, pointRadius: 2,
                     }
                 ]
             },
@@ -457,8 +465,8 @@ def build_html(payload: Dict[str, Any]) -> str:
 class StatsChartPanel:
     """Floating NSPanel with WKWebView showing interactive usage statistics charts."""
 
-    _WIDTH = 920
-    _HEIGHT = 720
+    _WIDTH = 960
+    _HEIGHT = 840
 
     def __init__(self) -> None:
         self._panel = None
