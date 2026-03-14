@@ -404,7 +404,11 @@ closeBtn.addEventListener('click', () => post({type:'close'}));
 
 /* --- Keyboard --- */
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); post({type:'close'}); }
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        if (detail.style.display !== 'none') clearDetail();
+        else post({type:'close'});
+    }
     if (e.metaKey && e.key === 's') { e.preventDefault(); if (!saveBtn.disabled) saveBtn.click(); }
 });
 
