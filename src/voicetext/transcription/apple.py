@@ -264,11 +264,7 @@ class AppleSpeechTranscriber(BaseTranscriber):
                     if hasattr(error, "localizedDescription")
                     else str(error)
                 )
-                logger.warning(
-                    "[stream-diag] ERROR: %s | result=%s, ending=%s, accumulated=%r",
-                    err_desc, result is not None, self._stream_ending,
-                    self._stream_accumulated[:80] if self._stream_accumulated else "",
-                )
+                logger.warning("Streaming recognition error: %s", err_desc)
                 if result is None:
                     self._stream_final_event.set()
                     return
@@ -278,11 +274,6 @@ class AppleSpeechTranscriber(BaseTranscriber):
 
             text = result.bestTranscription().formattedString()
             is_final = result.isFinal()
-            logger.info(
-                "[stream-diag] text=%r, is_final=%s, ending=%s, accumulated=%r",
-                text[:80] if text else "", is_final, self._stream_ending,
-                self._stream_accumulated[:80] if self._stream_accumulated else "",
-            )
 
             if is_final and not self._stream_ending:
                 # Mid-session segment boundary (pause) — accumulate, report as partial
@@ -315,11 +306,6 @@ class AppleSpeechTranscriber(BaseTranscriber):
                     and len(text) < len(best) * 0.5
                     and len(best) >= 2
                 ):
-                    logger.info(
-                        "[stream-diag] implicit segment reset detected: "
-                        "best_partial=%r -> text=%r",
-                        best[:80], text[:80] if text else "",
-                    )
                     self._stream_accumulated += best
                     self._stream_best_partial = text
                 elif len(text) >= len(best):
