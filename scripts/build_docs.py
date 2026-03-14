@@ -363,7 +363,7 @@ def build_doc(entry: dict, registry: list[dict]) -> None:
 
         # Language switch href
         if lang == "en":
-            lang_switch_href = f"../../zh/docs/{entry['slug']}.html"
+            lang_switch_href = f"../zh/docs/{entry['slug']}.html"
             out_dir = SITE_DIR / "docs"
             prefix = "../"
         else:
