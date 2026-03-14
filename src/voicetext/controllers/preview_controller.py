@@ -222,6 +222,7 @@ class PreviewController:
                     threading.Thread(target=_do_stt, daemon=True).start()
                 elif use_enhance:
                     # ASR already available, start enhancement immediately
+                    app._preview_panel.set_enhance_loading()
                     app._preview_panel.enhance_request_id += 1
                     app._enhance_controller.run(
                         asr_text, app._preview_panel.enhance_request_id, result_holder
