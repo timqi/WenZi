@@ -82,6 +82,7 @@ class RecordingController:
             app._busy = True
 
             def _do_streaming_stop():
+                from PyObjCTools import AppHelper
                 try:
                     text = app._transcriber.stop_streaming()
                     self._hide_live_overlay()
@@ -97,11 +98,13 @@ class RecordingController:
                         else:
                             self.do_transcribe_direct(asr_text, use_enhance)
                     else:
+                        AppHelper.callAfter(app._recording_indicator.hide)
                         app._set_status("(empty)")
                         logger.warning("Streaming transcription returned empty text")
                 except Exception as e:
                     logger.error("Streaming stop failed: %s", e)
                     self._hide_live_overlay()
+                    AppHelper.callAfter(app._recording_indicator.hide)
                     app._set_status("Error")
                 finally:
                     app._busy = False
