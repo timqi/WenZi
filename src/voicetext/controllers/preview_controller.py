@@ -589,8 +589,14 @@ class PreviewController:
 
         # Update panel UI
         if mode_id == MODE_OFF:
+            app._enhance_controller.cancel()
+            app._preview_panel.enhance_request_id += 1
             AppHelper.callAfter(app._preview_panel.set_enhance_off)
         else:
+            # Always cancel in-flight stream and invalidate stale chunks
+            app._enhance_controller.cancel()
+            app._preview_panel.enhance_request_id += 1
+
             cached = app._enhance_controller.get_cached()
             if cached is not None:
                 app._preview_panel.replay_cached_result(
@@ -602,7 +608,6 @@ class PreviewController:
                 )
             else:
                 AppHelper.callAfter(app._preview_panel.set_enhance_loading)
-                app._preview_panel.enhance_request_id += 1
                 asr_text = getattr(app, "_current_preview_asr_text", "")
                 app._enhance_controller.run(
                     asr_text, app._preview_panel.enhance_request_id
@@ -857,6 +862,10 @@ class PreviewController:
 
         # Re-trigger enhancement if currently active
         if app._enhance_mode != MODE_OFF:
+            # Always cancel in-flight stream and invalidate stale chunks
+            app._enhance_controller.cancel()
+            app._preview_panel.enhance_request_id += 1
+
             cached = app._enhance_controller.get_cached()
             if cached is not None:
                 app._preview_panel.replay_cached_result(
@@ -868,7 +877,6 @@ class PreviewController:
                 )
             else:
                 AppHelper.callAfter(app._preview_panel.set_enhance_loading)
-                app._preview_panel.enhance_request_id += 1
                 asr_text = getattr(app, "_current_preview_asr_text", "")
                 app._enhance_controller.run(
                     asr_text, app._preview_panel.enhance_request_id

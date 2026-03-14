@@ -353,7 +353,12 @@ function init() {
 // --- Actions ---
 function postAction(type, data) {
     const msg = Object.assign({ type: type }, data || {});
-    window.webkit.messageHandlers.action.postMessage(msg);
+    try {
+        window.webkit.messageHandlers.action.postMessage(msg);
+    } catch (e) {
+        console.error('postMessage failed:', e);
+        document.title = 'ERR: ' + e.message;
+    }
 }
 
 function selectMode(index) {
@@ -585,9 +590,18 @@ _MessageHandler = None
 def _get_message_handler_class():
     global _MessageHandler
     if _MessageHandler is None:
+        import objc
         from Foundation import NSObject
 
-        class WebPreviewMessageHandler(NSObject):
+        # Load WebKit framework first so the protocol is available
+        import WebKit  # noqa: F401
+
+        WKScriptMessageHandler = objc.protocolNamed("WKScriptMessageHandler")
+        logger.debug("WKScriptMessageHandler protocol: %s", WKScriptMessageHandler)
+
+        class WebPreviewMessageHandler(
+            NSObject, protocols=[WKScriptMessageHandler]
+        ):
             _panel_ref = None
 
             def userContentController_didReceiveScriptMessage_(
@@ -595,8 +609,18 @@ def _get_message_handler_class():
             ):
                 if self._panel_ref is None:
                     return
-                body = message.body()
-                if not isinstance(body, dict):
+                raw = message.body()
+                # WKWebView returns NSDictionary with ObjC value types;
+                # JSON roundtrip converts everything to native Python types
+                try:
+                    from Foundation import NSJSONSerialization
+                    json_data, _ = (
+                        NSJSONSerialization
+                        .dataWithJSONObject_options_error_(raw, 0, None)
+                    )
+                    body = json.loads(bytes(json_data))
+                except Exception:
+                    logger.warning("Cannot convert message body: %r", raw)
                     return
                 self._panel_ref._handle_js_message(body)
 
@@ -1064,6 +1088,7 @@ class ResultPreviewPanel:
     def _handle_js_message(self, body: dict) -> None:
         """Dispatch messages from JavaScript."""
         msg_type = body.get("type", "")
+        logger.debug("Handling JS message: type=%s body=%s", msg_type, body)
 
         if msg_type == "confirm":
             self._user_edited = body.get("userEdited", False)
@@ -1110,6 +1135,7 @@ class ResultPreviewPanel:
 
         elif msg_type == "thinkingToggle":
             enabled = body.get("enabled", False)
+            logger.info("Thinking toggle: enabled=%r (type=%s)", enabled, type(enabled).__name__)
             self._thinking_enabled = enabled
             if self._on_thinking_toggle is not None:
                 self._on_thinking_toggle(enabled)
@@ -1257,7 +1283,7 @@ class ResultPreviewPanel:
             "__CONFIG__", json.dumps(config_data, ensure_ascii=False)
         )
         webview.loadHTMLString_baseURL_(
-            html, NSURL.URLWithString_("about:blank")
+            html, NSURL.fileURLWithPath_("/")
         )
 
     def _enhance_label_text(self, suffix: str = "") -> str:
