@@ -12,6 +12,36 @@ _current_panel = None
 _current_close_timer = None
 
 
+def _dynamic_bg_color():
+    """Semi-transparent background that adapts to light/dark mode."""
+    from AppKit import NSColor
+
+    def _provider(appearance):
+        name = appearance.bestMatchFromAppearancesWithNames_(
+            ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]
+        )
+        if name and "Dark" in str(name):
+            return NSColor.colorWithSRGBRed_green_blue_alpha_(0.15, 0.15, 0.15, 0.92)
+        return NSColor.colorWithSRGBRed_green_blue_alpha_(0.97, 0.97, 0.97, 0.92)
+
+    return NSColor.colorWithName_dynamicProvider_(None, _provider)
+
+
+def _dynamic_text_color():
+    """Text color that adapts to light/dark mode."""
+    from AppKit import NSColor
+
+    def _provider(appearance):
+        name = appearance.bestMatchFromAppearancesWithNames_(
+            ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]
+        )
+        if name and "Dark" in str(name):
+            return NSColor.colorWithSRGBRed_green_blue_alpha_(0.95, 0.95, 0.95, 1.0)
+        return NSColor.colorWithSRGBRed_green_blue_alpha_(0.1, 0.1, 0.1, 1.0)
+
+    return NSColor.colorWithName_dynamicProvider_(None, _provider)
+
+
 def alert(text: str, duration: float = 2.0) -> None:
     """Show a brief floating alert message on screen.
 
@@ -63,7 +93,7 @@ def _show_alert(text: str, duration: float) -> None:
     )
     panel.setLevel_(NSStatusWindowLevel + 1)
     panel.setOpaque_(False)
-    panel.setBackgroundColor_(NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.92))
+    panel.setBackgroundColor_(_dynamic_bg_color())
     panel.setHasShadow_(True)
     panel.setIgnoresMouseEvents_(True)
     panel.setMovableByWindowBackground_(False)
@@ -79,7 +109,7 @@ def _show_alert(text: str, duration: float) -> None:
     label = NSTextField.labelWithString_(text)
     label.setFrame_(NSMakeRect(padding, 8, panel_width - padding * 2, 34))
     label.setFont_(font)
-    label.setTextColor_(NSColor.labelColor())
+    label.setTextColor_(_dynamic_text_color())
     label.setAlignment_(NSTextAlignmentCenter)
     label.setBackgroundColor_(NSColor.clearColor())
     label.setBezeled_(False)

@@ -15,6 +15,51 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _dynamic_bg_color():
+    """Semi-transparent background that adapts to light/dark mode."""
+    from AppKit import NSColor
+
+    def _provider(appearance):
+        name = appearance.bestMatchFromAppearancesWithNames_(
+            ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]
+        )
+        if name and "Dark" in str(name):
+            return NSColor.colorWithSRGBRed_green_blue_alpha_(0.15, 0.15, 0.15, 0.92)
+        return NSColor.colorWithSRGBRed_green_blue_alpha_(0.97, 0.97, 0.97, 0.92)
+
+    return NSColor.colorWithName_dynamicProvider_(None, _provider)
+
+
+def _dynamic_title_color():
+    """Title text color that adapts to light/dark mode."""
+    from AppKit import NSColor
+
+    def _provider(appearance):
+        name = appearance.bestMatchFromAppearancesWithNames_(
+            ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]
+        )
+        if name and "Dark" in str(name):
+            return NSColor.colorWithSRGBRed_green_blue_alpha_(0.95, 0.95, 0.95, 1.0)
+        return NSColor.colorWithSRGBRed_green_blue_alpha_(0.1, 0.1, 0.1, 1.0)
+
+    return NSColor.colorWithName_dynamicProvider_(None, _provider)
+
+
+def _dynamic_item_color():
+    """Mapping item text color that adapts to light/dark mode."""
+    from AppKit import NSColor
+
+    def _provider(appearance):
+        name = appearance.bestMatchFromAppearancesWithNames_(
+            ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]
+        )
+        if name and "Dark" in str(name):
+            return NSColor.colorWithSRGBRed_green_blue_alpha_(0.75, 0.75, 0.75, 1.0)
+        return NSColor.colorWithSRGBRed_green_blue_alpha_(0.35, 0.35, 0.35, 1.0)
+
+    return NSColor.colorWithName_dynamicProvider_(None, _provider)
+
+
 class LeaderAlertPanel:
     """Floating panel showing leader-key mappings."""
 
@@ -56,9 +101,7 @@ class LeaderAlertPanel:
         )
         panel.setLevel_(NSStatusWindowLevel + 1)
         panel.setOpaque_(False)
-        panel.setBackgroundColor_(
-            NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.92)
-        )
+        panel.setBackgroundColor_(_dynamic_bg_color())
         panel.setHasShadow_(True)
         panel.setIgnoresMouseEvents_(True)
         panel.setMovableByWindowBackground_(False)
@@ -78,7 +121,7 @@ class LeaderAlertPanel:
         title = NSTextField.labelWithString_(f"Leader: {trigger_key}")
         title.setFrame_(NSMakeRect(padding, y, panel_width - padding * 2, title_height))
         title.setFont_(title_font)
-        title.setTextColor_(NSColor.labelColor())
+        title.setTextColor_(_dynamic_title_color())
         title.setBackgroundColor_(NSColor.clearColor())
         title.setBezeled_(False)
         title.setEditable_(False)
@@ -87,6 +130,7 @@ class LeaderAlertPanel:
 
         # Mapping lines (bottom-up layout)
         item_font = NSFont.monospacedSystemFontOfSize_weight_(14.0, 0.0)
+        item_color = _dynamic_item_color()
 
         for i, m in enumerate(mappings):
             y = panel_height - padding - title_height - (i + 1) * line_height
@@ -98,7 +142,7 @@ class LeaderAlertPanel:
                 NSMakeRect(padding, y, panel_width - padding * 2, line_height)
             )
             label.setFont_(item_font)
-            label.setTextColor_(NSColor.secondaryLabelColor())
+            label.setTextColor_(item_color)
             label.setBackgroundColor_(NSColor.clearColor())
             label.setBezeled_(False)
             label.setEditable_(False)
