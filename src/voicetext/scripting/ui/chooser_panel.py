@@ -89,6 +89,28 @@ def _get_navigation_delegate_class():
 
 
 # ---------------------------------------------------------------------------
+# Borderless key-capable NSPanel subclass (lazy-created)
+# ---------------------------------------------------------------------------
+_KeyablePanel = None
+
+
+def _get_keyable_panel_class():
+    """Return an NSPanel subclass that can become key window when borderless."""
+    global _KeyablePanel
+    if _KeyablePanel is not None:
+        return _KeyablePanel
+
+    from AppKit import NSPanel
+
+    class ChooserKeyablePanel(NSPanel):
+        def canBecomeKeyWindow(self):
+            return True
+
+    _KeyablePanel = ChooserKeyablePanel
+    return _KeyablePanel
+
+
+# ---------------------------------------------------------------------------
 # Panel
 # ---------------------------------------------------------------------------
 
@@ -363,14 +385,14 @@ class ChooserPanel:
         """Create NSPanel + WKWebView."""
         from AppKit import (
             NSBackingStoreBuffered,
-            NSPanel,
             NSScreen,
             NSStatusWindowLevel,
         )
         from Foundation import NSMakeRect, NSURL
         from WebKit import WKUserContentController, WKWebView, WKWebViewConfiguration
 
-        panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+        PanelClass = _get_keyable_panel_class()
+        panel = PanelClass.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, self._PANEL_WIDTH, self._PANEL_HEIGHT),
             0,  # Borderless
             NSBackingStoreBuffered,

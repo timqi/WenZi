@@ -7,36 +7,38 @@ CHOOSER_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root {
-    --bg: rgba(245, 245, 247, 0.95);
+    --bg: #f5f5f7;
     --text: #1d1d1f;
     --secondary: #86868b;
     --border: #d2d2d7;
     --accent: #007aff;
-    --item-hover: rgba(0, 122, 255, 0.08);
-    --item-selected: rgba(0, 122, 255, 0.15);
+    --item-hover: rgba(0, 0, 0, 0.04);
+    --item-selected: rgba(0, 122, 255, 0.12);
     --item-selected-text: #003d99;
     --input-bg: #ffffff;
+    --footer-bg: #ececee;
     --shadow: rgba(0, 0, 0, 0.06);
 }
 @media (prefers-color-scheme: dark) {
     :root {
-        --bg: rgba(30, 30, 30, 0.95);
+        --bg: #2c2c2e;
         --text: #e5e5e7;
         --secondary: #98989d;
         --border: #48484a;
         --accent: #0a84ff;
-        --item-hover: rgba(10, 132, 255, 0.12);
-        --item-selected: rgba(10, 132, 255, 0.22);
-        --item-selected-text: #5ac8fa;
-        --input-bg: #2c2c2e;
-        --shadow: rgba(0, 0, 0, 0.2);
+        --item-hover: rgba(255, 255, 255, 0.06);
+        --item-selected: rgba(10, 132, 255, 0.25);
+        --item-selected-text: #64d2ff;
+        --input-bg: #3a3a3c;
+        --footer-bg: #1c1c1e;
+        --shadow: rgba(0, 0, 0, 0.3);
     }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
     height: 100%; overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-    background: transparent; color: var(--text);
+    background: var(--bg); color: var(--text);
     -webkit-user-select: none; user-select: none;
 }
 body { display: flex; flex-direction: column; }
@@ -44,7 +46,8 @@ body { display: flex; flex-direction: column; }
 /* Search bar */
 .search-bar {
     display: flex; align-items: center; gap: 8px;
-    padding: 10px 14px;
+    padding: 12px 14px;
+    background: var(--input-bg);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
 }
@@ -124,6 +127,7 @@ body { display: flex; flex-direction: column; }
 .footer {
     display: flex; align-items: center; justify-content: space-between;
     padding: 6px 14px; font-size: 11px; color: var(--secondary);
+    background: var(--footer-bg);
     border-top: 1px solid var(--border); flex-shrink: 0;
     gap: 12px;
 }

@@ -107,10 +107,16 @@ def _parse_hotkey_for_quartz(hotkey_str: str) -> tuple[int, int]:
     mod_flags = 0
     trigger_keys = []
     for part in parts:
+        if part == "option":
+            part = "alt"
+        elif part == "command":
+            part = "cmd"
         if part in _MOD_FLAGS:
             mod_flags |= _MOD_FLAGS[part]
         elif part in _KEYCODE_MAP:
-            trigger_keys.append(part)
+            trigger_keys.append(("letter", part))
+        elif part in _SPECIAL_VK:
+            trigger_keys.append(("special", part))
         else:
             raise ValueError(f"Unknown key in hotkey: {part!r}")
 
@@ -121,7 +127,9 @@ def _parse_hotkey_for_quartz(hotkey_str: str) -> tuple[int, int]:
             f"Hotkey must include exactly one trigger key, got {len(trigger_keys)}: {hotkey_str!r}"
         )
 
-    return mod_flags, _KEYCODE_MAP[trigger_keys[0]]
+    kind, key = trigger_keys[0]
+    vk = _KEYCODE_MAP[key] if kind == "letter" else _SPECIAL_VK[key]
+    return mod_flags, vk
 
 
 # ---------------------------------------------------------------------------
