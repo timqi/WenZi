@@ -26,6 +26,7 @@ from .transcription.model_registry import (
     PRESET_BY_ID,
     clear_model_cache,
     find_fallback_preset,
+    is_model_cached,
     resolve_preset_from_config,
 )
 from .audio.recorder import Recorder
@@ -840,10 +841,18 @@ class VoiceTextApp(StatusBarApp):
     def _clear_cache_and_reinitialize(self, preset) -> None:
         """Clear model cache and retry initialization on a background thread."""
         def _do():
+            stop_event = threading.Event()
+            monitor_thread = None
             try:
                 self._set_status("Clearing...")
                 clear_model_cache(preset)
-                self._set_status("Loading...")
+                monitor_args = self._model_controller._make_download_monitor_args(preset)
+                monitor_thread = threading.Thread(
+                    target=self._model_controller._monitor_download_progress,
+                    args=(stop_event, monitor_args),
+                    daemon=True,
+                )
+                monitor_thread.start()
                 self._transcriber.cleanup()
                 asr_cfg = self._config["asr"]
                 self._transcriber = create_transcriber(
@@ -855,9 +864,14 @@ class VoiceTextApp(StatusBarApp):
                     temperature=asr_cfg.get("temperature"),
                 )
                 self._transcriber.initialize()
+                stop_event.set()
+                monitor_thread.join(timeout=2)
                 self._set_status("VT")
                 logger.info("Model reinitialized after cache clear")
             except Exception as e2:
+                stop_event.set()
+                if monitor_thread:
+                    monitor_thread.join(timeout=2)
                 logger.error("Retry after cache clear failed: %s", e2)
                 self._set_status("Error")
                 topmost_alert(
@@ -916,13 +930,40 @@ class VoiceTextApp(StatusBarApp):
                                 "Siri/Dictation disabled and no fallback available"
                             )
 
-                if not self._config_degraded:
+                stop_event = threading.Event()
+                monitor_thread = None
+                preset = PRESET_BY_ID.get(self._current_preset_id)
+                backend = asr_cfg.get("backend", "")
+                need_monitor = (
+                    not self._current_remote_asr
+                    and (
+                        backend == "funasr"
+                        or (preset and not is_model_cached(preset))
+                    )
+                )
+                if need_monitor and preset:
+                    monitor_args = self._model_controller._make_download_monitor_args(preset)
+                    monitor_thread = threading.Thread(
+                        target=self._model_controller._monitor_download_progress,
+                        args=(stop_event, monitor_args),
+                        daemon=True,
+                    )
+                    monitor_thread.start()
+                elif not self._config_degraded:
                     self._set_status("Loading...")
+
                 self._transcriber.initialize()
+
+                stop_event.set()
+                if monitor_thread:
+                    monitor_thread.join(timeout=2)
                 if not self._config_degraded:
                     self._set_status("VT")
                 logger.info("Models loaded, app ready")
             except Exception as e:
+                stop_event.set()
+                if monitor_thread:
+                    monitor_thread.join(timeout=2)
                 logger.error("Model initialization failed: %s", e)
                 if not self._config_degraded:
                     self._set_status("Error")

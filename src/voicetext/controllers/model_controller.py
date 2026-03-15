@@ -33,7 +33,7 @@ from voicetext.ui_helpers import (
 
 logger = logging.getLogger(__name__)
 
-# Approximate download size for FunASR models.
+# Approximate total download size for all FunASR models (~502 MB).
 _FUNASR_APPROX_SIZE = 502 * 1024 * 1024
 
 
@@ -355,10 +355,14 @@ models:
                 old_transcriber.cleanup()
 
                 cached = is_model_cached(preset)
-                if not cached:
+                if not cached or preset.backend == "funasr":
+                    # FunASR has multiple sub-models (ASR, VAD, Punc) that
+                    # may need downloading even when the main model is cached.
+                    # Pre-compute paths to avoid import deadlocks in threads.
+                    monitor_args = self._make_download_monitor_args(preset)
                     monitor_thread = threading.Thread(
                         target=self._monitor_download_progress,
-                        args=(preset, stop_event),
+                        args=(stop_event, monitor_args),
                         daemon=True,
                     )
                     monitor_thread.start()
@@ -455,21 +459,48 @@ models:
 
         threading.Thread(target=_do_switch, daemon=True).start()
 
-    def _monitor_download_progress(
-        self, preset: ModelPreset, stop_event: threading.Event
-    ) -> None:
-        """Monitor download progress by checking cache directory size."""
-        app = self._app
+    def _make_download_monitor_args(self, preset: ModelPreset):
+        """Pre-compute monitor paths on the calling thread.
+
+        Must be called BEFORE starting the monitor thread so that modelscope
+        imports happen before parallel download threads cause import deadlocks.
+
+        Returns (expected_size, monitor_dir, temp_dir) or None.
+        """
         expected_size = self._get_expected_model_size(preset)
         if not expected_size:
+            return None
+
+        cache_dir = get_model_cache_dir(preset)
+        if preset.backend == "funasr":
+            # FunASR loads ASR + VAD + Punc in parallel under the same
+            # parent dir; monitor the parent to capture total progress.
+            monitor_dir = cache_dir.parent
+        else:
+            monitor_dir = cache_dir
+        # modelscope downloads to a ._____temp sibling before moving
+        # to the final path; monitor both to track real progress.
+        temp_dir = monitor_dir.parent / "._____temp" / monitor_dir.name
+        return expected_size, monitor_dir, temp_dir
+
+    def _monitor_download_progress(
+        self, stop_event: threading.Event, monitor_args
+    ) -> None:
+        """Monitor download progress by checking cache directory size.
+
+        ``monitor_args`` should come from ``_make_download_monitor_args``,
+        called on the parent thread before this thread starts.
+        """
+        app = self._app
+        if monitor_args is None:
             app._set_status("Downloading...")
             stop_event.wait()
             return
 
-        cache_dir = get_model_cache_dir(preset)
+        expected_size, monitor_dir, temp_dir = monitor_args
 
         while not stop_event.is_set():
-            current_size = _get_dir_size(cache_dir)
+            current_size = _get_dir_size(monitor_dir) + _get_dir_size(temp_dir)
             pct = min(int(current_size / expected_size * 100), 99)
             app._set_status(f"DL {pct}%")
             stop_event.wait(1.0)
@@ -528,11 +559,20 @@ models:
     ) -> None:
         """Clear model cache and retry the switch."""
         app = self._app
+        stop_event = threading.Event()
+        monitor_thread = None
         try:
             app._set_status("Clearing...")
             clear_model_cache(preset)
 
-            app._set_status("Loading...")
+            monitor_args = self._make_download_monitor_args(preset)
+            monitor_thread = threading.Thread(
+                target=self._monitor_download_progress,
+                args=(stop_event, monitor_args),
+                daemon=True,
+            )
+            monitor_thread.start()
+
             asr_cfg = app._config["asr"]
             new_transcriber = create_transcriber(
                 backend=preset.backend,
@@ -543,6 +583,9 @@ models:
                 temperature=asr_cfg.get("temperature"),
             )
             new_transcriber.initialize()
+
+            stop_event.set()
+            monitor_thread.join(timeout=2)
 
             app._transcriber = new_transcriber
             app._current_preset_id = preset.id
@@ -560,6 +603,9 @@ models:
             app._set_status("VT")
             logger.info("Model switched after cache clear: %s", preset.display_name)
         except Exception as e2:
+            stop_event.set()
+            if monitor_thread:
+                monitor_thread.join(timeout=2)
             logger.error("Retry after cache clear failed: %s", e2)
             app._set_status("Error")
             topmost_alert(
