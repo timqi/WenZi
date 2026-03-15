@@ -230,6 +230,7 @@ class ClipboardSource:
                     ChooserItem(
                         title=display,
                         subtitle=f"{subtitle}  {time_ago}".strip() if subtitle else time_ago,
+                        item_id=f"cb:img:{ep}",
                         preview=preview,
                         action=_do_paste_img,
                         secondary_action=_do_copy_img,
@@ -257,10 +258,13 @@ class ClipboardSource:
 
                 preview = self._make_preview(entry)
 
+                # Use first 64 chars of text as stable id
+                text_key = text[:64].replace("\n", " ")
                 results.append(
                     ChooserItem(
                         title=display,
                         subtitle=f"{subtitle}  {time_ago}".strip() if subtitle else time_ago,
+                        item_id=f"cb:txt:{text_key}",
                         preview=preview,
                         action=_do_paste,
                         secondary_action=_do_copy,

@@ -121,15 +121,19 @@ class SnippetStore:
         except Exception:
             logger.exception("Failed to save snippets to %s", self._path)
 
-    def add(self, name: str, keyword: str, content: str) -> None:
-        """Add a new snippet."""
+    def add(self, name: str, keyword: str, content: str) -> bool:
+        """Add a new snippet. Returns False if keyword already exists."""
         self._ensure_loaded()
+        if keyword and any(s.get("keyword") == keyword for s in self._snippets):
+            logger.warning("Snippet keyword %r already exists", keyword)
+            return False
         self._snippets.append({
             "name": name,
             "keyword": keyword,
             "content": content,
         })
         self._save()
+        return True
 
     def remove(self, keyword: str) -> bool:
         """Remove a snippet by keyword. Returns True if found."""
@@ -228,6 +232,7 @@ class SnippetSource:
                 ChooserItem(
                     title=f"{name}  [{keyword}]" if keyword else name,
                     subtitle=display_content,
+                    item_id=f"sn:{keyword}" if keyword else f"sn:{name}",
                     action=lambda c=content: _paste_text(
                         _expand_placeholders(c)
                     ),

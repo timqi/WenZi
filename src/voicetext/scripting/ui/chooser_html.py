@@ -492,6 +492,7 @@ function setModifierSubtitle(index, subtitle) {
 }
 
 function focusInput() {
+    activeModifier = null;  // Reset stale modifier state on panel reopen
     searchInput.focus();
     searchInput.select();
 }

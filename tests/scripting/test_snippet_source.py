@@ -35,7 +35,7 @@ class TestSnippetStore:
 
     def test_add_snippet(self):
         store, path = self._make_store([])
-        store.add("Greeting", ";;hi", "Hello, World!")
+        assert store.add("Greeting", ";;hi", "Hello, World!") is True
         assert len(store.snippets) == 1
         assert store.snippets[0]["keyword"] == ";;hi"
         # Verify persisted
@@ -52,6 +52,12 @@ class TestSnippetStore:
         assert store.remove(";;a") is True
         assert len(store.snippets) == 1
         assert store.snippets[0]["keyword"] == ";;b"
+
+    def test_add_duplicate_keyword_rejected(self):
+        store, _ = self._make_store([])
+        assert store.add("A", ";;a", "aaa") is True
+        assert store.add("B", ";;a", "bbb") is False
+        assert len(store.snippets) == 1
 
     def test_remove_nonexistent(self):
         store, _ = self._make_store([])

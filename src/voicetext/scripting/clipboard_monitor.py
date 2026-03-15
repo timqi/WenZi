@@ -185,6 +185,8 @@ class ClipboardMonitor:
         """Move an existing entry to the top of the history list.
 
         If found, updates its timestamp. If not found, does nothing.
+        Save is done inside the lock to prevent concurrent promotes
+        from producing an inconsistent on-disk state.
         """
         with self._lock:
             for i, entry in enumerate(self._entries):
@@ -196,7 +198,7 @@ class ClipboardMonitor:
                     break
             else:
                 return
-        self._save_to_disk(snapshot)
+            self._save_to_disk(snapshot)
 
     def promote_image(self, image_path: str) -> None:
         """Move an existing image entry to the top of the history list."""
@@ -210,7 +212,7 @@ class ClipboardMonitor:
                     break
             else:
                 return
-        self._save_to_disk(snapshot)
+            self._save_to_disk(snapshot)
 
     def _add_image_entry(
         self, image_data: bytes, image_type: str, source_app: str = ""

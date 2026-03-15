@@ -41,7 +41,8 @@ class TestUsageTracker:
     def test_persistence(self):
         tracker, path = self._make_tracker()
         tracker.record("saf", "app:Safari")
-        # Create new tracker reading the same file
+        # Flush to disk before reading from a new tracker
+        tracker.flush_sync()
         tracker2 = UsageTracker(path=path)
         assert tracker2.score("saf", "app:Safari") == 1
 
@@ -74,3 +75,24 @@ class TestUsageTracker:
         tracker = UsageTracker(path=path)
         # Should not crash, just return 0
         assert tracker.score("saf", "app:Safari") == 0
+
+    def test_flush_sync(self):
+        """flush_sync writes immediately to disk."""
+        tracker, path = self._make_tracker()
+        tracker.record("saf", "app:Safari")
+        # Data not yet on disk (deferred)
+        tracker.flush_sync()
+        # Now it should be persisted
+        assert os.path.isfile(path)
+        tracker2 = UsageTracker(path=path)
+        assert tracker2.score("saf", "app:Safari") == 1
+
+    def test_deferred_write_coalesces(self):
+        """Multiple rapid records should coalesce into one write."""
+        tracker, path = self._make_tracker()
+        for _ in range(10):
+            tracker.record("saf", "app:Safari")
+        assert tracker.score("saf", "app:Safari") == 10
+        tracker.flush_sync()
+        tracker2 = UsageTracker(path=path)
+        assert tracker2.score("saf", "app:Safari") == 10

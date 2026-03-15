@@ -114,6 +114,7 @@ class FileSource:
                 ChooserItem(
                     title=name,
                     subtitle=subtitle,
+                    item_id=f"file:{path}",
                     action=lambda p=path: _open_file(p),
                     reveal_path=path,
                     preview=_make_file_preview(path),

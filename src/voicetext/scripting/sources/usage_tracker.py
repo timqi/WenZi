@@ -2,6 +2,7 @@
 
 Records how often each item is selected for a given query prefix,
 allowing search results to be ranked by learned user preference.
+Disk writes are batched and deferred to a background thread.
 """
 
 from __future__ import annotations
@@ -16,13 +17,16 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_PATH = os.path.expanduser("~/.config/VoiceText/chooser_usage.json")
 _MAX_PREFIX_LEN = 3  # Group by first N chars of query
+_FLUSH_DELAY = 2.0  # Seconds to wait before flushing to disk
 
 
 class UsageTracker:
     """Track item selection frequency per query prefix.
 
     Data format: ``{query_prefix: {item_id: count}}``.
-    Persisted to a JSON file on disk.
+    Persisted to a JSON file on disk.  Writes are batched: after a
+    ``record()`` call the data is flushed to disk after a short delay,
+    coalescing multiple rapid selections into a single write.
     """
 
     def __init__(self, path: Optional[str] = None) -> None:
@@ -30,6 +34,8 @@ class UsageTracker:
         self._data: Dict[str, Dict[str, int]] = {}
         self._loaded = False
         self._lock = threading.Lock()
+        self._dirty = False
+        self._flush_timer: Optional[threading.Timer] = None
 
     def _ensure_loaded(self) -> None:
         if self._loaded:
@@ -48,11 +54,26 @@ class UsageTracker:
         except Exception:
             logger.debug("Failed to load usage data", exc_info=True)
 
-    def _save(self) -> None:
+    def _schedule_flush(self) -> None:
+        """Schedule a deferred disk write, coalescing rapid updates."""
+        if self._flush_timer is not None:
+            self._flush_timer.cancel()
+        self._flush_timer = threading.Timer(_FLUSH_DELAY, self._flush)
+        self._flush_timer.daemon = True
+        self._flush_timer.start()
+
+    def _flush(self) -> None:
+        """Write data to disk (runs on background timer thread)."""
+        with self._lock:
+            if not self._dirty:
+                return
+            self._dirty = False
+            snapshot = json.dumps(self._data, ensure_ascii=False)
+
         try:
             os.makedirs(os.path.dirname(self._path), exist_ok=True)
             with open(self._path, "w", encoding="utf-8") as f:
-                json.dump(self._data, f, ensure_ascii=False)
+                f.write(snapshot)
         except Exception:
             logger.debug("Failed to save usage data", exc_info=True)
 
@@ -68,7 +89,9 @@ class UsageTracker:
             self._ensure_loaded()
             bucket = self._data.setdefault(prefix, {})
             bucket[item_id] = bucket.get(item_id, 0) + 1
-            self._save()
+            self._dirty = True
+
+        self._schedule_flush()
 
     def score(self, query: str, item_id: str) -> int:
         """Return the usage count for *item_id* given *query*.
@@ -91,4 +114,12 @@ class UsageTracker:
         with self._lock:
             self._data = {}
             self._loaded = True
-            self._save()
+            self._dirty = True
+        self._schedule_flush()
+
+    def flush_sync(self) -> None:
+        """Immediately flush pending data to disk (for testing)."""
+        if self._flush_timer is not None:
+            self._flush_timer.cancel()
+            self._flush_timer = None
+        self._flush()

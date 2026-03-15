@@ -180,25 +180,34 @@ class AppSource:
         self._apps: list[dict] = []
         self._scanned = False
         self._icon_cache: dict[str, str] = {}  # path → data URI (memory)
+        self._icon_lock = threading.Lock()
         self._icon_cache_dir = icon_cache_dir or _DEFAULT_ICON_CACHE_DIR
 
     def _get_icon(self, path: str) -> str:
-        """Return cached icon data URI, checking disk then extracting."""
-        if path in self._icon_cache:
-            return self._icon_cache[path]
+        """Return cached icon data URI, checking disk then extracting.
+
+        Thread-safe: protected by ``_icon_lock`` so the preload thread
+        and main-thread search cannot race on the cache dict.
+        """
+        with self._icon_lock:
+            if path in self._icon_cache:
+                return self._icon_cache[path]
 
         data_uri = self._load_icon_from_disk(path)
         if data_uri:
-            self._icon_cache[path] = data_uri
+            with self._icon_lock:
+                self._icon_cache[path] = data_uri
             return data_uri
 
         png = _get_app_icon_png(path)
         if png is None:
-            self._icon_cache[path] = ""
+            with self._icon_lock:
+                self._icon_cache[path] = ""
             return ""
 
         data_uri = _png_to_data_uri(png)
-        self._icon_cache[path] = data_uri
+        with self._icon_lock:
+            self._icon_cache[path] = data_uri
         self._save_icon_to_disk(path, png)
         return data_uri
 
@@ -262,7 +271,9 @@ class AppSource:
         def _load():
             for app in apps:
                 path = app["path"]
-                if path not in self._icon_cache:
+                with self._icon_lock:
+                    already_cached = path in self._icon_cache
+                if not already_cached:
                     self._get_icon(path)
 
         threading.Thread(target=_load, daemon=True).start()
