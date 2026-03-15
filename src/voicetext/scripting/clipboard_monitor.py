@@ -241,8 +241,8 @@ class ClipboardMonitor:
                 self._entries = self._entries[: self._max_items]
                 removed = [e.image_path for e in removed_entries if e.image_path]
 
-        self._save_to_disk()
-        self._cleanup_image_files(removed)
+        if self._save_to_disk() and removed:
+            self._cleanup_image_files(removed)
         logger.debug("Clipboard image entry added: %s (%dx%d)", filename, width, height)
 
     def _save_image(
@@ -330,14 +330,14 @@ class ClipboardMonitor:
                 self._entries = self._entries[: self._max_items]
                 removed = [e.image_path for e in removed_entries if e.image_path]
 
-        self._save_to_disk()
-        self._cleanup_image_files(removed)
+        if self._save_to_disk() and removed:
+            self._cleanup_image_files(removed)
         logger.debug("Clipboard entry added: %s...", text[:40])
 
-    def _save_to_disk(self) -> None:
-        """Persist entries to JSON file."""
+    def _save_to_disk(self) -> bool:
+        """Persist entries to JSON file. Returns True on success."""
         if not self._persist_path:
-            return
+            return True
         try:
             path = os.path.expanduser(self._persist_path)
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -345,8 +345,10 @@ class ClipboardMonitor:
                 data = [asdict(e) for e in self._entries]
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            return True
         except Exception:
             logger.debug("Failed to save clipboard history", exc_info=True)
+            return False
 
     def _load_from_disk(self) -> None:
         """Load entries from JSON file."""
@@ -358,20 +360,38 @@ class ClipboardMonitor:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            with self._lock:
-                self._entries = [
+            entries = []
+            dropped = 0
+            for d in data:
+                if not isinstance(d, dict):
+                    continue
+                if "text" not in d and "image_path" not in d:
+                    continue
+                img = d.get("image_path", "")
+                # Drop image entries whose file no longer exists
+                if img and not os.path.isfile(
+                    os.path.join(self._image_dir, img)
+                ):
+                    dropped += 1
+                    continue
+                entries.append(
                     ClipboardEntry(
                         text=d.get("text", ""),
                         timestamp=d.get("timestamp", 0),
                         source_app=d.get("source_app", ""),
-                        image_path=d.get("image_path", ""),
+                        image_path=img,
                         image_width=d.get("image_width", 0),
                         image_height=d.get("image_height", 0),
                         image_size=d.get("image_size", 0),
                     )
-                    for d in data
-                    if isinstance(d, dict) and ("text" in d or "image_path" in d)
-                ]
+                )
+            with self._lock:
+                self._entries = entries
+            if dropped:
+                logger.info(
+                    "Dropped %d clipboard image entries (files missing)", dropped
+                )
+                self._save_to_disk()
             logger.info("Loaded %d clipboard history entries", len(self._entries))
         except Exception:
             logger.debug("Failed to load clipboard history", exc_info=True)

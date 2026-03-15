@@ -267,8 +267,16 @@ class TestImageEntries:
 
     def test_persistence_with_image_entries(self, tmp_path):
         persist_path = str(tmp_path / "clipboard.json")
+        image_dir = str(tmp_path / "images")
+        os.makedirs(image_dir, exist_ok=True)
 
-        monitor1 = ClipboardMonitor(max_items=10, persist_path=persist_path)
+        # Create the referenced image file
+        with open(os.path.join(image_dir, "img1.png"), "wb") as f:
+            f.write(b"fake png")
+
+        monitor1 = ClipboardMonitor(
+            max_items=10, persist_path=persist_path, image_dir=image_dir
+        )
         with monitor1._lock:
             monitor1._entries = [
                 ClipboardEntry(
@@ -282,13 +290,40 @@ class TestImageEntries:
             ]
         monitor1._save_to_disk()
 
-        monitor2 = ClipboardMonitor(max_items=10, persist_path=persist_path)
+        monitor2 = ClipboardMonitor(
+            max_items=10, persist_path=persist_path, image_dir=image_dir
+        )
         assert len(monitor2.entries) == 2
         assert monitor2.entries[0].image_path == "img1.png"
         assert monitor2.entries[0].image_width == 1920
         assert monitor2.entries[0].image_height == 1080
         assert monitor2.entries[0].image_size == 500000
         assert monitor2.entries[1].text == "hello"
+
+    def test_load_drops_entries_with_missing_image_files(self, tmp_path):
+        """Image entries whose files are gone should be filtered out on load."""
+        persist_path = str(tmp_path / "clipboard.json")
+        image_dir = str(tmp_path / "images")
+        os.makedirs(image_dir, exist_ok=True)
+
+        # Only create one of two referenced image files
+        with open(os.path.join(image_dir, "exists.png"), "wb") as f:
+            f.write(b"fake png")
+
+        data = [
+            {"image_path": "missing.png", "image_width": 100, "image_height": 50},
+            {"text": "hello"},
+            {"image_path": "exists.png", "image_width": 200, "image_height": 100},
+        ]
+        with open(persist_path, "w") as f:
+            json.dump(data, f)
+
+        monitor = ClipboardMonitor(
+            max_items=10, persist_path=persist_path, image_dir=image_dir
+        )
+        assert len(monitor.entries) == 2
+        assert monitor.entries[0].text == "hello"
+        assert monitor.entries[1].image_path == "exists.png"
 
     def test_load_old_format_backward_compatible(self, tmp_path):
         """Old JSON without image fields should load correctly."""
