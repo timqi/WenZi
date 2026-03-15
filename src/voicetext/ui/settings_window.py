@@ -359,12 +359,8 @@ class SettingsPanel:
         doc_view.addSubview_(record_btn)
 
         # Restart / Cancel key dropdowns
-        _key_choices = [
-            ("space", "Space"), ("cmd", "Command"), ("cmd_r", "Command (Right)"),
-            ("ctrl", "Control"), ("ctrl_r", "Control (Right)"),
-            ("alt", "Option"), ("alt_r", "Option (Right)"),
-            ("shift", "Shift"), ("shift_r", "Shift (Right)"), ("esc", "Esc"),
-        ]
+        from voicetext.config import MODIFIER_KEY_CHOICES
+        _key_choices = MODIFIER_KEY_CHOICES
         label_w = 80
         popup_w = 140
 
