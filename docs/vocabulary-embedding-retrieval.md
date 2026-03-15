@@ -149,10 +149,10 @@ In `config.json` under `ai_enhance`:
 
 | File | Purpose |
 |---|---|
-| `src/voicetext/vocabulary_builder.py` | Extracts vocabulary from conversation history corrections via LLM |
-| `src/voicetext/vocabulary.py` | Embedding index construction and retrieval |
-| `src/voicetext/auto_vocab_builder.py` | Automatic vocabulary building triggered by correction count |
-| `src/voicetext/enhancer.py` | Integrates vocabulary context into enhancement prompts |
-| `src/voicetext/vocab_build_window.py` | UI for vocabulary build progress |
+| `src/voicetext/enhance/vocabulary_builder.py` | Extracts vocabulary from conversation history corrections via LLM |
+| `src/voicetext/enhance/vocabulary.py` | Embedding index construction and retrieval |
+| `src/voicetext/enhance/auto_vocab_builder.py` | Automatic vocabulary building triggered by correction count |
+| `src/voicetext/enhance/enhancer.py` | Integrates vocabulary context into enhancement prompts |
+| `src/voicetext/ui/vocab_build_window.py` | UI for vocabulary build progress |
 | `src/voicetext/app.py` | Menu items for vocabulary toggle and build trigger |
 | `src/voicetext/config.py` | Default configuration for vocabulary settings |

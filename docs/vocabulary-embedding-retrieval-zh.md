@@ -149,10 +149,10 @@ conversation_history.jsonl (user_corrected entries)
 
 | 文件 | 用途 |
 |---|---|
-| `src/voicetext/vocabulary_builder.py` | 通过 LLM 从对话历史修改记录中提取词库 |
-| `src/voicetext/vocabulary.py` | 嵌入索引的构建与检索 |
-| `src/voicetext/auto_vocab_builder.py` | 基于修改计数触发的自动词库构建 |
-| `src/voicetext/enhancer.py` | 将词库上下文集成到增强提示词中 |
-| `src/voicetext/vocab_build_window.py` | 词库构建进度的 UI 界面 |
+| `src/voicetext/enhance/vocabulary_builder.py` | 通过 LLM 从对话历史修改记录中提取词库 |
+| `src/voicetext/enhance/vocabulary.py` | 嵌入索引的构建与检索 |
+| `src/voicetext/enhance/auto_vocab_builder.py` | 基于修改计数触发的自动词库构建 |
+| `src/voicetext/enhance/enhancer.py` | 将词库上下文集成到增强提示词中 |
+| `src/voicetext/ui/vocab_build_window.py` | 词库构建进度的 UI 界面 |
 | `src/voicetext/app.py` | 词库开关和构建触发的菜单项 |
 | `src/voicetext/config.py` | 词库设置的默认配置 |

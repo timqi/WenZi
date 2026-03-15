@@ -25,13 +25,14 @@ This guide explains how to configure ASR (speech recognition) models and AI enha
 
 ## ASR Model Selection
 
-VoiceText supports four ASR backends:
+VoiceText supports five ASR backends:
 
 | Backend | Best For | GPU | Offline |
 |---------|----------|-----|---------|
-| **FunASR Paraformer** (default) | Chinese speech | CPU (ONNX) | Yes (after first download) |
+| **Apple Speech** (default) | Multi-language, no download needed | CPU/Neural Engine | On-device or server-based |
+| **FunASR Paraformer** | Chinese speech | CPU (ONNX) | Yes (after first download) |
+| **Sherpa-ONNX** | Streaming, lightweight Chinese models | CPU (ONNX) | Yes (after first download) |
 | **MLX-Whisper** | Multi-language, Apple Silicon | GPU (MLX) | Yes (after first download) |
-| **Apple Speech** | Multi-language, no download needed | CPU/Neural Engine | On-device or server-based |
 | **Whisper API** (remote) | Cloud-based, any hardware | N/A | No (requires API) |
 
 ### ASR Via GUI
@@ -60,10 +61,10 @@ Key fields:
 
 | Field | Description |
 |-------|-------------|
-| `backend` | `"funasr"`, `"mlx-whisper"`, or `"apple"` |
+| `backend` | `"apple"`, `"funasr"`, `"sherpa-onnx"`, `"mlx-whisper"`, or `"whisper-api"` |
 | `preset` | Preset ID from the table below (recommended way to select a model) |
 | `model` | Direct model path override (e.g. a custom HuggingFace model ID). Overrides `preset` |
-| `language` | Language code for MLX-Whisper (`"zh"`, `"en"`, `"ja"`, etc.). Ignored by FunASR |
+| `language` | Language code (`"zh"`, `"en"`, `"ja"`, etc.). Used by MLX-Whisper and Apple Speech. Ignored by FunASR and Sherpa-ONNX (language is determined by the model) |
 | `temperature` | Decoding temperature for MLX-Whisper. `0.0` = greedy |
 
 After editing, restart VoiceText for changes to take effect.
@@ -72,13 +73,15 @@ After editing, restart VoiceText for changes to take effect.
 
 | Preset ID | Backend | Model | Size |
 |-----------|---------|-------|------|
+| `apple-speech-ondevice` | apple | Apple Speech (On-Device) | Built-in |
+| `apple-speech-server` | apple | Apple Speech (Server) | Built-in |
 | `funasr-paraformer` | funasr | Paraformer-large (Chinese) | ~400 MB |
-| `apple-speech-ondevice` | apple-speech | Apple Speech (On-Device) | Built-in |
-| `apple-speech-server` | apple-speech | Apple Speech (Server) | Built-in |
+| `sherpa-zipformer-zh` | sherpa-onnx | Zipformer Chinese 14M | ~28 MB |
+| `sherpa-paraformer-zh` | sherpa-onnx | Paraformer Bilingual (Chinese-English) | ~220 MB |
 | `mlx-whisper-medium` | mlx-whisper | `mlx-community/whisper-medium` | ~1.5 GB |
 | `mlx-whisper-large-v3-turbo` | mlx-whisper | `mlx-community/whisper-large-v3-turbo` | ~1.6 GB |
 
-> **Note:** MLX-Whisper tiny/base/small models are not available as presets but can be used by setting `asr.model` directly (e.g., `"model": "mlx-community/whisper-small"`).
+> **Note:** MLX-Whisper tiny/base/small models are not available as presets but can be used by setting `asr.model` directly (e.g., `"model": "mlx-community/whisper-small"`). Sherpa-ONNX models are downloaded automatically from HuggingFace on first use.
 
 ---
 

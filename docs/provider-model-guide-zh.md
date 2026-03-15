@@ -25,13 +25,14 @@
 
 ## ASR 模型选择
 
-VoiceText 支持四种 ASR 后端：
+VoiceText 支持五种 ASR 后端：
 
 | 后端 | 最适用场景 | GPU | 离线 |
 |------|-----------|-----|------|
-| **FunASR Paraformer**（默认） | 中文语音 | CPU (ONNX) | 是（首次下载后） |
+| **Apple Speech**（默认） | 多语言，无需下载 | CPU/Neural Engine | 设备端或服务器端 |
+| **FunASR Paraformer** | 中文语音 | CPU (ONNX) | 是（首次下载后） |
+| **Sherpa-ONNX** | 流式识别，轻量中文模型 | CPU (ONNX) | 是（首次下载后） |
 | **MLX-Whisper** | 多语言，Apple Silicon | GPU (MLX) | 是（首次下载后） |
-| **Apple Speech** | 多语言，无需下载 | CPU/Neural Engine | 设备端或服务器端 |
 | **Whisper API**（远程） | 云端，任意硬件 | 不适用 | 否（需要 API） |
 
 ### 通过 GUI 配置 ASR
@@ -60,10 +61,10 @@ VoiceText 支持四种 ASR 后端：
 
 | 字段 | 说明 |
 |------|------|
-| `backend` | `"funasr"`、`"mlx-whisper"` 或 `"apple"` |
+| `backend` | `"apple"`、`"funasr"`、`"sherpa-onnx"`、`"mlx-whisper"` 或 `"whisper-api"` |
 | `preset` | 下表中的预设 ID（推荐的模型选择方式） |
 | `model` | 直接指定模型路径（例如自定义 HuggingFace 模型 ID），会覆盖 `preset` |
-| `language` | MLX-Whisper 的语言代码（`"zh"`、`"en"`、`"ja"` 等），FunASR 忽略此字段 |
+| `language` | 语言代码（`"zh"`、`"en"`、`"ja"` 等）。MLX-Whisper 和 Apple Speech 使用此字段。FunASR 和 Sherpa-ONNX 忽略此字段（语言由模型决定） |
 | `temperature` | MLX-Whisper 的解码温度。`0.0` = 贪心解码 |
 
 编辑后需重启 VoiceText 使更改生效。
@@ -72,13 +73,15 @@ VoiceText 支持四种 ASR 后端：
 
 | 预设 ID | 后端 | 模型 | 大小 |
 |---------|------|------|------|
+| `apple-speech-ondevice` | apple | Apple Speech（设备端） | 内置 |
+| `apple-speech-server` | apple | Apple Speech（服务器端） | 内置 |
 | `funasr-paraformer` | funasr | Paraformer-large（中文） | ~400 MB |
-| `apple-speech-ondevice` | apple-speech | Apple Speech（设备端） | 内置 |
-| `apple-speech-server` | apple-speech | Apple Speech（服务器端） | 内置 |
+| `sherpa-zipformer-zh` | sherpa-onnx | Zipformer Chinese 14M | ~28 MB |
+| `sherpa-paraformer-zh` | sherpa-onnx | Paraformer 双语（中英） | ~220 MB |
 | `mlx-whisper-medium` | mlx-whisper | `mlx-community/whisper-medium` | ~1.5 GB |
 | `mlx-whisper-large-v3-turbo` | mlx-whisper | `mlx-community/whisper-large-v3-turbo` | ~1.6 GB |
 
-> **注意：** MLX-Whisper 的 tiny/base/small 模型没有预设，但可以通过直接设置 `asr.model` 来使用（例如 `"model": "mlx-community/whisper-small"`）。
+> **注意：** MLX-Whisper 的 tiny/base/small 模型没有预设，但可以通过直接设置 `asr.model` 来使用（例如 `"model": "mlx-community/whisper-small"`）。Sherpa-ONNX 模型会在首次使用时自动从 HuggingFace 下载。
 
 ---
 
