@@ -735,6 +735,22 @@ class VoiceTextApp(StatusBarApp):
         logger.warning("Accessibility permission not granted, prompting user")
         return False
 
+    def _warmup(self) -> None:
+        """Pre-create heavy objects after the event loop starts.
+
+        Runs on the main thread via AppHelper.callAfter() so that the
+        first recording / preview interaction feels instant.
+        """
+        try:
+            self._sound_manager.warmup()
+        except Exception:
+            logger.debug("Sound warmup failed", exc_info=True)
+        try:
+            if hasattr(self._preview_panel, "warmup"):
+                self._preview_panel.warmup()
+        except Exception:
+            logger.debug("Preview panel warmup failed", exc_info=True)
+
     def run(self, **kwargs) -> None:
         """Initialize models and start the app."""
         self._ensure_accessibility()
@@ -772,6 +788,12 @@ class VoiceTextApp(StatusBarApp):
                 on_activate=self._preview_controller.on_clipboard_enhance,
             )
             self._clipboard_hotkey_listener.start()
+
+        # Schedule warmup after the event loop starts to pre-create heavy
+        # objects (WKWebView, NSSound) so the first user interaction is snappy.
+        from PyObjCTools import AppHelper
+
+        AppHelper.callAfter(self._warmup)
 
         super().run(**kwargs)
 
