@@ -154,21 +154,15 @@ _SAFARI_BOOKMARKS_PATH = "~/Library/Safari/Bookmarks.plist"
 
 def _read_safari_bookmarks() -> List[Bookmark]:
     """Read bookmarks from Safari's binary plist file."""
+    import plistlib
+
     path = os.path.expanduser(_SAFARI_BOOKMARKS_PATH)
     if not os.path.isfile(path):
         return []
 
     try:
-        # Use plutil to convert binary plist to JSON for parsing
-        result = subprocess.run(
-            ["plutil", "-convert", "json", "-o", "-", path],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode != 0:
-            logger.debug("plutil failed for Safari bookmarks: %s", result.stderr)
-            return []
-
-        data = json.loads(result.stdout)
+        with open(path, "rb") as f:
+            data = plistlib.load(f)
         bookmarks: List[Bookmark] = []
         _collect_safari_nodes(data, "", bookmarks)
         return bookmarks
