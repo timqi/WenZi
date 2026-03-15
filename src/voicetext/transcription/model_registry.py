@@ -238,6 +238,21 @@ def find_fallback_preset() -> Optional[ModelPreset]:
     return None
 
 
+def clear_model_cache(preset: ModelPreset) -> bool:
+    """Delete cached model files for a preset.
+
+    Returns True if a cache directory was found and removed.
+    """
+    import shutil
+
+    cache_dir = get_model_cache_dir(preset)
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
+        logger.info("Cleared model cache: %s", cache_dir)
+        return True
+    return False
+
+
 def build_remote_asr_models(providers: Dict[str, Any]) -> List[RemoteASRModel]:
     """Build a list of RemoteASRModel from the asr.providers config section."""
     result = []

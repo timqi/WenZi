@@ -23,6 +23,8 @@ from .ui.result_window_web import ResultPreviewPanel as WebResultPreviewPanel
 from .ui.settings_window import SettingsPanel
 from .hotkey import MultiHotkeyListener, TapHotkeyListener, _is_fn_key
 from .transcription.model_registry import (
+    PRESET_BY_ID,
+    clear_model_cache,
     find_fallback_preset,
     resolve_preset_from_config,
 )
@@ -801,6 +803,76 @@ class VoiceTextApp(StatusBarApp):
                 ["open", "-R", self._config_error.path],
             )
 
+    def _show_model_load_error_alert(self, error: Exception) -> None:
+        """Show alert when model initialization fails, with option to clear cache."""
+        preset_id = self._current_preset_id
+        preset = PRESET_BY_ID.get(preset_id) if preset_id else None
+        # Only offer cache clear for local models that have a cache directory
+        can_clear = preset is not None and preset.backend not in ("apple", "whisper-api")
+
+        if can_clear:
+            result = topmost_alert(
+                title="Model Load Failed",
+                message=(
+                    f"Failed to initialize model.\n\n"
+                    f"Error: {str(error)[:200]}\n\n"
+                    "This may be caused by corrupted cache files from an "
+                    "interrupted download. Click 'Clear Cache & Retry' to "
+                    "delete cached files and try again."
+                ),
+                ok="Clear Cache & Retry",
+                cancel="Close",
+            )
+            restore_accessory()
+            if result == 1:
+                self._clear_cache_and_reinitialize(preset)
+        else:
+            topmost_alert(
+                title="Model Load Failed",
+                message=(
+                    f"Failed to initialize model.\n\n"
+                    f"Error: {str(error)[:200]}\n\n"
+                    "Please check the log file for details."
+                ),
+            )
+            restore_accessory()
+
+    def _clear_cache_and_reinitialize(self, preset) -> None:
+        """Clear model cache and retry initialization on a background thread."""
+        def _do():
+            try:
+                self._set_status("Clearing...")
+                clear_model_cache(preset)
+                self._set_status("Loading...")
+                self._transcriber.cleanup()
+                asr_cfg = self._config["asr"]
+                self._transcriber = create_transcriber(
+                    backend=preset.backend,
+                    use_vad=asr_cfg.get("use_vad", True),
+                    use_punc=asr_cfg.get("use_punc", True),
+                    language=preset.language or asr_cfg.get("language"),
+                    model=preset.model,
+                    temperature=asr_cfg.get("temperature"),
+                )
+                self._transcriber.initialize()
+                self._set_status("VT")
+                logger.info("Model reinitialized after cache clear")
+            except Exception as e2:
+                logger.error("Retry after cache clear failed: %s", e2)
+                self._set_status("Error")
+                topmost_alert(
+                    title="Model Load Failed",
+                    message=(
+                        f"Retry failed.\n\n"
+                        f"Error: {str(e2)[:200]}\n\n"
+                        "Please check your network connection and try "
+                        "switching models from the menu."
+                    ),
+                )
+                restore_accessory()
+
+        threading.Thread(target=_do, daemon=True).start()
+
     def run(self, **kwargs) -> None:
         """Initialize models and start the app."""
         self._ensure_accessibility()
@@ -854,6 +926,7 @@ class VoiceTextApp(StatusBarApp):
                 logger.error("Model initialization failed: %s", e)
                 if not self._config_degraded:
                     self._set_status("Error")
+                self._show_model_load_error_alert(e)
 
         threading.Thread(target=_init_models, daemon=True).start()
 

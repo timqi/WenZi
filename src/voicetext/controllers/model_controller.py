@@ -16,6 +16,7 @@ from voicetext.transcription.model_registry import (
     PRESET_BY_ID,
     ModelPreset,
     RemoteASRModel,
+    clear_model_cache,
     get_model_cache_dir,
     is_backend_available,
     is_model_cached,
@@ -410,14 +411,36 @@ models:
 
                 logger.error("Model switch failed: %s", e)
                 app._set_status("Error")
-                try:
-                    send_notification(
-                        "VoiceText",
-                        "Model switch failed",
-                        str(e)[:100],
+
+                can_clear = preset.backend not in ("apple", "whisper-api")
+                if can_clear:
+                    result = topmost_alert(
+                        title="Model Switch Failed",
+                        message=(
+                            f"Failed to load model: {preset.display_name}\n\n"
+                            f"Error: {str(e)[:200]}\n\n"
+                            "This may be caused by corrupted cache files. "
+                            "Click 'Clear Cache & Retry' to delete cached "
+                            "files and try again."
+                        ),
+                        ok="Clear Cache & Retry",
+                        cancel="Close",
                     )
-                except Exception:
-                    logger.debug("Notification unavailable, skipping")
+                    restore_accessory()
+                    if result == 1:
+                        self._clear_cache_and_retry_switch(
+                            preset, old_preset_id
+                        )
+                        return
+                else:
+                    topmost_alert(
+                        title="Model Switch Failed",
+                        message=(
+                            f"Failed to load model: {preset.display_name}\n\n"
+                            f"Error: {str(e)[:200]}"
+                        ),
+                    )
+                    restore_accessory()
 
                 self._try_restore_previous_model(old_preset_id)
 
@@ -499,6 +522,64 @@ models:
         except Exception as e2:
             logger.error("Failed to restore previous model: %s", e2)
             app._set_status("Error")
+
+    def _clear_cache_and_retry_switch(
+        self, preset: ModelPreset, old_preset_id
+    ) -> None:
+        """Clear model cache and retry the switch."""
+        app = self._app
+        try:
+            app._set_status("Clearing...")
+            clear_model_cache(preset)
+
+            app._set_status("Loading...")
+            asr_cfg = app._config["asr"]
+            new_transcriber = create_transcriber(
+                backend=preset.backend,
+                use_vad=asr_cfg.get("use_vad", True),
+                use_punc=asr_cfg.get("use_punc", True),
+                language=preset.language or asr_cfg.get("language"),
+                model=preset.model,
+                temperature=asr_cfg.get("temperature"),
+            )
+            new_transcriber.initialize()
+
+            app._transcriber = new_transcriber
+            app._current_preset_id = preset.id
+            app._current_remote_asr = None
+            app._menu_builder.update_model_checkmarks()
+
+            app._config["asr"]["preset"] = preset.id
+            app._config["asr"]["backend"] = preset.backend
+            app._config["asr"]["model"] = preset.model
+            app._config["asr"]["language"] = preset.language
+            app._config["asr"]["default_provider"] = None
+            app._config["asr"]["default_model"] = None
+            save_config(app._config, app._config_path)
+
+            app._set_status("VT")
+            logger.info("Model switched after cache clear: %s", preset.display_name)
+        except Exception as e2:
+            logger.error("Retry after cache clear failed: %s", e2)
+            app._set_status("Error")
+            topmost_alert(
+                title="Model Switch Failed",
+                message=(
+                    f"Retry failed.\n\n"
+                    f"Error: {str(e2)[:200]}\n\n"
+                    "Please check your network connection and try again."
+                ),
+            )
+            restore_accessory()
+            self._try_restore_previous_model(old_preset_id)
+        finally:
+            for pid, item in app._model_menu_items.items():
+                p = PRESET_BY_ID[pid]
+                if is_backend_available(p.backend):
+                    item.set_callback(self.on_model_select)
+            for item in app._remote_asr_menu_items.values():
+                item.set_callback(self.on_remote_asr_select)
+            app._busy = False
 
     # ── Remote ASR model selection ────────────────────────────────────
 
