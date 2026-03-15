@@ -93,13 +93,6 @@ class HotkeyAPI:
                         threading.Thread(
                             target=self._execute_mapping, args=(m,), daemon=True
                         ).start()
-                        # Close alert on main thread
-                        try:
-                            from PyObjCTools import AppHelper
-
-                            AppHelper.callAfter(self._leader_alert.close)
-                        except Exception:
-                            pass
                         return True  # Swallow the sub-key
                 # Non-matching key during leader mode — still swallow
                 return True
@@ -129,15 +122,14 @@ class HotkeyAPI:
         with self._lock:
             if self._active_leader and name == self._active_leader.trigger_key:
                 self._active_leader = None
-                if not self._leader_triggered:
-                    # Leader key was just tapped without sub-key
-                    try:
-                        from PyObjCTools import AppHelper
-
-                        AppHelper.callAfter(self._leader_alert.close)
-                    except Exception:
-                        pass
                 self._leader_triggered = False
+                # Always close alert when trigger key is released
+                try:
+                    from PyObjCTools import AppHelper
+
+                    AppHelper.callAfter(self._leader_alert.close)
+                except Exception:
+                    pass
 
     def _execute_mapping(self, mapping: LeaderMapping) -> None:
         """Execute a leader mapping action in a background thread."""
