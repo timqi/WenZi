@@ -168,6 +168,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                 "snippets": "sn",
                 "bookmarks": "bm",
             },
+            "source_hotkeys": {
+                "clipboard": "",
+                "files": "",
+                "snippets": "",
+                "bookmarks": "",
+            },
         },
     },
 }

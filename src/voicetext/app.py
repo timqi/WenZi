@@ -577,13 +577,17 @@ class VoiceTextApp(StatusBarApp):
                     logger.exception("Failed to delete hotkey %s", key_name)
             AppHelper.callAfter(_delete)
 
-    def _on_record_hotkey(self, _) -> None:
-        """Show 'press any key' alert and record a hotkey."""
+    def record_hotkey_modal(self) -> str | None:
+        """Show a modal alert to record a hotkey and return the key name.
+
+        Returns the recorded key name string, or None if cancelled/timed out.
+        Reusable by any caller that needs to record a single hotkey.
+        """
         from AppKit import NSAlert, NSStatusWindowLevel
         from PyObjCTools import AppHelper
 
         if not self._hotkey_listener:
-            return
+            return None
 
         activate_for_dialog()
         alert = NSAlert.alloc().init()
@@ -627,6 +631,13 @@ class VoiceTextApp(StatusBarApp):
         self._hotkey_listener.cancel_record()
         restore_accessory()
 
+        return recorded_key
+
+    def _on_record_hotkey(self, _) -> None:
+        """Show 'press any key' alert and record a hotkey."""
+        from PyObjCTools import AppHelper
+
+        recorded_key = self.record_hotkey_modal()
         if recorded_key:
             def _apply():
                 try:

@@ -110,6 +110,8 @@ class SettingsPanel:
         self._launcher_source_checks: Dict[str, object] = {}
         self._launcher_prefix_fields: Dict[str, object] = {}
         self._launcher_hotkey_field = None
+        self._launcher_source_hotkey_labels: Dict[str, object] = {}
+        self._launcher_source_hotkey_btns: Dict[str, object] = {}
 
     def show(
         self,
@@ -960,6 +962,7 @@ class SettingsPanel:
     def _build_launcher_tab(self, tab_item, state: Dict, tab_width: float) -> None:
         """Build the Launcher tab: source toggles, prefix config, hotkey."""
         from AppKit import (
+            NSButton,
             NSColor,
             NSFont,
             NSScrollView,
@@ -1045,7 +1048,10 @@ class SettingsPanel:
 
         self._launcher_source_checks.clear()
         self._launcher_prefix_fields.clear()
+        self._launcher_source_hotkey_labels.clear()
+        self._launcher_source_hotkey_btns.clear()
 
+        source_hotkeys = launcher_state.get("source_hotkeys", {})
         prefix_label_w = 50
         prefix_field_w = 60
 
@@ -1057,7 +1063,7 @@ class SettingsPanel:
 
             # Enable/disable checkbox
             check = self._make_switch(
-                label, pad + 12, y, 180,
+                label, pad + 12, y, 140,
                 enabled, small_font,
                 b"launcherSourceToggled:", doc_view,
             )
@@ -1067,13 +1073,13 @@ class SettingsPanel:
             # Prefix input field (only for sources that have prefixes)
             if prefix_key:
                 prefix_label = self._make_label(
-                    "Prefix:", pad + 200, y + 2, prefix_label_w, small_font,
+                    "Prefix:", pad + 155, y + 2, prefix_label_w, small_font,
                 )
                 doc_view.addSubview_(prefix_label)
 
                 prefix_field = NSTextField.alloc().initWithFrame_(
                     NSMakeRect(
-                        pad + 200 + prefix_label_w + 4, y,
+                        pad + 155 + prefix_label_w + 4, y,
                         prefix_field_w, self._CONTROL_HEIGHT,
                     )
                 )
@@ -1092,6 +1098,38 @@ class SettingsPanel:
                 self._set_meta(prefix_field, prefix_key=prefix_key)
                 doc_view.addSubview_(prefix_field)
                 self._launcher_prefix_fields[prefix_key] = prefix_field
+
+                # Source hotkey label + Record/Clear button
+                hotkey_val = source_hotkeys.get(prefix_key, "")
+                hk_x = pad + 155 + prefix_label_w + 4 + prefix_field_w + 8
+
+                hk_label = NSTextField.labelWithString_(hotkey_val or "None")
+                hk_label.setFrame_(
+                    NSMakeRect(hk_x, y + 2, 90, self._CONTROL_HEIGHT)
+                )
+                hk_label.setFont_(small_font)
+                hk_label.setTextColor_(NSColor.secondaryLabelColor())
+                doc_view.addSubview_(hk_label)
+                self._launcher_source_hotkey_labels[prefix_key] = hk_label
+
+                btn_x = hk_x + 94
+                if hotkey_val:
+                    btn_title = "Clear"
+                    btn_action = b"launcherSourceHotkeyClear:"
+                else:
+                    btn_title = "Record"
+                    btn_action = b"launcherSourceHotkeyRecord:"
+                hk_btn = NSButton.alloc().initWithFrame_(
+                    NSMakeRect(btn_x, y - 1, 60, 22)
+                )
+                hk_btn.setTitle_(btn_title)
+                hk_btn.setBezelStyle_(1)
+                hk_btn.setFont_(NSFont.systemFontOfSize_(10.0))
+                hk_btn.setTarget_(self)
+                hk_btn.setAction_(btn_action)
+                self._set_meta(hk_btn, source_key=prefix_key)
+                doc_view.addSubview_(hk_btn)
+                self._launcher_source_hotkey_btns[prefix_key] = hk_btn
 
         y -= self._SECTION_GAP
 
@@ -1493,6 +1531,18 @@ class SettingsPanel:
         enabled = sender.state() == 1
         self._call("on_launcher_usage_learning_toggle", enabled)
 
+    def launcherSourceHotkeyRecord_(self, sender):
+        meta = self._get_meta(sender)
+        source_key = meta.get("source_key", "")
+        if source_key:
+            self._call("on_launcher_source_hotkey_record", source_key)
+
+    def launcherSourceHotkeyClear_(self, sender):
+        meta = self._get_meta(sender)
+        source_key = meta.get("source_key", "")
+        if source_key:
+            self._call("on_launcher_source_hotkey_clear", source_key)
+
     def launcherRefreshIconsClicked_(self, sender):
         self._call("on_launcher_refresh_icons")
 
@@ -1541,3 +1591,18 @@ class SettingsPanel:
         """Update the config directory display field."""
         if self._config_dir_field:
             self._config_dir_field.setStringValue_(path)
+
+    def update_source_hotkey(self, source_key: str, hotkey: str) -> None:
+        """Update the hotkey label and button for a source after recording."""
+        label = self._launcher_source_hotkey_labels.get(source_key)
+        if label:
+            label.setStringValue_(hotkey or "None")
+
+        btn = self._launcher_source_hotkey_btns.get(source_key)
+        if btn:
+            if hotkey:
+                btn.setTitle_("Clear")
+                btn.setAction_(b"launcherSourceHotkeyClear:")
+            else:
+                btn.setTitle_("Record")
+                btn.setAction_(b"launcherSourceHotkeyRecord:")

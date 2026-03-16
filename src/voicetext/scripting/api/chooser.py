@@ -30,14 +30,27 @@ class ChooserAPI:
         """Register a data source."""
         self._panel.register_source(source)
 
-    def show(self) -> None:
-        """Show the chooser panel."""
+    def show(self, initial_query: Optional[str] = None) -> None:
+        """Show the chooser panel.
+
+        Args:
+            initial_query: If set, pre-fill the search input with this value.
+        """
         try:
             from PyObjCTools import AppHelper
 
-            AppHelper.callAfter(self._panel.show)
+            AppHelper.callAfter(
+                self._panel.show, initial_query=initial_query,
+            )
         except Exception:
             logger.exception("Failed to show chooser")
+
+    def show_source(self, prefix: str) -> None:
+        """Show the chooser with a specific source activated.
+
+        Equivalent to the user typing ``prefix `` in the search input.
+        """
+        self.show(initial_query=prefix + " ")
 
     def close(self) -> None:
         """Close the chooser panel."""

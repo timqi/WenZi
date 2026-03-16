@@ -504,6 +504,12 @@ function clearInput() {
     renderItems();
 }
 
+function setInputValue(value) {
+    searchInput.value = value;
+    searchInput.setSelectionRange(value.length, value.length);
+    post('search', { query: value });
+}
+
 // --- Init ---
 footerLeft.innerHTML =
     '<kbd>\u2191\u2193</kbd> Navigate ' +

@@ -167,6 +167,7 @@ class ChooserPanel:
 
         self._usage_tracker = usage_tracker
         self._on_close: Optional[Callable] = None
+        self._pending_initial_query: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Source management
@@ -189,13 +190,29 @@ class ChooserPanel:
     def is_visible(self) -> bool:
         return self._panel is not None and self._panel.isVisible()
 
-    def show(self, on_close: Optional[Callable] = None) -> None:
-        """Show the chooser panel. Must run on main thread."""
+    def show(
+        self,
+        on_close: Optional[Callable] = None,
+        initial_query: Optional[str] = None,
+    ) -> None:
+        """Show the chooser panel. Must run on main thread.
+
+        Args:
+            on_close: Callback invoked when the panel closes.
+            initial_query: If set, pre-fill the search input with this value
+                and trigger a search immediately after the page loads.
+        """
         self._on_close = on_close
+        self._pending_initial_query = initial_query
 
         if self._panel is not None and self._panel.isVisible():
-            # Already visible — just focus
-            self._eval_js("focusInput()")
+            # Already visible — apply initial query if provided, else focus
+            if initial_query:
+                self._eval_js(
+                    f"setInputValue({json.dumps(initial_query)})"
+                )
+            else:
+                self._eval_js("focusInput()")
             self._panel.makeKeyAndOrderFront_(None)
             from AppKit import NSApp
             NSApp.activateIgnoringOtherApps_(True)
@@ -504,6 +521,12 @@ class ChooserPanel:
 
         # Push available prefix hints to JS for placeholder display
         self._push_prefix_hints_to_js()
+
+        # Apply pending initial query (e.g. from source hotkey)
+        if self._pending_initial_query is not None:
+            query = self._pending_initial_query
+            self._pending_initial_query = None
+            self._eval_js(f"setInputValue({json.dumps(query)})")
 
     def _push_prefix_hints_to_js(self) -> None:
         """Send prefix hints to JS so the search placeholder shows them."""

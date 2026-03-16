@@ -483,6 +483,50 @@ class TestUsageTrackerIntegration:
         assert tracker.score("saf", "app:Safari") == 1
 
 
+class TestInitialQuery:
+    def test_show_with_initial_query_queues_js(self):
+        """show(initial_query=...) should store the pending query."""
+        panel = _make_panel()
+        panel._page_loaded = False
+        panel._pending_initial_query = "cb "
+        # Simulate page loaded
+        panel._on_page_loaded()
+        # The setInputValue call should have been made
+        calls = [c[0][0] for c in panel._eval_js.call_args_list]
+        set_input_calls = [c for c in calls if "setInputValue" in c]
+        assert len(set_input_calls) == 1
+        assert '"cb "' in set_input_calls[0]
+
+    def test_show_without_initial_query(self):
+        """show() without initial_query should not call setInputValue."""
+        panel = _make_panel()
+        panel._page_loaded = False
+        panel._pending_initial_query = None
+        panel._on_page_loaded()
+        calls = [c[0][0] for c in panel._eval_js.call_args_list]
+        set_input_calls = [c for c in calls if "setInputValue" in c]
+        assert len(set_input_calls) == 0
+
+    def test_initial_query_cleared_after_page_load(self):
+        """Pending initial query should be consumed after page load."""
+        panel = _make_panel()
+        panel._page_loaded = False
+        panel._pending_initial_query = "sn "
+        panel._on_page_loaded()
+        assert panel._pending_initial_query is None
+
+    def test_initial_query_triggers_search(self):
+        """setInputValue in JS posts a search message, which triggers _do_search."""
+        panel = _make_panel()
+        items = [ChooserItem(title="item1"), ChooserItem(title="item2")]
+        panel.register_source(
+            _make_source("clipboard", prefix="cb", items=items)
+        )
+        # Simulate what happens when JS calls back with the search
+        panel._handle_js_message({"type": "search", "query": "cb "})
+        assert len(panel._current_items) == 2
+
+
 class TestModifierActions:
     def test_modifier_subtitle_message(self):
         panel = _make_panel()

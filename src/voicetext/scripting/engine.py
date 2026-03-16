@@ -47,6 +47,7 @@ class ScriptEngine:
         self._register_builtin_sources()
         self._load_scripts()
         self._bind_chooser_hotkey()
+        self._bind_source_hotkeys()
         # Start hotkey/leader listeners after scripts register their bindings
         self._vt.hotkey.start()
         logger.info("Script engine started (script_dir=%s)", self._script_dir)
@@ -73,6 +74,7 @@ class ScriptEngine:
         self._register_builtin_sources()
         self._load_scripts()
         self._bind_chooser_hotkey()
+        self._bind_source_hotkeys()
         self._vt.hotkey.start()
         logger.info("Scripts reloaded")
 
@@ -204,6 +206,24 @@ class ScriptEngine:
         if hotkey_str:
             self._vt.hotkey.bind(hotkey_str, lambda: self._vt.chooser.toggle())
             logger.info("Chooser hotkey bound: %s", hotkey_str)
+
+    def _bind_source_hotkeys(self) -> None:
+        """Bind per-source direct hotkeys from config."""
+        chooser_config = self._config.get("chooser", {})
+        source_hotkeys = chooser_config.get("source_hotkeys", {})
+        prefixes = chooser_config.get("prefixes", {})
+        for source_key, hotkey_str in source_hotkeys.items():
+            if hotkey_str:
+                prefix = prefixes.get(source_key, "")
+                if not prefix:
+                    continue
+                self._vt.hotkey.bind(
+                    hotkey_str,
+                    lambda p=prefix: self._vt.chooser.show_source(p),
+                )
+                logger.info(
+                    "Source hotkey bound: %s -> %s", hotkey_str, source_key,
+                )
 
     def _load_scripts(self) -> None:
         """Execute init.py in the scripts directory."""

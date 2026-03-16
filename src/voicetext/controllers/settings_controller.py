@@ -156,6 +156,8 @@ class SettingsController:
             "on_launcher_prefix_change": self.launcher_prefix_change,
             "on_launcher_usage_learning_toggle": self.launcher_usage_learning_toggle,
             "on_launcher_refresh_icons": self.launcher_refresh_icons,
+            "on_launcher_source_hotkey_record": self.launcher_source_hotkey_record,
+            "on_launcher_source_hotkey_clear": self.launcher_source_hotkey_clear,
             "_reopen": lambda: self.on_open_settings(None),
         }
 
@@ -860,6 +862,12 @@ class SettingsController:
                 "snippets": "sn",
                 "bookmarks": "bm",
             }),
+            "source_hotkeys": chooser_cfg.get("source_hotkeys", {
+                "clipboard": "",
+                "files": "",
+                "snippets": "",
+                "bookmarks": "",
+            }),
         }
 
     def launcher_hotkey_change(self, hotkey: str) -> None:
@@ -948,6 +956,51 @@ class SettingsController:
         )
         restore_accessory()
         logger.info("Icon cache refresh completed")
+
+    def launcher_source_hotkey_record(self, source_key: str) -> None:
+        """Record a hotkey for a specific data source."""
+        app = self._app
+        recorded_key = app.record_hotkey_modal()
+        if recorded_key:
+            chooser_cfg = app._config.setdefault("scripting", {}).setdefault(
+                "chooser", {}
+            )
+            source_hotkeys = chooser_cfg.setdefault("source_hotkeys", {})
+            source_hotkeys[source_key] = recorded_key
+            save_config(app._config, app._config_path)
+
+            # Dynamically bind the new hotkey
+            prefixes = chooser_cfg.get("prefixes", {})
+            prefix = prefixes.get(source_key, "")
+            if prefix and hasattr(app, "_script_engine"):
+                app._script_engine.vt.hotkey.bind(
+                    recorded_key,
+                    lambda p=prefix: app._script_engine.vt.chooser.show_source(p),
+                )
+                app._script_engine.vt.hotkey.start()
+
+            app._settings_panel.update_source_hotkey(source_key, recorded_key)
+            logger.info(
+                "Source hotkey recorded: %s -> %s", source_key, recorded_key,
+            )
+
+    def launcher_source_hotkey_clear(self, source_key: str) -> None:
+        """Clear the hotkey for a specific data source."""
+        app = self._app
+        chooser_cfg = app._config.setdefault("scripting", {}).setdefault(
+            "chooser", {}
+        )
+        source_hotkeys = chooser_cfg.setdefault("source_hotkeys", {})
+        old_hotkey = source_hotkeys.get(source_key, "")
+        source_hotkeys[source_key] = ""
+        save_config(app._config, app._config_path)
+
+        # Unbind the old hotkey
+        if old_hotkey and hasattr(app, "_script_engine"):
+            app._script_engine.vt.hotkey.unbind(old_hotkey)
+
+        app._settings_panel.update_source_hotkey(source_key, "")
+        logger.info("Source hotkey cleared: %s", source_key)
 
     def launcher_usage_learning_toggle(self, enabled: bool) -> None:
         """Handle launcher usage learning toggle from Settings panel."""

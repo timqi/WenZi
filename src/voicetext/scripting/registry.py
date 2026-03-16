@@ -94,6 +94,19 @@ class ScriptingRegistry:
         self._hotkeys.append(HotkeyBinding(hotkey_str=hotkey_str, callback=callback))
         logger.info("Registered hotkey: %s", hotkey_str)
 
+    def unregister_hotkey(self, hotkey_str: str) -> None:
+        """Remove and stop a hotkey binding by its hotkey string."""
+        to_remove = [b for b in self._hotkeys if b.hotkey_str == hotkey_str]
+        for binding in to_remove:
+            if binding.listener:
+                try:
+                    binding.listener.stop()
+                except Exception:
+                    pass
+            self._hotkeys.remove(binding)
+        if to_remove:
+            logger.info("Unregistered hotkey: %s", hotkey_str)
+
     def register_timer(
         self, interval: float, callback: Callable, repeating: bool = False
     ) -> str:
