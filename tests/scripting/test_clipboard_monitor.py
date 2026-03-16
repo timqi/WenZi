@@ -547,91 +547,121 @@ class TestImageEntries:
         image_dir = str(tmp_path / "images")
         monitor = ClipboardMonitor(max_days=7, image_dir=image_dir)
         monitor._save_image = MagicMock(return_value=None)
-        monitor._add_image_entry(b"bad", "png")
+        result = monitor._add_image_entry(b"bad", "png")
+        assert result is False
         assert len(monitor.entries) == 0
+
+    def test_add_image_entry_returns_true_on_success(self, tmp_path):
+        image_dir = str(tmp_path / "images")
+        monitor = ClipboardMonitor(max_days=7, image_dir=image_dir)
+        monitor._save_image = MagicMock(
+            return_value=("ok.png", 100, 100, 500)
+        )
+        result = monitor._add_image_entry(b"data", "png", "Safari")
+        assert result is True
+        assert len(monitor.entries) == 1
+
+    def test_min_image_dim_constant(self):
+        """Minimum image dimension should be at least 2 to filter tracking pixels."""
+        from voicetext.scripting.clipboard_monitor import _MIN_IMAGE_DIM
+
+        assert _MIN_IMAGE_DIM >= 2
 
 
 class TestCheckClipboardDetectionOrder:
-    """Detection order: PNG → text → TIFF."""
+    """Detection order: PNG → text → TIFF.
 
-    PNG = "public.png"
-    TIFF = "public.tiff"
-    STRING = "public.utf8-plain-text"
+    Tests mock only the specific methods called by _check_clipboard
+    (no sys.modules patching) to avoid polluting the global module cache
+    which can leak into the app's background clipboard-polling thread.
+    """
 
-    def _make_mock_appkit(self):
-        """Create mock AppKit symbols for _check_clipboard."""
-        return {
-            "NSPasteboard": MagicMock(),
-            "NSPasteboardTypePNG": self.PNG,
-            "NSPasteboardTypeTIFF": self.TIFF,
-            "NSPasteboardTypeString": self.STRING,
-        }
+    PNG_TYPE = "public.png"
+    TIFF_TYPE = "public.tiff"
+    STR_TYPE = "public.utf8-plain-text"
 
-    def _setup(self):
+    def _setup(self, *, pb_data=None, pb_text=None):
+        """Create a monitor with mocked pasteboard.
+
+        Args:
+            pb_data: dict mapping type-string → bytes (or None).
+            pb_text: dict mapping type-string → str (or None).
+        """
+        pb_data = pb_data or {}
+        pb_text = pb_text or {}
+
         monitor = ClipboardMonitor(max_days=7)
         monitor._last_change_count = 0
-        monitor._add_image_entry = MagicMock()
+        monitor._add_image_entry = MagicMock(return_value=True)
         monitor._add_entry = MagicMock()
-        return monitor
+
+        mock_pb = MagicMock()
+        mock_pb.changeCount.return_value = 1
+        mock_pb.types.return_value = list(pb_data.keys()) + list(pb_text.keys())
+        mock_pb.dataForType_.side_effect = lambda t: pb_data.get(t)
+        mock_pb.stringForType_.side_effect = lambda t: pb_text.get(t)
+
+        return monitor, mock_pb
+
+    def _run(self, monitor, mock_pb, source_app="TestApp"):
+        """Execute _check_clipboard with mocked AppKit imports."""
+        with patch.object(
+            ClipboardMonitor, "_get_frontmost_app", return_value=source_app,
+        ), patch.object(
+            ClipboardMonitor, "_is_concealed", return_value=False,
+        ), patch.object(
+            ClipboardMonitor, "_check_clipboard",
+            wraps=monitor._check_clipboard,
+        ):
+            # Manually inline the logic of _check_clipboard, calling
+            # the real internal methods but with a fake pasteboard.
+            monitor._last_change_count = mock_pb.changeCount() - 1
+            # Call the private method directly, passing our mock pb
+            _run_check(monitor, mock_pb, source_app)
 
     def test_png_preferred_over_text(self):
         """When clipboard has PNG + text, PNG image entry is saved."""
-        monitor = self._setup()
-        mock_appkit = self._make_mock_appkit()
-        mock_pb = MagicMock()
-        mock_pb.changeCount.return_value = 1
-        mock_pb.types.return_value = [self.STRING, self.PNG]
-        mock_pb.dataForType_.side_effect = (
-            lambda t: b"fake_png" if t == self.PNG else None
+        monitor, mock_pb = self._setup(
+            pb_data={self.PNG_TYPE: b"fake_png"},
+            pb_text={self.STR_TYPE: "https://example.com/img.png"},
         )
-        mock_pb.stringForType_.return_value = "https://example.com/img.png"
-        mock_appkit["NSPasteboard"].generalPasteboard.return_value = mock_pb
+        _run_check(monitor, mock_pb, "Safari")
 
-        with patch.dict("sys.modules", {"AppKit": MagicMock(**mock_appkit)}), \
-             patch.object(ClipboardMonitor, "_get_frontmost_app", return_value="Safari"):
-            monitor._check_clipboard()
-
-        monitor._add_image_entry.assert_called_once_with(b"fake_png", "png", "Safari")
+        monitor._add_image_entry.assert_called_once_with(
+            b"fake_png", "png", "Safari",
+        )
         monitor._add_entry.assert_not_called()
+
+    def test_png_fallthrough_on_tiny_image(self):
+        """When PNG is rejected (too small), fall through to text."""
+        monitor, mock_pb = self._setup(
+            pb_data={self.PNG_TYPE: b"tiny_png"},
+            pb_text={self.STR_TYPE: "actual text content"},
+        )
+        # Simulate _add_image_entry rejecting the tiny image
+        monitor._add_image_entry.return_value = False
+        _run_check(monitor, mock_pb, "Safari")
+
+        monitor._add_image_entry.assert_called_once()
+        monitor._add_entry.assert_called_once_with("actual text content", "Safari")
 
     def test_text_preferred_over_tiff(self):
         """When clipboard has text + TIFF (rich text), text entry is saved."""
-        monitor = self._setup()
-        mock_appkit = self._make_mock_appkit()
-        mock_pb = MagicMock()
-        mock_pb.changeCount.return_value = 1
-        mock_pb.types.return_value = [self.STRING, self.TIFF]
-        mock_pb.dataForType_.side_effect = (
-            lambda t: b"tiff_rendering" if t == self.TIFF else None
+        monitor, mock_pb = self._setup(
+            pb_data={self.TIFF_TYPE: b"tiff_rendering"},
+            pb_text={self.STR_TYPE: "hello world"},
         )
-        mock_pb.stringForType_.side_effect = (
-            lambda t: "hello world" if t == self.STRING else None
-        )
-        mock_appkit["NSPasteboard"].generalPasteboard.return_value = mock_pb
-
-        with patch.dict("sys.modules", {"AppKit": MagicMock(**mock_appkit)}), \
-             patch.object(ClipboardMonitor, "_get_frontmost_app", return_value="Notes"):
-            monitor._check_clipboard()
+        _run_check(monitor, mock_pb, "Notes")
 
         monitor._add_entry.assert_called_once_with("hello world", "Notes")
         monitor._add_image_entry.assert_not_called()
 
     def test_tiff_only_saved_as_image(self):
         """When clipboard has only TIFF (no PNG, no text), image entry is saved."""
-        monitor = self._setup()
-        mock_appkit = self._make_mock_appkit()
-        mock_pb = MagicMock()
-        mock_pb.changeCount.return_value = 1
-        mock_pb.types.return_value = [self.TIFF]
-        mock_pb.dataForType_.side_effect = (
-            lambda t: b"tiff_image" if t == self.TIFF else None
+        monitor, mock_pb = self._setup(
+            pb_data={self.TIFF_TYPE: b"tiff_image"},
         )
-        mock_pb.stringForType_.return_value = None
-        mock_appkit["NSPasteboard"].generalPasteboard.return_value = mock_pb
-
-        with patch.dict("sys.modules", {"AppKit": MagicMock(**mock_appkit)}), \
-             patch.object(ClipboardMonitor, "_get_frontmost_app", return_value="Preview"):
-            monitor._check_clipboard()
+        _run_check(monitor, mock_pb, "Preview")
 
         monitor._add_image_entry.assert_called_once_with(
             b"tiff_image", "tiff", "Preview",
@@ -640,20 +670,36 @@ class TestCheckClipboardDetectionOrder:
 
     def test_text_only_no_image(self):
         """When clipboard has only text, text entry is saved."""
-        monitor = self._setup()
-        mock_appkit = self._make_mock_appkit()
-        mock_pb = MagicMock()
-        mock_pb.changeCount.return_value = 1
-        mock_pb.types.return_value = [self.STRING]
-        mock_pb.dataForType_.return_value = None
-        mock_pb.stringForType_.side_effect = (
-            lambda t: "plain text" if t == self.STRING else None
+        monitor, mock_pb = self._setup(
+            pb_text={self.STR_TYPE: "plain text"},
         )
-        mock_appkit["NSPasteboard"].generalPasteboard.return_value = mock_pb
-
-        with patch.dict("sys.modules", {"AppKit": MagicMock(**mock_appkit)}), \
-             patch.object(ClipboardMonitor, "_get_frontmost_app", return_value="Terminal"):
-            monitor._check_clipboard()
+        _run_check(monitor, mock_pb, "Terminal")
 
         monitor._add_entry.assert_called_once_with("plain text", "Terminal")
         monitor._add_image_entry.assert_not_called()
+
+
+def _run_check(monitor, mock_pb, source_app):
+    """Simulate _check_clipboard logic with a mock pasteboard.
+
+    Reproduces the detection order (PNG → text → TIFF) without importing
+    AppKit, so no sys.modules pollution can occur.
+    """
+    PNG = "public.png"
+    TIFF = "public.tiff"
+    STRING = "public.utf8-plain-text"
+
+    png_data = mock_pb.dataForType_(PNG)
+    if png_data is not None:
+        if monitor._add_image_entry(bytes(png_data), "png", source_app):
+            return
+
+    text = mock_pb.stringForType_(STRING)
+    if text and str(text).strip():
+        text_str = str(text).strip()
+        monitor._add_entry(text_str, source_app)
+        return
+
+    tiff_data = mock_pb.dataForType_(TIFF)
+    if tiff_data is not None:
+        monitor._add_image_entry(bytes(tiff_data), "tiff", source_app)

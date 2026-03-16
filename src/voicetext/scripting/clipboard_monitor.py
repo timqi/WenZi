@@ -26,6 +26,7 @@ _CONCEALED_TYPE = "org.nspasteboard.ConcealedType"
 _TRANSIENT_TYPE = "com.nspasteboard.TransientType"
 
 _MAX_TEXT_LENGTH = 10_240  # 10 KB
+_MIN_IMAGE_DIM = 4  # ignore images smaller than 4×4 (tracking pixels, mock artifacts)
 
 _DEFAULT_IMAGE_DIR = os.path.expanduser("~/.config/VoiceText/clipboard_images")
 
@@ -390,11 +391,14 @@ class ClipboardMonitor:
         # image would create bogus image entries for every text copy.
         # TIFF-only (no PNG, no text) is the rare case where an app
         # provides only a TIFF image (e.g. Preview).
+        source_app = self._get_frontmost_app()
+
+        # PNG — if saved successfully, we're done; otherwise fall through
+        # to text (the PNG may have been too small, e.g. a tracking pixel).
         png_data = pb.dataForType_(NSPasteboardTypePNG)
         if png_data is not None:
-            source_app = self._get_frontmost_app()
-            self._add_image_entry(bytes(png_data), "png", source_app)
-            return
+            if self._add_image_entry(bytes(png_data), "png", source_app):
+                return
 
         text = pb.stringForType_(NSPasteboardTypeString)
         if text and str(text).strip():
@@ -405,13 +409,11 @@ class ClipboardMonitor:
                     len(text_str),
                 )
                 return
-            source_app = self._get_frontmost_app()
             self._add_entry(text_str, source_app)
             return
 
         tiff_data = pb.dataForType_(NSPasteboardTypeTIFF)
         if tiff_data is not None:
-            source_app = self._get_frontmost_app()
             self._add_image_entry(bytes(tiff_data), "tiff", source_app)
 
     @staticmethod
@@ -467,11 +469,15 @@ class ClipboardMonitor:
 
     def _add_image_entry(
         self, image_data: bytes, image_type: str, source_app: str = ""
-    ) -> None:
-        """Save image data to disk and add an image clipboard entry."""
+    ) -> bool:
+        """Save image data to disk and add an image clipboard entry.
+
+        Returns True if the entry was saved, False otherwise (e.g. image
+        too small or invalid).
+        """
         result = self._save_image(image_data, image_type)
         if result is None:
-            return
+            return False
 
         filename, width, height, file_size = result
 
@@ -489,7 +495,7 @@ class ClipboardMonitor:
         with self._lock:
             # Skip if same as the most recent entry (by filename hash)
             if self._entries and self._entries[0].image_path == filename:
-                return
+                return True  # already recorded, still counts as success
             self._entries.insert(0, entry)
             removed = self._trim_expired_locked()
 
@@ -503,6 +509,7 @@ class ClipboardMonitor:
         logger.debug(
             "Clipboard image entry added: %s (%dx%d)", filename, width, height,
         )
+        return True
 
     def _save_image(
         self, image_data: bytes, image_type: str
@@ -519,6 +526,12 @@ class ClipboardMonitor:
 
             width = int(rep.pixelsWide())
             height = int(rep.pixelsHigh())
+
+            if width < _MIN_IMAGE_DIM or height < _MIN_IMAGE_DIM:
+                logger.debug(
+                    "Skipping tiny clipboard image: %dx%d", width, height,
+                )
+                return None
 
             # Convert to PNG if needed
             if image_type == "png":
