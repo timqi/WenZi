@@ -27,6 +27,16 @@ class RecordingController:
         # Saved state for restoring after a per-hotkey mode override
         self._saved_mode: Optional[tuple] = None  # (enhance_mode, enhancer_mode, enhancer_enabled)
 
+    def _fire_scripting_event(self, event_name: str, **kwargs) -> None:
+        """Fire a scripting event if the script engine is available."""
+        engine = getattr(self._app, "_script_engine", None)
+        if engine is None:
+            return
+        try:
+            engine.vt._registry.fire_event(event_name, **kwargs)
+        except Exception:
+            logger.debug("Failed to fire scripting event %s", event_name)
+
     def on_hotkey_press(self, key_name: str = "") -> None:
         """Called when hotkey is pressed down - start recording."""
         app = self._app
@@ -50,6 +60,7 @@ class RecordingController:
                 self._apply_prefer_mode(prefer_mode)
 
         logger.info("Hotkey pressed, starting recording")
+        self._fire_scripting_event("recording_start")
         app._set_status("Recording...")
         app._sound_manager.play("start")
         if app._sound_manager.enabled:
@@ -336,6 +347,7 @@ class RecordingController:
         app._recorder.clear_on_audio_chunk()
 
         wav_data = app._recorder.stop()
+        self._fire_scripting_event("recording_stop")
 
         # Record audio duration for usage statistics
         audio_duration = 0.0
@@ -639,6 +651,8 @@ class RecordingController:
         except Exception as e:
             logger.error("Failed to record usage stats: %s", e)
 
+        self._fire_scripting_event("transcription_done", asr_text=asr_text)
+
         text = asr_text
         enhanced_text = None
         cancel_event = threading.Event()
@@ -693,6 +707,9 @@ class RecordingController:
                     enhanced_text = None
                 else:
                     enhanced_text = text
+                    self._fire_scripting_event(
+                        "enhancement_done", enhanced_text=enhanced_text
+                    )
             except Exception as e:
                 logger.error("AI enhancement failed: %s", e)
                 text = asr_text
@@ -710,6 +727,8 @@ class RecordingController:
         if cancel_event.is_set():
             app._set_status("VT")
             return
+
+        self._fire_scripting_event("output_text", final_text=text.strip())
 
         type_text(
             text.strip(),

@@ -202,6 +202,7 @@ class TestChooserAPI:
             # Should pre-fill with "> " prefix for source isolation
             _, kwargs = mock_call.call_args
             assert kwargs.get("initial_query") == "> "
+            assert kwargs.get("placeholder") == "Choose..."
 
         # A temporary source should be registered with prefix ">"
         source_names = list(api.panel._sources.keys())
@@ -342,3 +343,23 @@ class TestChooserAPI:
 
         # Should not raise
         api._fire_event("open")
+
+    def test_pick_custom_placeholder(self):
+        api = ChooserAPI()
+
+        with patch("PyObjCTools.AppHelper.callAfter") as mock_call:
+            api.pick(
+                [{"title": "A"}],
+                callback=lambda item: None,
+                placeholder="Select a project...",
+            )
+            _, kwargs = mock_call.call_args
+            assert kwargs.get("placeholder") == "Select a project..."
+
+    def test_pick_default_placeholder(self):
+        api = ChooserAPI()
+
+        with patch("PyObjCTools.AppHelper.callAfter") as mock_call:
+            api.pick([{"title": "A"}], callback=lambda item: None)
+            _, kwargs = mock_call.call_args
+            assert kwargs.get("placeholder") == "Choose..."

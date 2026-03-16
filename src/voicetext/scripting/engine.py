@@ -63,6 +63,7 @@ class ScriptEngine:
             self._snippet_expander = None
         self._vt.pasteboard._set_monitor(None)
         self._vt.snippets._set_store(None)
+        self._vt.store.flush_sync()
         self._registry.clear()
         logger.info("Script engine stopped")
 

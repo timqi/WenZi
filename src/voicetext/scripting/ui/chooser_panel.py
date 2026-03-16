@@ -168,6 +168,7 @@ class ChooserPanel:
         self._usage_tracker = usage_tracker
         self._on_close: Optional[Callable] = None
         self._pending_initial_query: Optional[str] = None
+        self._pending_placeholder: Optional[str] = None
         self._event_callback: Optional[Callable] = None  # (event, *args)
 
     # ------------------------------------------------------------------
@@ -207,6 +208,7 @@ class ChooserPanel:
         self,
         on_close: Optional[Callable] = None,
         initial_query: Optional[str] = None,
+        placeholder: Optional[str] = None,
     ) -> None:
         """Show the chooser panel. Must run on main thread.
 
@@ -214,9 +216,11 @@ class ChooserPanel:
             on_close: Callback invoked when the panel closes.
             initial_query: If set, pre-fill the search input with this value
                 and trigger a search immediately after the page loads.
+            placeholder: If set, override the search input placeholder text.
         """
         self._on_close = on_close
         self._pending_initial_query = initial_query
+        self._pending_placeholder = placeholder
 
         if self._panel is not None and self._panel.isVisible():
             # Already visible — apply initial query if provided, else focus
@@ -573,6 +577,14 @@ class ChooserPanel:
 
         # Push available prefix hints to JS for placeholder display
         self._push_prefix_hints_to_js()
+
+        # Apply custom placeholder (overrides prefix hints default)
+        if self._pending_placeholder is not None:
+            import json as _json
+            self._eval_js(
+                f"setPlaceholder({_json.dumps(self._pending_placeholder)})"
+            )
+            self._pending_placeholder = None
 
         # Apply pending initial query (e.g. from source hotkey)
         if self._pending_initial_query is not None:

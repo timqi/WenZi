@@ -520,6 +520,10 @@ function setModifierSubtitle(index, subtitle) {
     }
 }
 
+function setPlaceholder(text) {
+    searchInput.placeholder = text || 'Search...';
+}
+
 function focusInput() {
     activeModifier = null;  // Reset stale modifier state on panel reopen
     searchInput.focus();

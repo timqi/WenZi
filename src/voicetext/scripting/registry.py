@@ -62,6 +62,7 @@ class ScriptingRegistry:
         self._hotkeys: List[HotkeyBinding] = []
         self._timers: Dict[str, TimerEntry] = {}
         self._chooser_sources: Dict[str, Any] = {}  # name → ChooserSource
+        self._event_listeners: Dict[str, List[Callable]] = {}
         self._lock = threading.Lock()
 
     @property
@@ -136,6 +137,35 @@ class ScriptingRegistry:
             entry._timer.cancel()
             logger.info("Cancelled timer %s", timer_id[:8])
 
+    def register_event(self, event_name: str, callback: Callable) -> None:
+        """Register a listener for a global event."""
+        self._event_listeners.setdefault(event_name, []).append(callback)
+        logger.info("Registered event listener: %s", event_name)
+
+    def unregister_event(self, event_name: str, callback: Callable) -> None:
+        """Remove a specific listener for a global event."""
+        handlers = self._event_listeners.get(event_name, [])
+        if callback in handlers:
+            handlers.remove(callback)
+            logger.info("Unregistered event listener: %s", event_name)
+
+    def fire_event(self, event_name: str, **kwargs) -> None:
+        """Invoke all handlers for *event_name* in a background thread."""
+        handlers = list(self._event_listeners.get(event_name, []))
+        if not handlers:
+            return
+
+        def _run():
+            for handler in handlers:
+                try:
+                    handler(kwargs)
+                except Exception:
+                    logger.exception(
+                        "Event handler error for %s", event_name
+                    )
+
+        threading.Thread(target=_run, daemon=True).start()
+
     def clear(self) -> None:
         """Stop all timers and clear all registrations."""
         with self._lock:
@@ -153,4 +183,5 @@ class ScriptingRegistry:
         self._hotkeys.clear()
         self._leaders.clear()
         self._chooser_sources.clear()
+        self._event_listeners.clear()
         logger.info("Registry cleared")

@@ -129,6 +129,7 @@ class ChooserAPI:
         self,
         items: List[dict],
         callback: Callable,
+        placeholder: str = "Choose...",
     ) -> None:
         """Show the chooser with a fixed list of items for the user to pick.
 
@@ -142,6 +143,7 @@ class ChooserAPI:
         Args:
             items: List of item dicts (same format as source search results).
             callback: ``callback(item_dict | None)``.
+            placeholder: Custom placeholder text for the search input.
         """
         source_name = f"__pick_{id(callback)}"
         chooser_items = [_dict_to_chooser_item(d) for d in (items or [])]
@@ -203,6 +205,7 @@ class ChooserAPI:
                 self._panel.show,
                 on_close=_on_close,
                 initial_query=self._PICK_PREFIX + " ",
+                placeholder=placeholder,
             )
         except Exception:
             logger.exception("Failed to show chooser for pick()")
