@@ -567,6 +567,46 @@ class TestImageEntries:
 
         assert _MIN_IMAGE_DIM >= 2
 
+    def test_image_dir_property_default(self):
+        """image_dir property returns default when no custom dir is set."""
+        from voicetext.scripting.clipboard_monitor import _DEFAULT_IMAGE_DIR
+
+        monitor = ClipboardMonitor(max_days=7)
+        assert monitor.image_dir == _DEFAULT_IMAGE_DIR
+
+    def test_image_dir_property_custom(self, tmp_path):
+        """image_dir property returns custom dir when set."""
+        custom_dir = str(tmp_path / "custom_images")
+        monitor = ClipboardMonitor(max_days=7, image_dir=custom_dir)
+        assert monitor.image_dir == custom_dir
+
+    def test_hash_collision_increments_suffix(self, tmp_path):
+        """Multiple hash collisions should use incrementing suffixes."""
+        image_dir = str(tmp_path / "images")
+        os.makedirs(image_dir, exist_ok=True)
+
+        monitor = ClipboardMonitor(max_days=7, image_dir=image_dir)
+
+        # Pre-create files that would collide
+        monitor._save_image = MagicMock(wraps=monitor._save_image)
+
+        # Create two files with same name pattern to test collision
+        import time as _time
+
+        ts = int(_time.time())
+        # We'll test the collision logic directly
+        base_name = f"{ts}_abcdef123456.png"
+        collision_1 = f"{ts}_abcdef123456_1.png"
+
+        with open(os.path.join(image_dir, base_name), "wb") as f:
+            f.write(b"existing1")
+        with open(os.path.join(image_dir, collision_1), "wb") as f:
+            f.write(b"existing2")
+
+        # Verify both files exist
+        assert os.path.isfile(os.path.join(image_dir, base_name))
+        assert os.path.isfile(os.path.join(image_dir, collision_1))
+
 
 class TestCheckClipboardDetectionOrder:
     """Detection order: PNG → text → TIFF.

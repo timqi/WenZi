@@ -299,6 +299,11 @@ class ClipboardMonitor:
             return base[:-5] + ".db"
         return (base or "") + ".db"
 
+    @property
+    def image_dir(self) -> str:
+        """Return the image directory used by this monitor instance."""
+        return self._image_dir
+
     @staticmethod
     def default_image_dir() -> str:
         """Return the default directory for clipboard image storage."""
@@ -550,8 +555,10 @@ class ClipboardMonitor:
             os.makedirs(self._image_dir, exist_ok=True)
             filepath = os.path.join(self._image_dir, filename)
             # Avoid overwriting an existing file (hash collision)
-            if os.path.isfile(filepath):
-                filename = f"{ts}_{content_hash}_1.png"
+            suffix = 0
+            while os.path.isfile(filepath):
+                suffix += 1
+                filename = f"{ts}_{content_hash}_{suffix}.png"
                 filepath = os.path.join(self._image_dir, filename)
             with open(filepath, "wb") as f:
                 f.write(png_data)

@@ -95,17 +95,13 @@ def _make_thumbnail_data_uri(image_path: str, max_dim: int = 480) -> str:
     if max(w, h) > max_dim:
         scale = max_dim / max(w, h)
         new_w, new_h = int(w * scale), int(h * scale)
-        from AppKit import NSImage
-        from Foundation import NSMakeSize
+        from AppKit import NSGraphicsContext, NSImage
+        from Foundation import NSMakeRect, NSMakeSize
 
         img = NSImage.alloc().initWithSize_(NSMakeSize(new_w, new_h))
-        img.addRepresentation_(rep)
-
-        img.setSize_(NSMakeSize(new_w, new_h))
         img.lockFocus()
-        from AppKit import NSGraphicsContext
-
         NSGraphicsContext.currentContext().setImageInterpolation_(3)  # High
+        rep.drawInRect_(NSMakeRect(0, 0, new_w, new_h))
         img.unlockFocus()
 
         tiff_data = img.TIFFRepresentation()
@@ -211,8 +207,7 @@ class ClipboardSource:
 
                 display = self._format_image_title(entry)
 
-                image_dir_val = ClipboardMonitor.default_image_dir()
-                full_path = os.path.join(image_dir_val, entry.image_path)
+                full_path = os.path.join(self._monitor.image_dir, entry.image_path)
                 monitor = self._monitor
                 ep = entry.image_path  # capture
 
@@ -283,20 +278,15 @@ class ClipboardSource:
             parts.append(f"({_format_file_size(entry.image_size)})")
         return " ".join(parts)
 
-    @staticmethod
-    def _make_preview(entry) -> dict:
+    def _make_preview(self, entry) -> dict:
         """Build a preview dict for the given clipboard entry."""
         if entry.image_path:
-            return ClipboardSource._make_image_preview(entry)
+            return self._make_image_preview(entry)
         return {"type": "text", "content": entry.text}
 
-    @staticmethod
-    def _make_image_preview(entry) -> dict:
+    def _make_image_preview(self, entry) -> dict:
         """Build an image preview dict with a base64 data URI thumbnail."""
-        from voicetext.scripting.clipboard_monitor import ClipboardMonitor
-
-        image_dir = ClipboardMonitor.default_image_dir()
-        full_path = os.path.join(image_dir, entry.image_path)
+        full_path = os.path.join(self._monitor.image_dir, entry.image_path)
 
         info_parts = []
         if entry.image_width and entry.image_height:

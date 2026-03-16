@@ -55,7 +55,7 @@ class TestClipboardSource:
             )
             for e in entries
         ]
-        monitor.default_image_dir = MagicMock(return_value="/tmp/test_images")
+        monitor.image_dir = "/tmp/test_images"
         return monitor
 
     def test_empty_history(self):
@@ -178,7 +178,7 @@ class TestImageEntries:
             )
             for e in entries
         ]
-        monitor.default_image_dir = MagicMock(return_value="/tmp/test_images")
+        monitor.image_dir = "/tmp/test_images"
         return monitor
 
     def test_image_entry_title(self):
