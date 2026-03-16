@@ -1201,6 +1201,36 @@ class SettingsPanel:
             pad + 12, y, content_w - 24, doc_view,
         )
 
+        # --- Disable controls based on scripting/launcher state ---
+        scripting_on = state.get("scripting_enabled", False)
+        launcher_on = launcher_state.get("enabled", True)
+
+        # Controls that require scripting to be enabled (everything
+        # except the warning label itself)
+        all_launcher_controls = [
+            self._launcher_enabled_check,
+            hotkey_field,
+            refresh_btn,
+        ]
+        for check in self._launcher_source_checks.values():
+            all_launcher_controls.append(check)
+        for field in self._launcher_prefix_fields.values():
+            all_launcher_controls.append(field)
+        for btn in self._launcher_source_hotkey_btns.values():
+            all_launcher_controls.append(btn)
+
+        # Controls below the "Enable Launcher" toggle that also require
+        # the launcher itself to be enabled
+        sub_controls = [c for c in all_launcher_controls
+                        if c is not self._launcher_enabled_check]
+
+        if not scripting_on:
+            for ctrl in all_launcher_controls:
+                ctrl.setEnabled_(False)
+        elif not launcher_on:
+            for ctrl in sub_controls:
+                ctrl.setEnabled_(False)
+
         scroll.setDocumentView_(doc_view)
         tab_item.setView_(scroll)
 
