@@ -136,17 +136,25 @@
 <li><a href="#_33">对话历史</a></li>
 </ul>
 </li>
-<li><a href="#11">第 11 级：精细调优与故障排除</a><ul>
-<li><a href="#_38">设置面板</a></li>
-<li><a href="#_41">快捷键配置</a></li>
-<li><a href="#_45">配置文件</a></li>
-<li><a href="#_46">日志</a></li>
-<li><a href="#_47">使用统计</a></li>
-<li><a href="#_48">常见问题</a></li>
-<li><a href="#_53">键盘快捷键一览</a></li>
+<li><a href="#11">第 11 级：启动器</a><ul>
+<li><a href="#_38">启用启动器</a></li>
+<li><a href="#_39">基本使用</a></li>
+<li><a href="#_40">前缀搜索</a></li>
+<li><a href="#_41">键盘快捷键</a></li>
+<li><a href="#_42">通过脚本扩展</a></li>
 </ul>
 </li>
-<li><a href="#_54">接下来？</a></li>
+<li><a href="#12">第 12 级：精细调优与故障排除</a><ul>
+<li><a href="#_43">设置面板</a></li>
+<li><a href="#_46">快捷键配置</a></li>
+<li><a href="#_50">配置文件</a></li>
+<li><a href="#_51">日志</a></li>
+<li><a href="#_52">使用统计</a></li>
+<li><a href="#_53">常见问题</a></li>
+<li><a href="#_58">键盘快捷键一览</a></li>
+</ul>
+</li>
+<li><a href="#_59">接下来？</a></li>
 </ul>
 </div>
 
@@ -596,7 +604,7 @@ uv run python -m wenzi
   }
 }
 </code></pre>
-<p>快捷键格式为 <code>修饰键+修饰键+键</code>。详见<a href="#快捷键配置">第 11 级</a>的格式说明和示例。</p>
+<p>快捷键格式为 <code>修饰键+修饰键+键</code>。详见<a href="#快捷键配置">第 12 级</a>的格式说明和示例。</p>
 <hr />
 <h2 id="8"><a href="#8" class="heading-anchor">第 8 级：自定义增强模式</a></h2>
 <p><strong>目标：</strong> 创建自己的 AI 模式和链式流水线。</p>
@@ -635,7 +643,7 @@ steps: proofread, translate_en
 <li>以 "Output only the processed text without any explanation" 结尾</li>
 <li><code>order</code> 值留出间隔（10、20、30…），方便日后在中间插入新模式</li>
 </ul>
-<p>更多现成模板请参阅 <a href="enhance-mode-examples.md">增强模式示例</a>，涵盖邮件、会议纪要、翻译、开发工具等场景。</p>
+<p>更多现成模板请参阅 <a href="enhance-mode-examples.html">增强模式示例</a>，涵盖邮件、会议纪要、翻译、开发工具等场景。</p>
 <hr />
 <h2 id="9"><a href="#9" class="heading-anchor">第 9 级：多供应商配置</a></h2>
 <p><strong>目标：</strong> 配置多个 ASR 和 LLM 供应商并在它们之间切换。</p>
@@ -660,7 +668,7 @@ models:
 <p>在 <strong>设置</strong> 面板中，所有已配置的模型显示为单选按钮。点击即可切换——无需重启。</p>
 <h3 id="_29"><a href="#_29" class="heading-anchor">在预览面板中切换</a></h3>
 <p>你也可以直接在预览面板的下拉菜单中切换 LLM 和 STT 模型，方便对同一段音频比较不同模型的结果。</p>
-<p>详细示例请参阅 <a href="provider-model-guide.md">供应商与模型配置指南</a>，涵盖 Ollama、OpenAI、DeepSeek、Groq、OpenRouter、通义千问等。</p>
+<p>详细示例请参阅 <a href="provider-model-guide.html">供应商与模型配置指南</a>，涵盖 Ollama、OpenAI、DeepSeek、Groq、OpenRouter、通义千问等。</p>
 <hr />
 <h2 id="10"><a href="#10" class="heading-anchor">第 10 级：词汇表与对话历史</a></h2>
 <p><strong>目标：</strong> 教 闻字 学习你的专属术语，并在多轮对话中保持话题上下文。</p>
@@ -700,11 +708,100 @@ models:
 </ul>
 <h4 id="_37"><a href="#_37" class="heading-anchor">自动轮转与归档</a></h4>
 <p>当对话历史超过 <strong>20,000 条记录</strong> 时，闻字 会自动将较旧的记录归档到 <code>~/.config/WenZi/conversation_history_archives/YYYY-MM.jsonl</code> 月度文件中。主历史文件保留最近 20,000 条记录以确保快速访问，归档记录仍可通过历史浏览器搜索和查看。</p>
-<p>技术细节请参阅 <a href="vocabulary-embedding-retrieval.md">词汇嵌入检索</a> 和 <a href="conversation-history-enhancement.md">对话历史增强</a>。</p>
+<p>技术细节请参阅 <a href="vocabulary-embedding-retrieval.html">词汇嵌入检索</a> 和 <a href="conversation-history-enhancement.html">对话历史增强</a>。</p>
 <hr />
-<h2 id="11"><a href="#11" class="heading-anchor">第 11 级：精细调优与故障排除</a></h2>
+<h2 id="11"><a href="#11" class="heading-anchor">第 11 级：启动器</a></h2>
+<p><strong>目标：</strong> 使用内置启动器快速访问应用、文件、剪贴板、书签和代码片段。</p>
+<p>启动器是内置于 闻字 脚本系统中的键盘驱动搜索面板。它的使用方式类似 Alfred 或 Raycast——按下快捷键，输入关键词搜索，按回车执行操作。</p>
+<h3 id="_38"><a href="#_38" class="heading-anchor">启用启动器</a></h3>
+<ol>
+<li>启用脚本系统：<strong>设置...</strong> → 通用标签 → <strong>脚本</strong> 开关</li>
+<li>编辑 <code>~/.config/WenZi/config.json</code>，设置：</li>
+</ol>
+<pre><code class="language-json">{
+  &quot;scripting&quot;: {
+    &quot;chooser&quot;: {
+      &quot;enabled&quot;: true,
+      &quot;hotkey&quot;: &quot;cmd+space&quot;
+    }
+  }
+}
+</code></pre>
+<ol start="3">
+<li>重启 闻字。</li>
+</ol>
+<h3 id="_39"><a href="#_39" class="heading-anchor">基本使用</a></h3>
+<ol>
+<li>按 <code>Cmd+Space</code>（或你配置的快捷键）打开启动器。</li>
+<li>输入关键词搜索应用——结果即时显示。</li>
+<li>按 <code>Enter</code> 打开选中的应用，或按 <code>⌘+Enter</code> 在 Finder 中显示。</li>
+<li>按 <code>Esc</code> 关闭。</li>
+</ol>
+<h3 id="_40"><a href="#_40" class="heading-anchor">前缀搜索</a></h3>
+<p>输入前缀加空格可搜索特定数据源：</p>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>输入</th>
+<th>搜索范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>f readme</code></td>
+<td>文件名包含 "readme" 的文件</td>
+</tr>
+<tr>
+<td><code>cb hello</code></td>
+<td>包含 "hello" 的剪贴板记录</td>
+</tr>
+<tr>
+<td><code>bm github</code></td>
+<td>匹配 "github" 的书签</td>
+</tr>
+<tr>
+<td><code>sn email</code></td>
+<td>匹配 "email" 的代码片段</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="_41"><a href="#_41" class="heading-anchor">键盘快捷键</a></h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>快捷键</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>↑</code> <code>↓</code></td>
+<td>上下导航</td>
+</tr>
+<tr>
+<td><code>Enter</code></td>
+<td>打开/执行</td>
+</tr>
+<tr>
+<td><code>⌘+Enter</code></td>
+<td>在 Finder 中显示</td>
+</tr>
+<tr>
+<td><code>⌘1</code> – <code>⌘9</code></td>
+<td>按位置快速选择</td>
+</tr>
+<tr>
+<td><code>Esc</code></td>
+<td>关闭</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="_42"><a href="#_42" class="heading-anchor">通过脚本扩展</a></h3>
+<p>可以通过脚本向启动器添加自定义数据源。详见 <a href="scripting.html">脚本系统文档</a> 中的 <code>wz.chooser.source</code> API。</p>
+<hr />
+<h2 id="12"><a href="#12" class="heading-anchor">第 12 级：精细调优与故障排除</a></h2>
 <p><strong>目标：</strong> 优化你的配置并解决常见问题。</p>
-<h3 id="_38"><a href="#_38" class="heading-anchor">设置面板</a></h3>
+<h3 id="_43"><a href="#_43" class="heading-anchor">设置面板</a></h3>
 <p>菜单栏 → <strong>设置...</strong> 打开一个包含 4 个标签的面板：</p>
 <div class="table-wrapper"><table>
 <thead>
@@ -733,13 +830,13 @@ models:
 </tbody>
 </table></div>
 <p>设置面板会 <strong>记住上次激活的标签</strong>，跨会话保持。底部的工具栏按钮可快速访问 <strong>显示配置</strong>、<strong>编辑配置</strong> 和 <strong>重新加载配置</strong>。</p>
-<h4 id="_39"><a href="#_39" class="heading-anchor">自定义配置目录</a></h4>
+<h4 id="_44"><a href="#_44" class="heading-anchor">自定义配置目录</a></h4>
 <p>在通用标签中，你可以设置 <strong>自定义配置目录</strong> 将 闻字 配置文件存储在自选位置（例如同步文件夹）。更改目录后，闻字 会提示你重启以使更改生效。</p>
-<h4 id="_40"><a href="#_40" class="heading-anchor">脚本开关</a></h4>
-<p>通用标签中包含 <strong>脚本</strong> 开关，用于启用或禁用脚本/插件系统。启用后，闻字 会从配置的脚本目录加载并执行 Lua 脚本。详见 <a href="scripting-zh.md">脚本系统文档</a>。</p>
-<h3 id="_41"><a href="#_41" class="heading-anchor">快捷键配置</a></h3>
+<h4 id="_45"><a href="#_45" class="heading-anchor">脚本开关</a></h4>
+<p>通用标签中包含 <strong>脚本</strong> 开关，用于启用或禁用脚本/插件系统。启用后，闻字 会从配置的脚本目录加载并执行 Python 脚本。详见 <a href="scripting.html">脚本系统文档</a>。</p>
+<h3 id="_46"><a href="#_46" class="heading-anchor">快捷键配置</a></h3>
 <p>闻字 支持灵活的快捷键配置。录音快捷键在 <strong>设置</strong> 面板（通用标签）中配置，剪贴板增强快捷键在配置文件中设置。</p>
-<h4 id="_42"><a href="#_42" class="heading-anchor">快捷键格式</a></h4>
+<h4 id="_47"><a href="#_47" class="heading-anchor">快捷键格式</a></h4>
 <p>快捷键使用 <code>修饰键+修饰键+键</code> 的格式，其中：</p>
 <ul>
 <li><strong>修饰键：</strong> <code>cmd</code>（或 <code>command</code>）、<code>ctrl</code>、<code>alt</code>（或 <code>option</code>）、<code>shift</code></li>
@@ -747,7 +844,7 @@ models:
 <li><strong>特殊键：</strong> <code>fn</code>、<code>f1</code>–<code>f12</code>、<code>esc</code>、<code>space</code></li>
 <li><strong>右侧修饰键：</strong> <code>cmd_r</code>、<code>ctrl_r</code>、<code>alt_r</code>、<code>shift_r</code></li>
 </ul>
-<h4 id="_43"><a href="#_43" class="heading-anchor">示例</a></h4>
+<h4 id="_48"><a href="#_48" class="heading-anchor">示例</a></h4>
 <div class="table-wrapper"><table>
 <thead>
 <tr>
@@ -794,7 +891,7 @@ models:
 </tr>
 </tbody>
 </table></div>
-<h4 id="_44"><a href="#_44" class="heading-anchor">配置文件示例</a></h4>
+<h4 id="_49"><a href="#_49" class="heading-anchor">配置文件示例</a></h4>
 <pre><code class="language-json">{
   &quot;hotkeys&quot;: {
     &quot;fn&quot;: true,
@@ -806,16 +903,16 @@ models:
 }
 </code></pre>
 <p>可以同时启用多个录音快捷键，只需在 <code>hotkeys</code> 映射中添加值为 <code>true</code> 的条目。设为 <code>false</code> 可禁用快捷键而不删除它。</p>
-<h3 id="_45"><a href="#_45" class="heading-anchor">配置文件</a></h3>
+<h3 id="_50"><a href="#_50" class="heading-anchor">配置文件</a></h3>
 <p>默认位置：<code>~/.config/WenZi/config.json</code></p>
 <p>配置目录可通过设置 → 通用 → 配置目录更改为自定义路径（存储在 macOS 偏好设置中，不受配置文件变更影响）。</p>
 <p>你只需包含想要修改的字段——其余全部使用默认值。编辑后，点击设置工具栏中的 <strong>重新加载配置</strong> 即可应用，无需重启。</p>
-<p>完整选项请参阅 <a href="configuration.md">配置参考</a>。</p>
-<h3 id="_46"><a href="#_46" class="heading-anchor">日志</a></h3>
+<p>完整选项请参阅 <a href="configuration.html">配置参考</a>。</p>
+<h3 id="_51"><a href="#_51" class="heading-anchor">日志</a></h3>
 <p>日志保存在 <code>~/Library/Logs/WenZi/wenzi.log</code>（5 MB 轮转，3 个备份）。</p>
 <p><strong>查看日志（推荐）：</strong> 菜单栏 → <strong>查看日志...</strong> 打开内置日志查看器——这是检查日志、监控模型下载/加载进度和实时诊断问题的最便捷方式。</p>
 <p>日志文件也可在上述路径中直接访问，如果你更喜欢使用外部编辑器。</p>
-<h3 id="_47"><a href="#_47" class="heading-anchor">使用统计</a></h3>
+<h3 id="_52"><a href="#_52" class="heading-anchor">使用统计</a></h3>
 <p>菜单栏 → <strong>使用统计</strong> 打开交互式统计仪表盘，包含：</p>
 <ul>
 <li><strong>摘要卡片</strong> — 总转录次数（含今日数量）、总 token 消耗量（含缓存输入 token 明细）、接受率、总录音时长</li>
@@ -825,13 +922,13 @@ models:
 <li><strong>Token 使用</strong> — 堆叠柱状图，展示每天的提示/补全/缓存 token 用量</li>
 <li><strong>增强模式</strong> — 堆叠柱状图，展示每天各增强模式的使用量</li>
 </ul>
-<h3 id="_48"><a href="#_48" class="heading-anchor">常见问题</a></h3>
-<h4 id="_49"><a href="#_49" class="heading-anchor">文本无法输入到应用中</a></h4>
+<h3 id="_53"><a href="#_53" class="heading-anchor">常见问题</a></h3>
+<h4 id="_54"><a href="#_54" class="heading-anchor">文本无法输入到应用中</a></h4>
 <ul>
 <li>检查系统设置中的 <strong>辅助功能</strong> 权限</li>
 <li>尝试在配置中切换输出方式：<code>"output": {"method": "clipboard"}</code></li>
 </ul>
-<h4 id="_50"><a href="#_50" class="heading-anchor">模型下载太慢</a></h4>
+<h4 id="_55"><a href="#_55" class="heading-anchor">模型下载太慢</a></h4>
 <ul>
 <li>菜单栏显示 <code>DL X%</code> 表示正在下载——首次切换到某个模型时这是正常的</li>
 <li>FunASR：~500 MB，MLX-Whisper large-v3-turbo：~1.6 GB</li>
@@ -844,17 +941,17 @@ models:
 <li>检查 LLM 供应商是否可达</li>
 <li>如果使用 Ollama，确保已运行：<code>ollama serve</code></li>
 </ul>
-<h4 id="_51"><a href="#_51" class="heading-anchor">预览面板不出现</a></h4>
+<h4 id="_56"><a href="#_56" class="heading-anchor">预览面板不出现</a></h4>
 <ul>
 <li>确认 <strong>预览</strong> 已在设置 → 通用中启用</li>
 <li>尝试点击菜单栏图标将应用带到前台</li>
 </ul>
-<h4 id="_52"><a href="#_52" class="heading-anchor">开发环境下通知不工作</a></h4>
+<h4 id="_57"><a href="#_57" class="heading-anchor">开发环境下通知不工作</a></h4>
 <ul>
 <li>通过 <code>uv run</code> 运行且未打包时这是预期行为</li>
 <li>通知在打包的 <code>.app</code> 版本中可正常工作</li>
 </ul>
-<h3 id="_53"><a href="#_53" class="heading-anchor">键盘快捷键一览</a></h3>
+<h3 id="_58"><a href="#_58" class="heading-anchor">键盘快捷键一览</a></h3>
 <div class="table-wrapper"><table>
 <thead>
 <tr>
@@ -888,6 +985,11 @@ models:
 <td><code>Ctrl+Cmd+V</code></td>
 <td>全局</td>
 <td>剪贴板增强</td>
+</tr>
+<tr>
+<td><code>Cmd+Space</code></td>
+<td>全局</td>
+<td>打开/关闭启动器（如已启用）</td>
 </tr>
 <tr>
 <td><code>Enter</code></td>
@@ -925,17 +1027,17 @@ models:
 <p><strong>注意：</strong> 重新录音键（<code>Cmd</code>）和取消录音键（<code>Space</code>）可在设置 → 通用或配置中自定义（<code>feedback.restart_key</code> 和 <code>feedback.cancel_key</code>）。可选值：<code>cmd</code>、<code>ctrl</code>、<code>alt</code>、<code>shift</code>、<code>space</code>、<code>esc</code>。</p>
 </blockquote>
 <hr />
-<h2 id="_54"><a href="#_54" class="heading-anchor">接下来？</a></h2>
+<h2 id="_59"><a href="#_59" class="heading-anchor">接下来？</a></h2>
 <p>你现在已了解 闻字 的全部功能。以下是一些充分利用它的建议：</p>
 <ul>
 <li><strong>为你的工作流创建模式</strong> — 会议纪要、代码评审评论、Slack 消息</li>
 <li><strong>构建链式模式</strong> — 校对 → 翻译，或总结 → 格式化</li>
 <li><strong>积累词汇表</strong> — 纠正越多，越智能</li>
 <li><strong>尝试不同模型</strong> — 比较 Groq 的速度、本地 Ollama 的隐私性、OpenAI 的准确度</li>
-<li><strong>编写脚本</strong> — 使用 Lua 插件扩展 闻字 的自定义快捷键功能（详见 <a href="scripting-zh.md">脚本系统文档</a>）</li>
-<li><strong>浏览 <a href="enhance-mode-examples.md">增强模式示例</a></strong> 获取灵感</li>
+<li><strong>编写脚本</strong> — 使用 Python 脚本扩展 闻字 的自定义快捷键功能（详见 <a href="scripting.html">脚本系统文档</a>）</li>
+<li><strong>浏览 <a href="enhance-mode-examples.html">增强模式示例</a></strong> 获取灵感</li>
 </ul>
-<p>各功能的技术细节请参阅 <a href="../README.md#documentation">文档索引</a>。</p>
+<p>各功能的技术细节请参阅 <a href="../#documentation">文档索引</a>。</p>
 
     <div class="doc-nav">
       <div></div>

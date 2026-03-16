@@ -136,7 +136,15 @@
 <li><a href="#conversation-history">Conversation History</a></li>
 </ul>
 </li>
-<li><a href="#level-11-fine-tuning-troubleshooting">Level 11: Fine-Tuning &amp; Troubleshooting</a><ul>
+<li><a href="#level-11-launcher">Level 11: Launcher</a><ul>
+<li><a href="#enable-the-launcher">Enable the Launcher</a></li>
+<li><a href="#basic-usage">Basic Usage</a></li>
+<li><a href="#prefix-search">Prefix Search</a></li>
+<li><a href="#keyboard-shortcuts">Keyboard Shortcuts</a></li>
+<li><a href="#extending-with-scripts">Extending with Scripts</a></li>
+</ul>
+</li>
+<li><a href="#level-12-fine-tuning-troubleshooting">Level 12: Fine-Tuning &amp; Troubleshooting</a><ul>
 <li><a href="#settings-panel">Settings Panel</a></li>
 <li><a href="#hotkey-configuration">Hotkey Configuration</a></li>
 <li><a href="#configuration-file">Configuration File</a></li>
@@ -596,7 +604,7 @@ uv run python -m wenzi
   }
 }
 </code></pre>
-<p>The hotkey format is <code>modifier+modifier+key</code>. See <a href="#hotkey-configuration">Level 11</a> for format details and examples.</p>
+<p>The hotkey format is <code>modifier+modifier+key</code>. See <a href="#hotkey-configuration">Level 12</a> for format details and examples.</p>
 <hr />
 <h2 id="level-8-custom-enhancement-modes"><a href="#level-8-custom-enhancement-modes" class="heading-anchor">Level 8: Custom Enhancement Modes</a></h2>
 <p><strong>Goal:</strong> Create your own AI modes and chain pipelines.</p>
@@ -635,7 +643,7 @@ First proofreads the text, then translates to English.
 <li>End with "Output only the processed text without any explanation"</li>
 <li>Use <code>order</code> values with gaps (10, 20, 30…) so you can insert modes between them</li>
 </ul>
-<p>See <a href="enhance-mode-examples.md">Enhancement Mode Examples</a> for ready-to-use templates covering email, meeting notes, translation, developer tools, and more.</p>
+<p>See <a href="enhance-mode-examples.html">Enhancement Mode Examples</a> for ready-to-use templates covering email, meeting notes, translation, developer tools, and more.</p>
 <hr />
 <h2 id="level-9-multi-provider-setup"><a href="#level-9-multi-provider-setup" class="heading-anchor">Level 9: Multi-Provider Setup</a></h2>
 <p><strong>Goal:</strong> Configure multiple ASR and LLM providers and switch between them.</p>
@@ -660,7 +668,7 @@ models:
 <p>In the <strong>Settings</strong> panel, all configured models appear as radio buttons. Click to switch — no restart needed.</p>
 <h3 id="in-preview-panel"><a href="#in-preview-panel" class="heading-anchor">In Preview Panel</a></h3>
 <p>You can also switch LLM and STT models directly from the preview panel's dropdowns, making it easy to compare results from different models on the same audio.</p>
-<p>See <a href="provider-model-guide.md">Provider &amp; Model Setup Guide</a> for detailed examples covering Ollama, OpenAI, DeepSeek, Groq, OpenRouter, Qwen, and more.</p>
+<p>See <a href="provider-model-guide.html">Provider &amp; Model Setup Guide</a> for detailed examples covering Ollama, OpenAI, DeepSeek, Groq, OpenRouter, Qwen, and more.</p>
 <hr />
 <h2 id="level-10-vocabulary-conversation-history"><a href="#level-10-vocabulary-conversation-history" class="heading-anchor">Level 10: Vocabulary &amp; Conversation History</a></h2>
 <p><strong>Goal:</strong> Teach 闻字 your personal terms and maintain topic context across turns.</p>
@@ -700,9 +708,98 @@ models:
 </ul>
 <h4 id="auto-rotation-and-archiving"><a href="#auto-rotation-and-archiving" class="heading-anchor">Auto-Rotation and Archiving</a></h4>
 <p>When conversation history exceeds <strong>20,000 records</strong>, 闻字 automatically archives older records into monthly files under <code>~/.config/WenZi/conversation_history_archives/YYYY-MM.jsonl</code>. The main history file keeps the most recent 20,000 records for fast access, while archived records remain searchable through the history browser.</p>
-<p>See <a href="vocabulary-embedding-retrieval.md">Vocabulary Embedding Retrieval</a> and <a href="conversation-history-enhancement.md">Conversation History Enhancement</a> for technical details.</p>
+<p>See <a href="vocabulary-embedding-retrieval.html">Vocabulary Embedding Retrieval</a> and <a href="conversation-history-enhancement.html">Conversation History Enhancement</a> for technical details.</p>
 <hr />
-<h2 id="level-11-fine-tuning-troubleshooting"><a href="#level-11-fine-tuning-troubleshooting" class="heading-anchor">Level 11: Fine-Tuning &amp; Troubleshooting</a></h2>
+<h2 id="level-11-launcher"><a href="#level-11-launcher" class="heading-anchor">Level 11: Launcher</a></h2>
+<p><strong>Goal:</strong> Use the built-in Launcher for quick access to apps, files, clipboard, bookmarks, and snippets.</p>
+<p>The Launcher is a keyboard-driven search panel built into 闻字's scripting system. It works like Alfred or Raycast — press a hotkey, type to search, and press Enter to act.</p>
+<h3 id="enable-the-launcher"><a href="#enable-the-launcher" class="heading-anchor">Enable the Launcher</a></h3>
+<ol>
+<li>Enable scripting: <strong>Settings...</strong> → General tab → <strong>Scripting</strong> toggle</li>
+<li>Edit <code>~/.config/WenZi/config.json</code> and set:</li>
+</ol>
+<pre><code class="language-json">{
+  &quot;scripting&quot;: {
+    &quot;chooser&quot;: {
+      &quot;enabled&quot;: true,
+      &quot;hotkey&quot;: &quot;cmd+space&quot;
+    }
+  }
+}
+</code></pre>
+<ol start="3">
+<li>Restart 闻字.</li>
+</ol>
+<h3 id="basic-usage"><a href="#basic-usage" class="heading-anchor">Basic Usage</a></h3>
+<ol>
+<li>Press <code>Cmd+Space</code> (or your configured hotkey) to open the Launcher.</li>
+<li>Start typing to search apps — results appear instantly.</li>
+<li>Press <code>Enter</code> to open the selected app, or <code>⌘+Enter</code> to reveal it in Finder.</li>
+<li>Press <code>Esc</code> to close.</li>
+</ol>
+<h3 id="prefix-search"><a href="#prefix-search" class="heading-anchor">Prefix Search</a></h3>
+<p>Use a prefix followed by a space to search a specific source:</p>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>Type this</th>
+<th>To search</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>f readme</code></td>
+<td>Files named "readme"</td>
+</tr>
+<tr>
+<td><code>cb hello</code></td>
+<td>Clipboard entries containing "hello"</td>
+</tr>
+<tr>
+<td><code>bm github</code></td>
+<td>Bookmarks matching "github"</td>
+</tr>
+<tr>
+<td><code>sn email</code></td>
+<td>Snippets matching "email"</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="keyboard-shortcuts"><a href="#keyboard-shortcuts" class="heading-anchor">Keyboard Shortcuts</a></h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>Shortcut</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>↑</code> <code>↓</code></td>
+<td>Navigate results</td>
+</tr>
+<tr>
+<td><code>Enter</code></td>
+<td>Open / execute</td>
+</tr>
+<tr>
+<td><code>⌘+Enter</code></td>
+<td>Reveal in Finder</td>
+</tr>
+<tr>
+<td><code>⌘1</code> – <code>⌘9</code></td>
+<td>Quick select by position</td>
+</tr>
+<tr>
+<td><code>Esc</code></td>
+<td>Close</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="extending-with-scripts"><a href="#extending-with-scripts" class="heading-anchor">Extending with Scripts</a></h3>
+<p>You can add custom data sources to the Launcher via scripts. See <a href="scripting.html">Scripting Documentation</a> for the <code>wz.chooser.source</code> API.</p>
+<hr />
+<h2 id="level-12-fine-tuning-troubleshooting"><a href="#level-12-fine-tuning-troubleshooting" class="heading-anchor">Level 12: Fine-Tuning &amp; Troubleshooting</a></h2>
 <p><strong>Goal:</strong> Optimize your setup and solve common problems.</p>
 <h3 id="settings-panel"><a href="#settings-panel" class="heading-anchor">Settings Panel</a></h3>
 <p>Menubar → <strong>Settings...</strong> opens a panel with 4 tabs:</p>
@@ -736,7 +833,7 @@ models:
 <h4 id="custom-config-directory"><a href="#custom-config-directory" class="heading-anchor">Custom Config Directory</a></h4>
 <p>In the General tab, you can set a <strong>custom config directory</strong> to store 闻字 configuration files in a location of your choice (e.g., a synced folder). After changing the directory, 闻字 will prompt you to restart for the change to take effect.</p>
 <h4 id="scripting-toggle"><a href="#scripting-toggle" class="heading-anchor">Scripting Toggle</a></h4>
-<p>The General tab includes a <strong>Scripting</strong> toggle to enable or disable the scripting/plugin system. When enabled, 闻字 loads and executes Lua scripts from the configured script directory. See the <a href="scripting.md">Scripting Documentation</a> for details on writing plugins.</p>
+<p>The General tab includes a <strong>Scripting</strong> toggle to enable or disable the scripting/plugin system. When enabled, 闻字 loads and executes Python scripts from the configured script directory. See the <a href="scripting.html">Scripting Documentation</a> for details on writing plugins.</p>
 <h3 id="hotkey-configuration"><a href="#hotkey-configuration" class="heading-anchor">Hotkey Configuration</a></h3>
 <p>闻字 supports flexible hotkey configuration. The recording hotkey is configured in the <strong>Settings</strong> panel (General tab), while the clipboard enhance hotkey is set in the config file.</p>
 <h4 id="hotkey-format"><a href="#hotkey-format" class="heading-anchor">Hotkey Format</a></h4>
@@ -810,7 +907,7 @@ models:
 <p>Default location: <code>~/.config/WenZi/config.json</code></p>
 <p>The config directory can be changed to a custom path via Settings → General → Config Directory (stored in macOS preferences, survives config file changes).</p>
 <p>You only need to include fields you want to change — everything else uses defaults. After editing, click <strong>Reload Config</strong> in the Settings toolbar to apply without restarting.</p>
-<p>See <a href="configuration.md">Configuration Reference</a> for all options.</p>
+<p>See <a href="configuration.html">Configuration Reference</a> for all options.</p>
 <h3 id="logging"><a href="#logging" class="heading-anchor">Logging</a></h3>
 <p>Logs are saved to <code>~/Library/Logs/WenZi/wenzi.log</code> (5 MB rotation, 3 backups).</p>
 <p><strong>View logs (recommended):</strong> Menubar → <strong>View Logs...</strong> opens the built-in log viewer — the easiest way to check logs, monitor model download/loading progress, and diagnose issues in real time.</p>
@@ -890,6 +987,11 @@ models:
 <td>Clipboard enhancement</td>
 </tr>
 <tr>
+<td><code>Cmd+Space</code></td>
+<td>Global</td>
+<td>Open/close Launcher (if enabled)</td>
+</tr>
+<tr>
 <td><code>Enter</code></td>
 <td>Preview panel</td>
 <td>Confirm and type text</td>
@@ -932,10 +1034,10 @@ models:
 <li><strong>Build chain modes</strong> — proofread → translate, or summarize → format</li>
 <li><strong>Accumulate vocabulary</strong> — the more you correct, the smarter it gets</li>
 <li><strong>Try different models</strong> — compare Groq's speed vs local Ollama's privacy vs OpenAI's accuracy</li>
-<li><strong>Write scripts</strong> — extend 闻字 with Lua plugins for custom hotkey actions (see <a href="scripting.md">Scripting Documentation</a>)</li>
-<li><strong>Browse <a href="enhance-mode-examples.md">Enhancement Mode Examples</a></strong> for inspiration</li>
+<li><strong>Write scripts</strong> — extend 闻字 with Python scripts for custom hotkey actions (see <a href="scripting.html">Scripting Documentation</a>)</li>
+<li><strong>Browse <a href="enhance-mode-examples.html">Enhancement Mode Examples</a></strong> for inspiration</li>
 </ul>
-<p>For technical details on any feature, see the <a href="../README.md#documentation">documentation index</a>.</p>
+<p>For technical details on any feature, see the <a href="../#documentation">documentation index</a>.</p>
 
     <div class="doc-nav">
       <div></div>

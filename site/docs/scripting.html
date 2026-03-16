@@ -74,21 +74,39 @@
 <li><a href="#mapping-actions">Mapping Actions</a></li>
 </ul>
 </li>
+<li><a href="#launcher">Launcher</a><ul>
+<li><a href="#activation">Activation</a></li>
+<li><a href="#search-modes">Search Modes</a></li>
+<li><a href="#built-in-data-sources">Built-in Data Sources</a></li>
+<li><a href="#keyboard-shortcuts">Keyboard Shortcuts</a></li>
+<li><a href="#custom-sources">Custom Sources</a></li>
+<li><a href="#usage-learning">Usage Learning</a></li>
+</ul>
+</li>
 <li><a href="#api-reference">API Reference</a><ul>
-<li><a href="#vtleadertrigger_key-mappings">vt.leader(trigger_key, mappings)</a></li>
-<li><a href="#vtapplaunchname">vt.app.launch(name)</a></li>
-<li><a href="#vtappfrontmost">vt.app.frontmost()</a></li>
-<li><a href="#vtalerttext-duration20">vt.alert(text, duration=2.0)</a></li>
-<li><a href="#vtnotifytitle-message">vt.notify(title, message="")</a></li>
-<li><a href="#vtpasteboardget">vt.pasteboard.get()</a></li>
-<li><a href="#vtpasteboardsettext">vt.pasteboard.set(text)</a></li>
-<li><a href="#vtkeystrokekey-modifiersnone">vt.keystroke(key, modifiers=None)</a></li>
-<li><a href="#vtexecutecommand-backgroundtrue">vt.execute(command, background=True)</a></li>
-<li><a href="#vttimerafterseconds-callback">vt.timer.after(seconds, callback)</a></li>
-<li><a href="#vttimereveryseconds-callback">vt.timer.every(seconds, callback)</a></li>
-<li><a href="#vttimercanceltimer_id">vt.timer.cancel(timer_id)</a></li>
-<li><a href="#vtdateformaty-m-d">vt.date(format="%Y-%m-%d")</a></li>
-<li><a href="#vtreload">vt.reload()</a></li>
+<li><a href="#wzleadertrigger_key-mappings">wz.leader(trigger_key, mappings)</a></li>
+<li><a href="#wzapplaunchname">wz.app.launch(name)</a></li>
+<li><a href="#wzappfrontmost">wz.app.frontmost()</a></li>
+<li><a href="#wzalerttext-duration20">wz.alert(text, duration=2.0)</a></li>
+<li><a href="#wznotifytitle-message">wz.notify(title, message="")</a></li>
+<li><a href="#wzpasteboardget">wz.pasteboard.get()</a></li>
+<li><a href="#wzpasteboardsettext">wz.pasteboard.set(text)</a></li>
+<li><a href="#wzkeystrokekey-modifiersnone">wz.keystroke(key, modifiers=None)</a></li>
+<li><a href="#wzexecutecommand-backgroundtrue">wz.execute(command, background=True)</a></li>
+<li><a href="#wztimerafterseconds-callback">wz.timer.after(seconds, callback)</a></li>
+<li><a href="#wztimereveryseconds-callback">wz.timer.every(seconds, callback)</a></li>
+<li><a href="#wztimercanceltimer_id">wz.timer.cancel(timer_id)</a></li>
+<li><a href="#wzdateformaty-m-d">wz.date(format="%Y-%m-%d")</a></li>
+<li><a href="#wzreload">wz.reload()</a></li>
+<li><a href="#wzchoosershowinitial_querynone">wz.chooser.show(initial_query=None)</a></li>
+<li><a href="#wzchooserclose">wz.chooser.close()</a></li>
+<li><a href="#wzchoosertoggle">wz.chooser.toggle()</a></li>
+<li><a href="#wzchoosershow_sourceprefix">wz.chooser.show_source(prefix)</a></li>
+<li><a href="#wzchooserregister_sourcesource">wz.chooser.register_source(source)</a></li>
+<li><a href="#wzchooserunregister_sourcename">wz.chooser.unregister_source(name)</a></li>
+<li><a href="#wzchooserpickitems-callback-placeholderchoose">wz.chooser.pick(items, callback, placeholder="Choose...")</a></li>
+<li><a href="#wzchooseronevent">@wz.chooser.on(event)</a></li>
+<li><a href="#wzchoosersourcename-prefixnone-priority0">@wz.chooser.source(name, prefix=None, priority=0)</a></li>
 </ul>
 </li>
 <li><a href="#examples">Examples</a><ul>
@@ -98,6 +116,7 @@
 <li><a href="#quick-actions-with-hotkeys">Quick Actions with Hotkeys</a></li>
 </ul>
 </li>
+<li><a href="#launcher-configuration">Launcher Configuration</a></li>
 <li><a href="#script-environment">Script Environment</a></li>
 <li><a href="#security">Security</a></li>
 <li><a href="#troubleshooting">Troubleshooting</a></li>
@@ -121,7 +140,7 @@
 <li><strong>Create your script</strong> at <code>~/.config/WenZi/scripts/init.py</code>:</li>
 </ol>
 <p><code>python
-   vt.leader("cmd_r", [
+   wz.leader("cmd_r", [
        {"key": "w", "app": "WeChat"},
        {"key": "s", "app": "Slack"},
        {"key": "t", "app": "iTerm"},
@@ -131,16 +150,16 @@
 </ol>
 <h2 id="leader-keys"><a href="#leader-keys" class="heading-anchor">Leader Keys</a></h2>
 <p>Leader keys let you hold a trigger key (like right Command) and then press a second key to perform an action. A floating panel shows available mappings while the trigger key is held.</p>
-<pre><code class="language-python">vt.leader(&quot;cmd_r&quot;, [
+<pre><code class="language-python">wz.leader(&quot;cmd_r&quot;, [
     {&quot;key&quot;: &quot;w&quot;, &quot;app&quot;: &quot;WeChat&quot;},
     {&quot;key&quot;: &quot;f&quot;, &quot;app&quot;: &quot;Safari&quot;},
     {&quot;key&quot;: &quot;g&quot;, &quot;app&quot;: &quot;/Users/me/Applications/Google Chrome.app&quot;},
     {&quot;key&quot;: &quot;i&quot;, &quot;exec&quot;: &quot;/usr/local/bin/code ~/work/projects&quot;, &quot;desc&quot;: &quot;projects&quot;},
     {&quot;key&quot;: &quot;d&quot;, &quot;desc&quot;: &quot;date&quot;, &quot;func&quot;: lambda: (
-        vt.pasteboard.set(vt.date(&quot;%Y-%m-%d&quot;)),
-        vt.notify(&quot;Date copied&quot;, vt.date(&quot;%Y-%m-%d&quot;)),
+        wz.pasteboard.set(wz.date(&quot;%Y-%m-%d&quot;)),
+        wz.notify(&quot;Date copied&quot;, wz.date(&quot;%Y-%m-%d&quot;)),
     )},
-    {&quot;key&quot;: &quot;r&quot;, &quot;desc&quot;: &quot;reload&quot;, &quot;func&quot;: lambda: vt.reload()},
+    {&quot;key&quot;: &quot;r&quot;, &quot;desc&quot;: &quot;reload&quot;, &quot;func&quot;: lambda: wz.reload()},
 ])
 </code></pre>
 <h3 id="trigger-keys"><a href="#trigger-keys" class="heading-anchor">Trigger Keys</a></h3>
@@ -188,8 +207,8 @@
 </tbody>
 </table></div>
 <p>You can register multiple leaders with different trigger keys:</p>
-<pre><code class="language-python">vt.leader(&quot;cmd_r&quot;, [...])   # Right Command for apps
-vt.leader(&quot;alt_r&quot;, [...])   # Right Alt for utilities
+<pre><code class="language-python">wz.leader(&quot;cmd_r&quot;, [...])   # Right Command for apps
+wz.leader(&quot;alt_r&quot;, [...])   # Right Alt for utilities
 </code></pre>
 <h3 id="mapping-actions"><a href="#mapping-actions" class="heading-anchor">Mapping Actions</a></h3>
 <p>Each mapping dict requires <code>"key"</code> and one action:</p>
@@ -230,76 +249,212 @@ vt.leader(&quot;alt_r&quot;, [...])   # Right Alt for utilities
 </tbody>
 </table></div>
 <p>If <code>desc</code> is omitted, the panel displays the app name or command.</p>
+<h2 id="launcher"><a href="#launcher" class="heading-anchor">Launcher</a></h2>
+<p>The Launcher is a keyboard-driven search panel (similar to Alfred or Raycast) that lets you quickly find and open apps, files, bookmarks, clipboard history, and code snippets. It is built into the scripting system and activated via a configurable hotkey.</p>
+<h3 id="activation"><a href="#activation" class="heading-anchor">Activation</a></h3>
+<ul>
+<li><strong>Default hotkey:</strong> <code>Cmd+Space</code> (configurable via <code>scripting.chooser.hotkey</code> in config)</li>
+<li><strong>Per-source hotkey:</strong> Each source can have its own direct hotkey (see Configuration below)</li>
+<li><strong>Scripting API:</strong> <code>wz.chooser.show()</code> / <code>wz.chooser.toggle()</code></li>
+</ul>
+<h3 id="search-modes"><a href="#search-modes" class="heading-anchor">Search Modes</a></h3>
+<p>The Launcher supports two search modes:</p>
+<ul>
+<li><strong>Global search:</strong> Type normally to search across all non-prefix sources (e.g. apps). Results are ranked by priority and fuzzy match score.</li>
+<li><strong>Prefix search:</strong> Type a prefix followed by a space to activate a specific source. For example, <code>f readme</code> searches files for "readme".</li>
+</ul>
+<h3 id="built-in-data-sources"><a href="#built-in-data-sources" class="heading-anchor">Built-in Data Sources</a></h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Prefix</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Apps</strong></td>
+<td><em>(none)</em></td>
+<td>Search installed applications. Always active in global search.</td>
+</tr>
+<tr>
+<td><strong>Files</strong></td>
+<td><code>f</code></td>
+<td>Search files by name via macOS Spotlight.</td>
+</tr>
+<tr>
+<td><strong>Clipboard</strong></td>
+<td><code>cb</code></td>
+<td>Browse clipboard history (text and images).</td>
+</tr>
+<tr>
+<td><strong>Snippets</strong></td>
+<td><code>sn</code></td>
+<td>Search text snippets with keyword expansion.</td>
+</tr>
+<tr>
+<td><strong>Bookmarks</strong></td>
+<td><code>bm</code></td>
+<td>Search browser bookmarks (Chrome, Safari, Arc, Edge, Brave, Firefox).</td>
+</tr>
+</tbody>
+</table></div>
+<p>Prefixes are configurable via <code>scripting.chooser.prefixes</code> in config.</p>
+<h3 id="keyboard-shortcuts"><a href="#keyboard-shortcuts" class="heading-anchor">Keyboard Shortcuts</a></h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>Shortcut</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>↑</code> <code>↓</code></td>
+<td>Navigate results</td>
+</tr>
+<tr>
+<td><code>Enter</code></td>
+<td>Open / execute selected item</td>
+</tr>
+<tr>
+<td><code>⌘+Enter</code></td>
+<td>Reveal in Finder (for file-based items)</td>
+</tr>
+<tr>
+<td><code>⌘1</code> – <code>⌘9</code></td>
+<td>Quick select by position</td>
+</tr>
+<tr>
+<td><code>Esc</code></td>
+<td>Close the Launcher</td>
+</tr>
+<tr>
+<td><code>Alt</code> / <code>Ctrl</code> / <code>Shift</code> (hold)</td>
+<td>Show alternative action for selected item</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="custom-sources"><a href="#custom-sources" class="heading-anchor">Custom Sources</a></h3>
+<p>You can register your own data sources via the <code>@wz.chooser.source</code> decorator:</p>
+<pre><code class="language-python">@wz.chooser.source(&quot;todos&quot;, prefix=&quot;td&quot;, priority=5)
+def search_todos(query):
+    return [
+        {&quot;title&quot;: &quot;Fix bug #123&quot;, &quot;subtitle&quot;: &quot;backend&quot;, &quot;action&quot;: lambda: ...},
+        {&quot;title&quot;: &quot;Write docs&quot;, &quot;subtitle&quot;: &quot;frontend&quot;, &quot;action&quot;: lambda: ...},
+    ]
+</code></pre>
+<h3 id="usage-learning"><a href="#usage-learning" class="heading-anchor">Usage Learning</a></h3>
+<p>When enabled (default), the Launcher tracks which items you select for each query and boosts frequently used items in future results. Data is stored locally at <code>~/.config/WenZi/chooser_usage.json</code>.</p>
 <h2 id="api-reference"><a href="#api-reference" class="heading-anchor">API Reference</a></h2>
-<h3 id="vtleadertrigger_key-mappings"><a href="#vtleadertrigger_key-mappings" class="heading-anchor"><code>vt.leader(trigger_key, mappings)</code></a></h3>
+<h3 id="wzleadertrigger_key-mappings"><a href="#wzleadertrigger_key-mappings" class="heading-anchor"><code>wz.leader(trigger_key, mappings)</code></a></h3>
 <p>Register a leader-key configuration.</p>
-<pre><code class="language-python">vt.leader(&quot;cmd_r&quot;, [
+<pre><code class="language-python">wz.leader(&quot;cmd_r&quot;, [
     {&quot;key&quot;: &quot;w&quot;, &quot;app&quot;: &quot;WeChat&quot;},
 ])
 </code></pre>
-<h3 id="vtapplaunchname"><a href="#vtapplaunchname" class="heading-anchor"><code>vt.app.launch(name)</code></a></h3>
+<h3 id="wzapplaunchname"><a href="#wzapplaunchname" class="heading-anchor"><code>wz.app.launch(name)</code></a></h3>
 <p>Launch or focus an application. Accepts app name or full path.</p>
-<pre><code class="language-python">vt.app.launch(&quot;Safari&quot;)
-vt.app.launch(&quot;/Applications/Visual Studio Code.app&quot;)
+<pre><code class="language-python">wz.app.launch(&quot;Safari&quot;)
+wz.app.launch(&quot;/Applications/Visual Studio Code.app&quot;)
 </code></pre>
-<h3 id="vtappfrontmost"><a href="#vtappfrontmost" class="heading-anchor"><code>vt.app.frontmost()</code></a></h3>
+<h3 id="wzappfrontmost"><a href="#wzappfrontmost" class="heading-anchor"><code>wz.app.frontmost()</code></a></h3>
 <p>Return the localized name of the frontmost application.</p>
-<pre><code class="language-python">name = vt.app.frontmost()  # e.g. &quot;Finder&quot;
+<pre><code class="language-python">name = wz.app.frontmost()  # e.g. &quot;Finder&quot;
 </code></pre>
-<h3 id="vtalerttext-duration20"><a href="#vtalerttext-duration20" class="heading-anchor"><code>vt.alert(text, duration=2.0)</code></a></h3>
+<h3 id="wzalerttext-duration20"><a href="#wzalerttext-duration20" class="heading-anchor"><code>wz.alert(text, duration=2.0)</code></a></h3>
 <p>Show a brief floating message on screen. Auto-dismisses after <code>duration</code> seconds.</p>
-<pre><code class="language-python">vt.alert(&quot;Hello!&quot;, duration=3.0)
+<pre><code class="language-python">wz.alert(&quot;Hello!&quot;, duration=3.0)
 </code></pre>
-<h3 id="vtnotifytitle-message"><a href="#vtnotifytitle-message" class="heading-anchor"><code>vt.notify(title, message="")</code></a></h3>
+<h3 id="wznotifytitle-message"><a href="#wznotifytitle-message" class="heading-anchor"><code>wz.notify(title, message="")</code></a></h3>
 <p>Send a macOS notification.</p>
-<pre><code class="language-python">vt.notify(&quot;Build complete&quot;, &quot;All tests passed&quot;)
+<pre><code class="language-python">wz.notify(&quot;Build complete&quot;, &quot;All tests passed&quot;)
 </code></pre>
-<h3 id="vtpasteboardget"><a href="#vtpasteboardget" class="heading-anchor"><code>vt.pasteboard.get()</code></a></h3>
+<h3 id="wzpasteboardget"><a href="#wzpasteboardget" class="heading-anchor"><code>wz.pasteboard.get()</code></a></h3>
 <p>Return the current clipboard text, or <code>None</code>.</p>
-<pre><code class="language-python">text = vt.pasteboard.get()
+<pre><code class="language-python">text = wz.pasteboard.get()
 </code></pre>
-<h3 id="vtpasteboardsettext"><a href="#vtpasteboardsettext" class="heading-anchor"><code>vt.pasteboard.set(text)</code></a></h3>
+<h3 id="wzpasteboardsettext"><a href="#wzpasteboardsettext" class="heading-anchor"><code>wz.pasteboard.set(text)</code></a></h3>
 <p>Set the clipboard text.</p>
-<pre><code class="language-python">vt.pasteboard.set(&quot;Hello, world!&quot;)
+<pre><code class="language-python">wz.pasteboard.set(&quot;Hello, world!&quot;)
 </code></pre>
-<h3 id="vtkeystrokekey-modifiersnone"><a href="#vtkeystrokekey-modifiersnone" class="heading-anchor"><code>vt.keystroke(key, modifiers=None)</code></a></h3>
+<h3 id="wzkeystrokekey-modifiersnone"><a href="#wzkeystrokekey-modifiersnone" class="heading-anchor"><code>wz.keystroke(key, modifiers=None)</code></a></h3>
 <p>Synthesize a keystroke via Quartz CGEvent.</p>
-<pre><code class="language-python">vt.keystroke(&quot;c&quot;, modifiers=[&quot;cmd&quot;])       # Cmd+C
-vt.keystroke(&quot;v&quot;, modifiers=[&quot;cmd&quot;])       # Cmd+V
-vt.keystroke(&quot;space&quot;)                       # Space
-vt.keystroke(&quot;a&quot;, modifiers=[&quot;cmd&quot;, &quot;shift&quot;])  # Cmd+Shift+A
+<pre><code class="language-python">wz.keystroke(&quot;c&quot;, modifiers=[&quot;cmd&quot;])       # Cmd+C
+wz.keystroke(&quot;v&quot;, modifiers=[&quot;cmd&quot;])       # Cmd+V
+wz.keystroke(&quot;space&quot;)                       # Space
+wz.keystroke(&quot;a&quot;, modifiers=[&quot;cmd&quot;, &quot;shift&quot;])  # Cmd+Shift+A
 </code></pre>
-<h3 id="vtexecutecommand-backgroundtrue"><a href="#vtexecutecommand-backgroundtrue" class="heading-anchor"><code>vt.execute(command, background=True)</code></a></h3>
+<h3 id="wzexecutecommand-backgroundtrue"><a href="#wzexecutecommand-backgroundtrue" class="heading-anchor"><code>wz.execute(command, background=True)</code></a></h3>
 <p>Execute a shell command.</p>
-<pre><code class="language-python">vt.execute(&quot;open ~/Downloads&quot;)             # Background (returns None)
-output = vt.execute(&quot;date&quot;, background=False)  # Foreground (returns stdout)
+<pre><code class="language-python">wz.execute(&quot;open ~/Downloads&quot;)             # Background (returns None)
+output = wz.execute(&quot;date&quot;, background=False)  # Foreground (returns stdout)
 </code></pre>
-<h3 id="vttimerafterseconds-callback"><a href="#vttimerafterseconds-callback" class="heading-anchor"><code>vt.timer.after(seconds, callback)</code></a></h3>
+<h3 id="wztimerafterseconds-callback"><a href="#wztimerafterseconds-callback" class="heading-anchor"><code>wz.timer.after(seconds, callback)</code></a></h3>
 <p>Execute a function once after a delay. Returns a <code>timer_id</code>.</p>
-<pre><code class="language-python">tid = vt.timer.after(5.0, lambda: vt.alert(&quot;5 seconds passed&quot;))
+<pre><code class="language-python">tid = wz.timer.after(5.0, lambda: wz.alert(&quot;5 seconds passed&quot;))
 </code></pre>
-<h3 id="vttimereveryseconds-callback"><a href="#vttimereveryseconds-callback" class="heading-anchor"><code>vt.timer.every(seconds, callback)</code></a></h3>
+<h3 id="wztimereveryseconds-callback"><a href="#wztimereveryseconds-callback" class="heading-anchor"><code>wz.timer.every(seconds, callback)</code></a></h3>
 <p>Execute a function repeatedly at an interval. Returns a <code>timer_id</code>.</p>
-<pre><code class="language-python">tid = vt.timer.every(60.0, lambda: vt.notify(&quot;Reminder&quot;, &quot;Take a break&quot;))
+<pre><code class="language-python">tid = wz.timer.every(60.0, lambda: wz.notify(&quot;Reminder&quot;, &quot;Take a break&quot;))
 </code></pre>
-<h3 id="vttimercanceltimer_id"><a href="#vttimercanceltimer_id" class="heading-anchor"><code>vt.timer.cancel(timer_id)</code></a></h3>
+<h3 id="wztimercanceltimer_id"><a href="#wztimercanceltimer_id" class="heading-anchor"><code>wz.timer.cancel(timer_id)</code></a></h3>
 <p>Cancel a timer.</p>
-<pre><code class="language-python">tid = vt.timer.every(10.0, my_func)
-vt.timer.cancel(tid)
+<pre><code class="language-python">tid = wz.timer.every(10.0, my_func)
+wz.timer.cancel(tid)
 </code></pre>
-<h3 id="vtdateformaty-m-d"><a href="#vtdateformaty-m-d" class="heading-anchor"><code>vt.date(format="%Y-%m-%d")</code></a></h3>
+<h3 id="wzdateformaty-m-d"><a href="#wzdateformaty-m-d" class="heading-anchor"><code>wz.date(format="%Y-%m-%d")</code></a></h3>
 <p>Return the current date/time as a formatted string.</p>
-<pre><code class="language-python">vt.date()              # &quot;2025-03-15&quot;
-vt.date(&quot;%H:%M:%S&quot;)   # &quot;14:30:00&quot;
-vt.date(&quot;%Y-%m-%d %H:%M&quot;)  # &quot;2025-03-15 14:30&quot;
+<pre><code class="language-python">wz.date()              # &quot;2025-03-15&quot;
+wz.date(&quot;%H:%M:%S&quot;)   # &quot;14:30:00&quot;
+wz.date(&quot;%Y-%m-%d %H:%M&quot;)  # &quot;2025-03-15 14:30&quot;
 </code></pre>
-<h3 id="vtreload"><a href="#vtreload" class="heading-anchor"><code>vt.reload()</code></a></h3>
+<h3 id="wzreload"><a href="#wzreload" class="heading-anchor"><code>wz.reload()</code></a></h3>
 <p>Reload all scripts. Stops current listeners, re-reads <code>init.py</code>, and restarts.</p>
-<pre><code class="language-python">vt.reload()
+<pre><code class="language-python">wz.reload()
+</code></pre>
+<h3 id="wzchoosershowinitial_querynone"><a href="#wzchoosershowinitial_querynone" class="heading-anchor"><code>wz.chooser.show(initial_query=None)</code></a></h3>
+<p>Show the Launcher panel. Optionally pre-fill the search input.</p>
+<pre><code class="language-python">wz.chooser.show()
+wz.chooser.show(initial_query=&quot;f readme&quot;)
+</code></pre>
+<h3 id="wzchooserclose"><a href="#wzchooserclose" class="heading-anchor"><code>wz.chooser.close()</code></a></h3>
+<p>Close the Launcher panel.</p>
+<h3 id="wzchoosertoggle"><a href="#wzchoosertoggle" class="heading-anchor"><code>wz.chooser.toggle()</code></a></h3>
+<p>Toggle the Launcher panel visibility.</p>
+<h3 id="wzchoosershow_sourceprefix"><a href="#wzchoosershow_sourceprefix" class="heading-anchor"><code>wz.chooser.show_source(prefix)</code></a></h3>
+<p>Show the Launcher with a specific source activated.</p>
+<pre><code class="language-python">wz.chooser.show_source(&quot;cb&quot;)  # Opens with clipboard history
+</code></pre>
+<h3 id="wzchooserregister_sourcesource"><a href="#wzchooserregister_sourcesource" class="heading-anchor"><code>wz.chooser.register_source(source)</code></a></h3>
+<p>Register a <code>ChooserSource</code> object as a data source.</p>
+<h3 id="wzchooserunregister_sourcename"><a href="#wzchooserunregister_sourcename" class="heading-anchor"><code>wz.chooser.unregister_source(name)</code></a></h3>
+<p>Remove a registered data source by name.</p>
+<h3 id="wzchooserpickitems-callback-placeholderchoose"><a href="#wzchooserpickitems-callback-placeholderchoose" class="heading-anchor"><code>wz.chooser.pick(items, callback, placeholder="Choose...")</code></a></h3>
+<p>Use the Launcher as a generic selection UI. Shows a fixed list of items; calls <code>callback(item_dict)</code> when the user picks one, or <code>callback(None)</code> if dismissed.</p>
+<pre><code class="language-python">wz.chooser.pick(
+    [{&quot;title&quot;: &quot;Option A&quot;}, {&quot;title&quot;: &quot;Option B&quot;}],
+    callback=lambda item: print(item),
+    placeholder=&quot;Pick one...&quot;,
+)
+</code></pre>
+<h3 id="wzchooseronevent"><a href="#wzchooseronevent" class="heading-anchor"><code>@wz.chooser.on(event)</code></a></h3>
+<p>Decorator to register a Launcher event handler.</p>
+<p>Supported events: <code>open</code>, <code>close</code>, <code>select</code>, <code>delete</code>.</p>
+<pre><code class="language-python">@wz.chooser.on(&quot;select&quot;)
+def on_select(item_info):
+    print(f&quot;Selected: {item_info['title']}&quot;)
+</code></pre>
+<h3 id="wzchoosersourcename-prefixnone-priority0"><a href="#wzchoosersourcename-prefixnone-priority0" class="heading-anchor"><code>@wz.chooser.source(name, prefix=None, priority=0)</code></a></h3>
+<p>Decorator to register a search function as a Launcher data source.</p>
+<pre><code class="language-python">@wz.chooser.source(&quot;notes&quot;, prefix=&quot;n&quot;, priority=5)
+def search_notes(query):
+    return [{&quot;title&quot;: &quot;...&quot;, &quot;action&quot;: lambda: ...}]
 </code></pre>
 <h2 id="examples"><a href="#examples" class="heading-anchor">Examples</a></h2>
 <h3 id="app-launcher"><a href="#app-launcher" class="heading-anchor">App Launcher</a></h3>
-<pre><code class="language-python">vt.leader(&quot;cmd_r&quot;, [
+<pre><code class="language-python">wz.leader(&quot;cmd_r&quot;, [
     {&quot;key&quot;: &quot;1&quot;, &quot;app&quot;: &quot;1Password&quot;},
     {&quot;key&quot;: &quot;b&quot;, &quot;app&quot;: &quot;Obsidian&quot;},
     {&quot;key&quot;: &quot;c&quot;, &quot;app&quot;: &quot;Calendar&quot;},
@@ -314,32 +469,122 @@ vt.date(&quot;%Y-%m-%d %H:%M&quot;)  # &quot;2025-03-15 14:30&quot;
 ])
 </code></pre>
 <h3 id="utility-keys"><a href="#utility-keys" class="heading-anchor">Utility Keys</a></h3>
-<pre><code class="language-python">vt.leader(&quot;alt_r&quot;, [
+<pre><code class="language-python">wz.leader(&quot;alt_r&quot;, [
     {&quot;key&quot;: &quot;d&quot;, &quot;desc&quot;: &quot;date → clipboard&quot;, &quot;func&quot;: lambda: (
-        vt.pasteboard.set(vt.date(&quot;%Y-%m-%d&quot;)),
-        vt.notify(&quot;Date copied&quot;, vt.date(&quot;%Y-%m-%d&quot;)),
+        wz.pasteboard.set(wz.date(&quot;%Y-%m-%d&quot;)),
+        wz.notify(&quot;Date copied&quot;, wz.date(&quot;%Y-%m-%d&quot;)),
     )},
     {&quot;key&quot;: &quot;t&quot;, &quot;desc&quot;: &quot;timestamp&quot;, &quot;func&quot;: lambda: (
-        vt.pasteboard.set(vt.date(&quot;%Y-%m-%d %H:%M:%S&quot;)),
-        vt.alert(&quot;Timestamp copied&quot;),
+        wz.pasteboard.set(wz.date(&quot;%Y-%m-%d %H:%M:%S&quot;)),
+        wz.alert(&quot;Timestamp copied&quot;),
     )},
-    {&quot;key&quot;: &quot;r&quot;, &quot;desc&quot;: &quot;reload scripts&quot;, &quot;func&quot;: lambda: vt.reload()},
+    {&quot;key&quot;: &quot;r&quot;, &quot;desc&quot;: &quot;reload scripts&quot;, &quot;func&quot;: lambda: wz.reload()},
 ])
 </code></pre>
 <h3 id="timed-reminders"><a href="#timed-reminders" class="heading-anchor">Timed Reminders</a></h3>
 <pre><code class="language-python"># Remind to take a break every 30 minutes
-vt.timer.every(1800, lambda: vt.notify(&quot;Break&quot;, &quot;Stand up and stretch!&quot;))
+wz.timer.every(1800, lambda: wz.notify(&quot;Break&quot;, &quot;Stand up and stretch!&quot;))
 </code></pre>
 <h3 id="quick-actions-with-hotkeys"><a href="#quick-actions-with-hotkeys" class="heading-anchor">Quick Actions with Hotkeys</a></h3>
 <pre><code class="language-python"># Ctrl+Cmd+N to open a new note
-vt.hotkey.bind(&quot;ctrl+cmd+n&quot;, lambda: vt.execute(&quot;open -a Notes&quot;))
+wz.hotkey.bind(&quot;ctrl+cmd+n&quot;, lambda: wz.execute(&quot;open -a Notes&quot;))
 </code></pre>
+<h2 id="launcher-configuration"><a href="#launcher-configuration" class="heading-anchor">Launcher Configuration</a></h2>
+<p>The Launcher is configured under <code>scripting.chooser</code> in <code>config.json</code>:</p>
+<pre><code class="language-json">{
+  &quot;scripting&quot;: {
+    &quot;chooser&quot;: {
+      &quot;enabled&quot;: true,
+      &quot;hotkey&quot;: &quot;cmd+space&quot;,
+      &quot;app_search&quot;: true,
+      &quot;file_search&quot;: true,
+      &quot;clipboard_history&quot;: false,
+      &quot;snippets&quot;: false,
+      &quot;bookmarks&quot;: true,
+      &quot;usage_learning&quot;: true,
+      &quot;prefixes&quot;: {
+        &quot;clipboard&quot;: &quot;cb&quot;,
+        &quot;files&quot;: &quot;f&quot;,
+        &quot;snippets&quot;: &quot;sn&quot;,
+        &quot;bookmarks&quot;: &quot;bm&quot;
+      },
+      &quot;source_hotkeys&quot;: {
+        &quot;clipboard&quot;: &quot;&quot;,
+        &quot;files&quot;: &quot;&quot;,
+        &quot;snippets&quot;: &quot;&quot;,
+        &quot;bookmarks&quot;: &quot;&quot;
+      }
+    }
+  }
+}
+</code></pre>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>enabled</code></td>
+<td><code>false</code></td>
+<td>Master switch for the Launcher</td>
+</tr>
+<tr>
+<td><code>hotkey</code></td>
+<td><code>"cmd+space"</code></td>
+<td>Global hotkey to toggle the Launcher</td>
+</tr>
+<tr>
+<td><code>app_search</code></td>
+<td><code>true</code></td>
+<td>Enable application search</td>
+</tr>
+<tr>
+<td><code>file_search</code></td>
+<td><code>true</code></td>
+<td>Enable Spotlight file search</td>
+</tr>
+<tr>
+<td><code>clipboard_history</code></td>
+<td><code>false</code></td>
+<td>Enable clipboard history tracking</td>
+</tr>
+<tr>
+<td><code>snippets</code></td>
+<td><code>false</code></td>
+<td>Enable snippet search and expansion</td>
+</tr>
+<tr>
+<td><code>bookmarks</code></td>
+<td><code>true</code></td>
+<td>Enable browser bookmark search</td>
+</tr>
+<tr>
+<td><code>usage_learning</code></td>
+<td><code>true</code></td>
+<td>Track selection frequency for smarter ranking</td>
+</tr>
+<tr>
+<td><code>prefixes</code></td>
+<td><em>(see above)</em></td>
+<td>Prefix strings to activate each source</td>
+</tr>
+<tr>
+<td><code>source_hotkeys</code></td>
+<td><em>(empty)</em></td>
+<td>Direct hotkeys to open Launcher with a source pre-selected</td>
+</tr>
+</tbody>
+</table></div>
 <h2 id="script-environment"><a href="#script-environment" class="heading-anchor">Script Environment</a></h2>
 <ul>
 <li>Scripts run as standard Python with full access to <code>import</code></li>
-<li>The <code>vt</code> object is available as a global variable — no import needed</li>
+<li>The <code>wz</code> object is available as a global variable — no import needed</li>
 <li>Errors in scripts are caught and displayed as alerts</li>
-<li>Scripts are loaded once at startup; use <code>vt.reload()</code> to re-read changes</li>
+<li>Scripts are loaded once at startup; use <code>wz.reload()</code> to re-read changes</li>
 <li>Script path: <code>~/.config/WenZi/scripts/init.py</code></li>
 <li>Custom script directory can be set via <code>"scripting": {"script_dir": "/path/to/scripts"}</code> in config</li>
 </ul>
