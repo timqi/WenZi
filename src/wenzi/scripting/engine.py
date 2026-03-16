@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
+import sys
 from typing import Any, Dict, Optional
 
 from wenzi.scripting.registry import ScriptingRegistry
@@ -71,6 +73,7 @@ class ScriptEngine:
         """Reload all scripts: stop, clear, re-load, start."""
         logger.info("Reloading scripts...")
         self.stop()
+        self._purge_user_modules()
         # Reset APIs so they create fresh instances
         self._wz._hotkey_api = None
         self._wz._chooser_api = None
@@ -456,8 +459,42 @@ class ScriptEngine:
                     "Source hotkey bound: %s -> %s", hotkey_str, source_key,
                 )
 
+    def _purge_user_modules(self) -> None:
+        """Remove cached user script modules so reload picks up file changes."""
+        scripts_dir = os.path.normpath(self._script_dir) + os.sep
+        for name, mod in list(sys.modules.items()):
+            # Check __file__ for regular modules
+            mod_file = getattr(mod, "__file__", None)
+            if mod_file and os.path.normpath(mod_file).startswith(scripts_dir):
+                self._remove_pyc(mod_file)
+                del sys.modules[name]
+                continue
+            # Check __path__ for namespace packages (no __file__)
+            mod_path = getattr(mod, "__path__", None)
+            if mod_path:
+                for p in mod_path:
+                    if os.path.normpath(p).startswith(scripts_dir):
+                        del sys.modules[name]
+                        break
+        importlib.invalidate_caches()
+
+    @staticmethod
+    def _remove_pyc(source_path: str) -> None:
+        """Delete the cached .pyc file for a source file."""
+        try:
+            pyc = importlib.util.cache_from_source(source_path)
+            if os.path.isfile(pyc):
+                os.remove(pyc)
+        except (NotImplementedError, ValueError, OSError):
+            pass
+
     def _load_scripts(self) -> None:
         """Execute init.py in the scripts directory."""
+        # Ensure scripts dir is on sys.path so init.py can import sibling modules
+        norm_dir = os.path.normpath(self._script_dir)
+        if norm_dir not in sys.path:
+            sys.path.append(norm_dir)
+
         init_path = os.path.join(self._script_dir, "init.py")
 
         if not os.path.isfile(init_path):
