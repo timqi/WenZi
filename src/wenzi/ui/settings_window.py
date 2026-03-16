@@ -109,7 +109,8 @@ class SettingsPanel:
         # Launcher tab controls
         self._launcher_source_checks: Dict[str, object] = {}
         self._launcher_prefix_fields: Dict[str, object] = {}
-        self._launcher_hotkey_field = None
+        self._launcher_hotkey_label = None
+        self._launcher_hotkey_btn = None
         self._launcher_source_hotkey_labels: Dict[str, object] = {}
         self._launcher_source_hotkey_btns: Dict[str, object] = {}
 
@@ -1023,25 +1024,37 @@ class SettingsPanel:
         )
 
         y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
-        hotkey_val = launcher_state.get("hotkey", "cmd+space")
-        hotkey_label = self._make_label("Hotkey:", pad + 12, y, 60, small_font)
-        doc_view.addSubview_(hotkey_label)
-
-        hotkey_field = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(pad + 80, y, 160, self._CONTROL_HEIGHT)
+        hotkey_val = launcher_state.get("hotkey", "")
+        hotkey_title_label = self._make_label(
+            "Hotkey:", pad + 12, y, 60, small_font,
         )
-        hotkey_field.setStringValue_(hotkey_val)
-        hotkey_field.setFont_(small_font)
-        hotkey_field.setEditable_(True)
-        hotkey_field.setBezeled_(True)
-        hotkey_field.setDrawsBackground_(True)
-        hotkey_field.setBackgroundColor_(NSColor.controlBackgroundColor())
-        hotkey_field.setTextColor_(NSColor.labelColor())
-        hotkey_field.setPlaceholderString_("e.g. cmd+space")
-        hotkey_field.setTarget_(self)
-        hotkey_field.setAction_(b"launcherHotkeyChanged:")
-        doc_view.addSubview_(hotkey_field)
-        self._launcher_hotkey_field = hotkey_field
+        doc_view.addSubview_(hotkey_title_label)
+
+        hk_display = NSTextField.labelWithString_(hotkey_val or "None")
+        hk_display.setFrame_(
+            NSMakeRect(pad + 80, y + 2, 120, self._CONTROL_HEIGHT)
+        )
+        hk_display.setFont_(small_font)
+        hk_display.setTextColor_(NSColor.secondaryLabelColor())
+        doc_view.addSubview_(hk_display)
+        self._launcher_hotkey_label = hk_display
+
+        if hotkey_val:
+            hk_btn_title = "Clear"
+            hk_btn_action = b"launcherHotkeyClear:"
+        else:
+            hk_btn_title = "Record"
+            hk_btn_action = b"launcherHotkeyRecord:"
+        hk_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(pad + 205, y - 1, 60, 22)
+        )
+        hk_btn.setTitle_(hk_btn_title)
+        hk_btn.setBezelStyle_(1)
+        hk_btn.setFont_(NSFont.systemFontOfSize_(10.0))
+        hk_btn.setTarget_(self)
+        hk_btn.setAction_(hk_btn_action)
+        doc_view.addSubview_(hk_btn)
+        self._launcher_hotkey_btn = hk_btn
 
         y -= self._SECTION_GAP
 
@@ -1148,6 +1161,13 @@ class SettingsPanel:
                 doc_view.addSubview_(hk_btn)
                 self._launcher_source_hotkey_btns[prefix_key] = hk_btn
 
+            if config_key == "clipboard_history":
+                y = self._add_warning(
+                    "\u26a0 Not fully verified \u2014 may record sensitive data "
+                    "such as passwords and keys.",
+                    pad + 12, y, content_w - 24, doc_view,
+                )
+
         y -= self._SECTION_GAP
 
         # --- Options section ---
@@ -1200,7 +1220,7 @@ class SettingsPanel:
         # except the warning label itself)
         all_launcher_controls = [
             self._launcher_enabled_check,
-            hotkey_field,
+            self._launcher_hotkey_btn,
             refresh_btn,
         ]
         for check in self._launcher_source_checks.values():
@@ -1286,6 +1306,19 @@ class SettingsPanel:
         y -= (self._HINT_HEIGHT + self._HINT_GAP)
         hint = self._make_hint(text, x, y, width)
         parent.addSubview_(hint)
+        return y
+
+    def _add_warning(self, text, x, y, width, parent):
+        """Add a red warning label below the current y and return the updated y."""
+        from AppKit import NSColor, NSFont, NSTextField
+        from Foundation import NSMakeRect
+
+        y -= (self._HINT_HEIGHT + self._HINT_GAP)
+        warn = NSTextField.labelWithString_(text)
+        warn.setFrame_(NSMakeRect(x, y, width, self._HINT_HEIGHT))
+        warn.setFont_(NSFont.systemFontOfSize_(10.0))
+        warn.setTextColor_(NSColor.systemRedColor())
+        parent.addSubview_(warn)
         return y
 
     def _make_switch(self, title, x, y, width, state_on, font, action, parent):
@@ -1556,10 +1589,11 @@ class SettingsPanel:
         enabled = sender.state() == 1
         self._call("on_launcher_toggle", enabled)
 
-    def launcherHotkeyChanged_(self, sender):
-        value = str(sender.stringValue()).strip()
-        if value:
-            self._call("on_launcher_hotkey_change", value)
+    def launcherHotkeyRecord_(self, sender):
+        self._call("on_launcher_hotkey_record")
+
+    def launcherHotkeyClear_(self, sender):
+        self._call("on_launcher_hotkey_clear")
 
     def launcherSourceToggled_(self, sender):
         meta = self._get_meta(sender)
@@ -1639,6 +1673,18 @@ class SettingsPanel:
         """Update the config directory display field."""
         if self._config_dir_field:
             self._config_dir_field.setStringValue_(path)
+
+    def update_launcher_hotkey(self, hotkey: str) -> None:
+        """Update the launcher hotkey label and button after recording."""
+        if self._launcher_hotkey_label:
+            self._launcher_hotkey_label.setStringValue_(hotkey or "None")
+        if self._launcher_hotkey_btn:
+            if hotkey:
+                self._launcher_hotkey_btn.setTitle_("Clear")
+                self._launcher_hotkey_btn.setAction_(b"launcherHotkeyClear:")
+            else:
+                self._launcher_hotkey_btn.setTitle_("Record")
+                self._launcher_hotkey_btn.setAction_(b"launcherHotkeyRecord:")
 
     def update_source_hotkey(self, source_key: str, hotkey: str) -> None:
         """Update the hotkey label and button for a source after recording."""

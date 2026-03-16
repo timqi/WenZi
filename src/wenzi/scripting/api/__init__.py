@@ -1,4 +1,4 @@
-"""vt namespace — the public API for user scripts."""
+"""wz namespace — the public API for user scripts."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ from .timer import TimerAPI
 logger = logging.getLogger(__name__)
 
 
-class _VTNamespace:
-    """The 'vt' namespace object exposed to user scripts.
+class _WZNamespace:
+    """The 'wz' namespace object exposed to user scripts.
 
     Aggregates all API modules into a single convenient namespace.
     """
@@ -57,21 +57,29 @@ class _VTNamespace:
             self._chooser_api = ChooserAPI()
         return self._chooser_api
 
-    def leader(self, trigger_key: str, mappings: List[dict]) -> None:
+    def leader(
+        self,
+        trigger_key: str,
+        mappings: List[dict],
+        position: str | tuple = "center",
+    ) -> None:
         """Register a leader-key configuration.
 
         Args:
             trigger_key: The trigger key name (e.g. "cmd_r", "alt_r").
             mappings: List of dicts, each with "key" and one of
                       "app", "func", "exec", plus optional "desc".
+            position: Panel position — "center", "top", "bottom",
+                      "mouse", or a tuple ``(x%, y%)`` in screen
+                      percentage (origin bottom-left).
 
         Example::
 
-            vt.leader("cmd_r", [
+            wz.leader("cmd_r", [
                 {"key": "w", "app": "WeChat"},
-                {"key": "d", "desc": "date", "func": lambda: vt.notify("hi")},
+                {"key": "d", "desc": "date", "func": lambda: wz.notify("hi")},
                 {"key": "i", "exec": "/usr/local/bin/code ~/work"},
-            ])
+            ], position="mouse")
         """
         parsed = []
         for m in mappings:
@@ -84,7 +92,7 @@ class _VTNamespace:
                     exec_cmd=m.get("exec"),
                 )
             )
-        self._registry.register_leader(trigger_key, parsed)
+        self._registry.register_leader(trigger_key, parsed, position=position)
 
     def on(
         self, event_name: str, callback: Optional[Callable] = None
@@ -96,13 +104,13 @@ class _VTNamespace:
 
         Can be used as a decorator::
 
-            @vt.on("transcription_done")
+            @wz.on("transcription_done")
             def on_transcribe(data):
                 print(data["asr_text"])
 
         Or called directly::
 
-            vt.on("recording_start", my_handler)
+            wz.on("recording_start", my_handler)
         """
         if callback is not None:
             self._registry.register_event(event_name, callback)
@@ -169,4 +177,4 @@ class _VTNamespace:
 
 
 # Module-level singleton — created and set by ScriptEngine
-vt: Optional[_VTNamespace] = None
+wz: Optional[_WZNamespace] = None

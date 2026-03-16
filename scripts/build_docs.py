@@ -339,6 +339,25 @@ def _convert_md(md_text: str) -> tuple[str, str]:
         body_html,
     )
 
+    # Rewrite .md links to .html (strip -zh suffix, map README to index)
+    def _rewrite_md_link(m: re.Match) -> str:
+        path = m.group(1)
+        anchor = m.group(2) or ""
+        # ../README.md → site index
+        if path.endswith("README.md") or path.endswith("README"):
+            return f'href="../{anchor}"'
+        # Strip -zh suffix and change .md to .html
+        basename = path.rsplit("/", 1)[-1]
+        basename = re.sub(r"-zh\.md$", ".html", basename)
+        basename = re.sub(r"\.md$", ".html", basename)
+        return f'href="{basename}{anchor}"'
+
+    body_html = re.sub(
+        r'href="([^"]*\.md)(#[^"]*)?"',
+        _rewrite_md_link,
+        body_html,
+    )
+
     return body_html, toc_html
 
 

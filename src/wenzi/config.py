@@ -205,13 +205,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enabled": False,
         "script_dir": None,
         "chooser": {
-            "enabled": True,
+            "enabled": False,
             "hotkey": "cmd+space",
-            "clipboard_history": True,
+            "clipboard_history": False,
             "clipboard_max_items": 50,
             "app_search": True,
             "file_search": True,
-            "snippets": True,
+            "snippets": False,
             "bookmarks": True,
             "usage_learning": True,
             "prefixes": {

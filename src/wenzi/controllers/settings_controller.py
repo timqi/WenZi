@@ -163,7 +163,8 @@ class SettingsController:
             "on_config_dir_browse": self.config_dir_browse,
             "on_config_dir_reset": self.config_dir_reset,
             "on_launcher_toggle": self.launcher_toggle,
-            "on_launcher_hotkey_change": self.launcher_hotkey_change,
+            "on_launcher_hotkey_record": self.launcher_hotkey_record,
+            "on_launcher_hotkey_clear": self.launcher_hotkey_clear,
             "on_launcher_source_toggle": self.launcher_source_toggle,
             "on_launcher_prefix_change": self.launcher_prefix_change,
             "on_launcher_usage_learning_toggle": self.launcher_usage_learning_toggle,
@@ -907,21 +908,44 @@ class SettingsController:
 
         logger.info("Launcher set to: %s", enabled)
 
-    def launcher_hotkey_change(self, hotkey: str) -> None:
-        """Handle launcher hotkey change from Settings panel."""
+    def launcher_hotkey_record(self) -> None:
+        """Record a new launcher hotkey via modal dialog."""
+        app = self._app
+        recorded_key = app.record_combo_hotkey_modal()
+        if not recorded_key:
+            return
+
+        chooser_cfg = app._config.setdefault("scripting", {}).setdefault(
+            "chooser", {}
+        )
+        old_hotkey = chooser_cfg.get("hotkey", "")
+        chooser_cfg["hotkey"] = recorded_key
+        self._save_and_reload()
+
+        engine = getattr(app, "_script_engine", None)
+        if engine is not None and chooser_cfg.get("enabled", True):
+            engine.rebind_chooser_hotkey(old_hotkey, recorded_key)
+
+        app._settings_panel.update_launcher_hotkey(recorded_key)
+        logger.info("Launcher hotkey recorded: %s", recorded_key)
+
+    def launcher_hotkey_clear(self) -> None:
+        """Clear the launcher hotkey."""
         app = self._app
         chooser_cfg = app._config.setdefault("scripting", {}).setdefault(
             "chooser", {}
         )
         old_hotkey = chooser_cfg.get("hotkey", "")
-        chooser_cfg["hotkey"] = hotkey
+        chooser_cfg["hotkey"] = ""
         self._save_and_reload()
 
-        engine = getattr(app, "_script_engine", None)
-        if engine is not None and chooser_cfg.get("enabled", True):
-            engine.rebind_chooser_hotkey(old_hotkey, hotkey)
+        if old_hotkey:
+            engine = getattr(app, "_script_engine", None)
+            if engine is not None:
+                engine.rebind_chooser_hotkey(old_hotkey, "")
 
-        logger.info("Launcher hotkey set to: %s", hotkey)
+        app._settings_panel.update_launcher_hotkey("")
+        logger.info("Launcher hotkey cleared")
 
     def launcher_source_toggle(self, config_key: str, enabled: bool) -> None:
         """Handle launcher source toggle from Settings panel."""
@@ -1003,7 +1027,7 @@ class SettingsController:
             try:
                 engine = app._script_engine
                 # Find the app source and trigger rescan
-                panel = engine.vt.chooser._get_panel()
+                panel = engine.wz.chooser._get_panel()
                 for src in panel._sources.values():
                     if src.name == "apps" and hasattr(src, "search"):
                         # The search function is bound to AppSource
@@ -1037,11 +1061,11 @@ class SettingsController:
             prefixes = chooser_cfg.get("prefixes", {})
             prefix = prefixes.get(source_key, "")
             if prefix and hasattr(app, "_script_engine"):
-                app._script_engine.vt.hotkey.bind(
+                app._script_engine.wz.hotkey.bind(
                     recorded_key,
-                    lambda p=prefix: app._script_engine.vt.chooser.show_source(p),
+                    lambda p=prefix: app._script_engine.wz.chooser.show_source(p),
                 )
-                app._script_engine.vt.hotkey.start()
+                app._script_engine.wz.hotkey.start()
 
             app._settings_panel.update_source_hotkey(source_key, recorded_key)
             logger.info(
@@ -1061,7 +1085,7 @@ class SettingsController:
 
         # Unbind the old hotkey
         if old_hotkey and hasattr(app, "_script_engine"):
-            app._script_engine.vt.hotkey.unbind(old_hotkey)
+            app._script_engine.wz.hotkey.unbind(old_hotkey)
 
         app._settings_panel.update_source_hotkey(source_key, "")
         logger.info("Source hotkey cleared: %s", source_key)
