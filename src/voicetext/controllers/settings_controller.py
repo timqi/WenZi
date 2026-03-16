@@ -34,6 +34,13 @@ class SettingsController:
     def __init__(self, app: VoiceTextApp) -> None:
         self._app = app
 
+    def _save_and_reload(self) -> None:
+        """Save config and reload the Settings panel if it is visible."""
+        app = self._app
+        save_config(app._config, app._config_path)
+        if app._settings_panel.is_visible:
+            self.on_open_settings(None)
+
     def on_open_settings(self, _) -> None:
         """Open the Settings panel with current state and callbacks."""
         from voicetext.enhance.vocabulary import get_vocab_entry_count
@@ -179,7 +186,7 @@ class SettingsController:
                 app._config["hotkeys"][key_name] = True
         else:
             app._config["hotkeys"][key_name] = False
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         if app._hotkey_listener:
             if enabled:
@@ -206,7 +213,7 @@ class SettingsController:
             hotkeys[key_name] = True
         else:
             hotkeys[key_name] = {"mode": mode_id}
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("Hotkey %s mode set to: %s", key_name, mode_id)
 
     def hotkey_delete(self, key_name: str) -> None:
@@ -218,7 +225,7 @@ class SettingsController:
             return
 
         app._config.get("hotkeys", {}).pop(key_name, None)
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         if app._hotkey_listener:
             app._hotkey_listener.disable_key(key_name)
@@ -235,7 +242,7 @@ class SettingsController:
         app = self._app
         fb_cfg = app._config.setdefault("feedback", {})
         fb_cfg["restart_key"] = key_name
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         if app._hotkey_listener:
             app._hotkey_listener.set_restart_key(key_name)
@@ -246,7 +253,7 @@ class SettingsController:
         app = self._app
         fb_cfg = app._config.setdefault("feedback", {})
         fb_cfg["cancel_key"] = key_name
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         if app._hotkey_listener:
             app._hotkey_listener.set_cancel_key(key_name)
@@ -257,7 +264,7 @@ class SettingsController:
         app = self._app
         scripting_cfg = app._config.setdefault("scripting", {})
         scripting_cfg["enabled"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("Scripting set to: %s (requires restart)", enabled)
 
     def sound_toggle(self, enabled: bool) -> None:
@@ -268,7 +275,7 @@ class SettingsController:
 
         fb_cfg = app._config.setdefault("feedback", {})
         fb_cfg["sound_enabled"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
     def visual_toggle(self, enabled: bool) -> None:
         """Handle visual indicator toggle from Settings panel."""
@@ -278,7 +285,7 @@ class SettingsController:
 
         fb_cfg = app._config.setdefault("feedback", {})
         fb_cfg["visual_indicator"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
     def show_device_name_toggle(self, enabled: bool) -> None:
         """Handle show device name toggle from Settings panel."""
@@ -288,7 +295,7 @@ class SettingsController:
 
         fb_cfg = app._config.setdefault("feedback", {})
         fb_cfg["show_device_name"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
     def preview_toggle(self, enabled: bool) -> None:
         """Handle preview toggle from Settings panel."""
@@ -297,7 +304,7 @@ class SettingsController:
         app._preview_item.state = 1 if enabled else 0
 
         app._config["output"]["preview"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("Preview set to: %s (from settings)", enabled)
 
     def preview_type_toggle(self, use_web: bool) -> None:
@@ -315,7 +322,7 @@ class SettingsController:
         app._enhance_controller._preview_panel = app._preview_panel
 
         app._config["output"]["preview_type"] = new_type
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("Preview type set to: %s (from settings)", new_type)
 
     def stt_select(self, preset_id: str) -> None:
@@ -412,7 +419,7 @@ class SettingsController:
                 app._config["asr"]["language"] = preset.language
                 app._config["asr"]["default_provider"] = None
                 app._config["asr"]["default_model"] = None
-                save_config(app._config, app._config_path)
+                self._save_and_reload()
 
                 app._set_status("VT")
                 logger.info("Switched to model: %s (from settings)", preset.display_name)
@@ -509,7 +516,7 @@ class SettingsController:
             app._config["asr"]["language"] = preset.language
             app._config["asr"]["default_provider"] = None
             app._config["asr"]["default_model"] = None
-            save_config(app._config, app._config_path)
+            self._save_and_reload()
 
             app._set_status("VT")
             logger.info(
@@ -594,7 +601,7 @@ class SettingsController:
 
                 app._config["asr"]["default_provider"] = provider
                 app._config["asr"]["default_model"] = model
-                save_config(app._config, app._config_path)
+                self._save_and_reload()
 
                 app._set_status("VT")
                 logger.info("Switched to remote ASR: %s / %s (from settings)",
@@ -639,7 +646,7 @@ class SettingsController:
         app._config.setdefault("ai_enhance", {})
         app._config["ai_enhance"]["default_provider"] = provider
         app._config["ai_enhance"]["default_model"] = model
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("LLM model set to: %s / %s (from settings)", provider, model)
 
     def llm_remove_provider(self) -> None:
@@ -684,7 +691,7 @@ class SettingsController:
         app._config.setdefault("ai_enhance", {})
         app._config["ai_enhance"]["enabled"] = mode_id != MODE_OFF
         app._config["ai_enhance"]["mode"] = mode_id
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("AI enhance mode set to: %s (from settings)", mode_id)
 
     def thinking_toggle(self, enabled: bool) -> None:
@@ -697,7 +704,7 @@ class SettingsController:
 
         app._config.setdefault("ai_enhance", {})
         app._config["ai_enhance"]["thinking"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("AI thinking set to: %s (from settings)", enabled)
 
     def vocab_toggle(self, enabled: bool) -> None:
@@ -711,7 +718,7 @@ class SettingsController:
         app._config.setdefault("ai_enhance", {})
         app._config["ai_enhance"].setdefault("vocabulary", {})
         app._config["ai_enhance"]["vocabulary"]["enabled"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("Vocabulary set to: %s (from settings)", enabled)
 
     def auto_build_toggle(self, enabled: bool) -> None:
@@ -723,7 +730,7 @@ class SettingsController:
         app._config.setdefault("ai_enhance", {})
         app._config["ai_enhance"].setdefault("vocabulary", {})
         app._config["ai_enhance"]["vocabulary"]["auto_build"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("Auto vocabulary build set to: %s (from settings)", enabled)
 
     def history_toggle(self, enabled: bool) -> None:
@@ -737,14 +744,14 @@ class SettingsController:
         app._config.setdefault("ai_enhance", {})
         app._config["ai_enhance"].setdefault("conversation_history", {})
         app._config["ai_enhance"]["conversation_history"]["enabled"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("Conversation history set to: %s (from settings)", enabled)
 
     def tab_change(self, tab_id: str) -> None:
         """Persist the last active settings tab."""
         app = self._app
         app._config.setdefault("ui", {})["settings_last_tab"] = tab_id
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
     def config_dir_browse(self) -> None:
         """Open a directory picker to choose a custom config directory."""
@@ -879,7 +886,7 @@ class SettingsController:
             "chooser", {}
         )
         chooser_cfg["enabled"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         engine = getattr(app, "_script_engine", None)
         if engine is not None:
@@ -898,7 +905,7 @@ class SettingsController:
         )
         old_hotkey = chooser_cfg.get("hotkey", "")
         chooser_cfg["hotkey"] = hotkey
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         engine = getattr(app, "_script_engine", None)
         if engine is not None and chooser_cfg.get("enabled", True):
@@ -913,7 +920,7 @@ class SettingsController:
             "chooser", {}
         )
         chooser_cfg[config_key] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         engine = getattr(app, "_script_engine", None)
         if engine is not None and chooser_cfg.get("enabled", True):
@@ -933,7 +940,7 @@ class SettingsController:
         prefixes = chooser_cfg.setdefault("prefixes", {})
         old_value = prefixes.get(prefix_key, "")
         prefixes[prefix_key] = value
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         # Re-register the source with the new prefix
         engine = getattr(app, "_script_engine", None)
@@ -1014,7 +1021,7 @@ class SettingsController:
             )
             source_hotkeys = chooser_cfg.setdefault("source_hotkeys", {})
             source_hotkeys[source_key] = recorded_key
-            save_config(app._config, app._config_path)
+            self._save_and_reload()
 
             # Dynamically bind the new hotkey
             prefixes = chooser_cfg.get("prefixes", {})
@@ -1040,7 +1047,7 @@ class SettingsController:
         source_hotkeys = chooser_cfg.setdefault("source_hotkeys", {})
         old_hotkey = source_hotkeys.get(source_key, "")
         source_hotkeys[source_key] = ""
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         # Unbind the old hotkey
         if old_hotkey and hasattr(app, "_script_engine"):
@@ -1056,7 +1063,7 @@ class SettingsController:
             "chooser", {}
         )
         chooser_cfg["usage_learning"] = enabled
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
 
         engine = getattr(app, "_script_engine", None)
         if engine is not None and chooser_cfg.get("enabled", True):

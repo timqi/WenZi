@@ -995,6 +995,18 @@ class SettingsPanel:
         launcher_state = state.get("launcher", {})
         prefixes = launcher_state.get("prefixes", {})
 
+        # --- Scripting dependency warning ---
+        if not state.get("scripting_enabled", False):
+            y -= (self._HINT_HEIGHT + self._HINT_GAP)
+            warn = self._make_hint(
+                "\u26a0 Launcher requires Scripting to be enabled "
+                "(General \u2192 Scripting)",
+                pad, y, content_w - 24,
+            )
+            from AppKit import NSColor
+            warn.setTextColor_(NSColor.systemOrangeColor())
+            doc_view.addSubview_(warn)
+
         # --- Enable Launcher toggle ---
         y -= (self._CONTROL_HEIGHT + self._ROW_GAP)
         self._launcher_enabled_check = self._make_switch(
