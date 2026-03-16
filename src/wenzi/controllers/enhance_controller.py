@@ -179,7 +179,7 @@ class EnhanceController:
                         )
                     elif is_thinking and chunk:
                         had_thinking = True
-                        thinking_tokens += 1
+                        thinking_tokens += len(chunk)
                         self._preview_panel.append_thinking_text(
                             chunk, request_id=request_id,
                             thinking_tokens=thinking_tokens,
@@ -191,7 +191,7 @@ class EnhanceController:
                                 request_id=request_id,
                             )
                         collected.append(chunk)
-                        completion_tokens += 1
+                        completion_tokens += len(chunk)
                         self._preview_panel.append_enhance_text(
                             chunk, request_id=request_id,
                             completion_tokens=completion_tokens,
@@ -309,7 +309,7 @@ class EnhanceController:
                                 )
                             elif is_thinking and chunk:
                                 had_thinking = True
-                                thinking_tokens += 1
+                                thinking_tokens += len(chunk)
                                 self._preview_panel.append_thinking_text(
                                     chunk, request_id=request_id,
                                     thinking_tokens=thinking_tokens,
@@ -318,7 +318,7 @@ class EnhanceController:
                                 if had_thinking:
                                     had_thinking = False
                                 collected.append(chunk)
-                                completion_tokens += 1
+                                completion_tokens += len(chunk)
                                 self._preview_panel.append_enhance_text(
                                     chunk, request_id=request_id,
                                     completion_tokens=completion_tokens,
