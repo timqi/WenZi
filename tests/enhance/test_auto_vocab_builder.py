@@ -348,15 +348,18 @@ class TestInitCounterFromDisk:
 class TestStatusUpdate:
     @patch("wenzi.enhance.auto_vocab_builder.send_notification")
     def test_status_updates_during_build(self, mock_notify, config):
-        """on_status_update should be called with progress and then empty to restore."""
-        # Simulate a build that streams "term|cat|var|ctx\nPython|tech||lang\n"
+        """on_status_update shows streaming progress and snaps on batch_done."""
         async def fake_build(callbacks=None, **kwargs):
+            if callbacks and callbacks.on_progress_init:
+                callbacks.on_progress_init(5, 20)  # 5 records, batch_size=20
             if callbacks and callbacks.on_batch_start:
                 callbacks.on_batch_start(1, 1)
             if callbacks and callbacks.on_stream_chunk:
                 callbacks.on_stream_chunk("term|cat|var|ctx\n")
                 callbacks.on_stream_chunk("Python|tech||lang\n")
                 callbacks.on_stream_chunk("Java|tech||lang\n")
+            if callbacks and callbacks.on_batch_done:
+                callbacks.on_batch_done(1, 1, 2)
             return {"new_entries": 2, "total_entries": 2}
 
         mock_builder = MagicMock()
@@ -375,10 +378,13 @@ class TestStatusUpdate:
         ):
             builder._build()
 
-        # Should have: "VB ..." (start), "VB +1/0" (Python), "VB +2/0" (Java), "" (restore)
+        # "VB ..." (start), "VB 0/5" (init), "VB 1/5" (Python), "VB 2/5" (Java),
+        # "VB 5/5" (batch_done snaps to records), "" (restore)
         assert status_calls[0] == "VB ..."
-        assert "VB 1/0" in status_calls
-        assert "VB 2/0" in status_calls
+        assert "VB 0/5" in status_calls
+        assert "VB 1/5" in status_calls
+        assert "VB 2/5" in status_calls
+        assert "VB 5/5" in status_calls
         assert status_calls[-1] == ""
 
     @patch("wenzi.enhance.auto_vocab_builder.send_notification")

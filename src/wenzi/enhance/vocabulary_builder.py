@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class BuildCallbacks:
     """Callbacks for vocabulary build progress reporting."""
 
+    on_progress_init: Optional[Callable[[int, int], None]] = None  # (total_records, batch_size)
     on_batch_start: Optional[Callable[[int, int], None]] = None  # (batch_idx, total)
     on_stream_chunk: Optional[Callable[[str], None]] = None  # (chunk_text)
     on_batch_done: Optional[Callable[[int, int, int], None]] = None  # (batch_idx, total, entries_count)
@@ -85,6 +86,9 @@ class VocabularyBuilder:
         aborted = False
 
         provider_cfg = self._get_provider_config()
+
+        if callbacks and callbacks.on_progress_init:
+            callbacks.on_progress_init(len(records), self._batch_size)
 
         for i, batch in enumerate(batches, 1):
             if cancel_event is not None and cancel_event.is_set():

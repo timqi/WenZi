@@ -104,8 +104,6 @@ class AutoVocabBuilder:
             self._on_status_update("VB ...")
         try:
             from .vocabulary_builder import BuildCallbacks, VocabularyBuilder
-            from .vocabulary import get_vocab_entry_count
-
             ai_cfg = self._config.get("ai_enhance", {})
             kwargs = {}
             if self._config_dir:
@@ -115,40 +113,57 @@ class AutoVocabBuilder:
                 **kwargs,
             )
 
-            # Track extracted entry lines in real-time via stream chunks
-            entry_count = 0
-            entry_count_before_batch = 0
+            # Track progress: use total correction records as denominator,
+            # streaming entry count as real-time numerator within each batch,
+            # snapping to actual records processed after each batch completes.
+            total_records = 0
+            batch_size = 20
+            records_completed = 0  # records from fully completed batches
+            batch_entry_count = 0  # entries extracted in current batch (streaming)
             got_header = False
-            existing_count = get_vocab_entry_count(
-                self._config_dir or ""
-            )
+
+            def _update_status() -> None:
+                if self._on_status_update and total_records > 0:
+                    current = min(records_completed + batch_entry_count, total_records)
+                    self._on_status_update(f"VB {current}/{total_records}")
+
+            def _on_progress_init(rec_count: int, b_size: int) -> None:
+                nonlocal total_records, batch_size
+                total_records = rec_count
+                batch_size = b_size
+                _update_status()
 
             def _on_stream_chunk(chunk: str) -> None:
-                nonlocal entry_count, got_header
+                nonlocal batch_entry_count, got_header
                 for ch in chunk:
                     if ch == "\n":
                         if not got_header:
                             got_header = True  # skip header line
                         else:
-                            entry_count += 1
-                            if self._on_status_update:
-                                self._on_status_update(
-                                    f"VB {entry_count}/{existing_count}"
-                                )
+                            batch_entry_count += 1
+                            _update_status()
 
             def _on_batch_start(batch_idx: int, total: int) -> None:
-                nonlocal got_header, entry_count_before_batch
+                nonlocal got_header, batch_entry_count
                 got_header = False
-                entry_count_before_batch = entry_count
+                batch_entry_count = 0
 
             def _on_batch_retry(batch_idx: int, total: int) -> None:
-                nonlocal entry_count, got_header
+                nonlocal batch_entry_count, got_header
                 got_header = False
-                entry_count = entry_count_before_batch  # rollback partial count
+                batch_entry_count = 0  # discard partial count
+
+            def _on_batch_done(batch_idx: int, total: int, entries: int) -> None:
+                nonlocal records_completed, batch_entry_count
+                records_completed = min(batch_idx * batch_size, total_records)
+                batch_entry_count = 0
+                _update_status()
 
             callbacks = BuildCallbacks(
+                on_progress_init=_on_progress_init,
                 on_batch_start=_on_batch_start,
                 on_stream_chunk=_on_stream_chunk if self._on_status_update else None,
+                on_batch_done=_on_batch_done,
                 on_batch_retry=_on_batch_retry,
             )
 
