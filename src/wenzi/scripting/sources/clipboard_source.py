@@ -14,7 +14,6 @@ from typing import Dict, List, Optional
 
 from wenzi.scripting.clipboard_monitor import (
     ClipboardMonitor,
-    _get_app_icon_png,
     _icon_cache_path,
 )
 from wenzi.scripting.sources import ChooserItem, ChooserSource
@@ -192,7 +191,7 @@ class ClipboardSource:
     Supports substring filtering and pastes the selected entry on execute.
     """
 
-    _DEFAULT_MAX_RESULTS = 50
+    _DEFAULT_MAX_RESULTS = 30
 
     _CACHE_TTL = 10.0  # seconds before time-ago strings become stale
 
@@ -205,20 +204,28 @@ class ClipboardSource:
         self._empty_cache_version: int = -1
         self._empty_cache_time: float = 0.0
         self._icon_mem_cache: Dict[str, str] = {}  # bundle_id → data URI or ""
+        self._icon_miss_until: Dict[str, float] = {}  # bundle_id → retry-after ts
+
+    _ICON_MISS_TTL = 30.0  # seconds before rechecking disk for a missed icon
 
     def _get_icon_uri(self, bundle_id: str) -> str:
         """Return base64 data URI for an app icon.
 
-        Primary path: memory cache → disk cache (written by the polling
-        thread via ClipboardMonitor._cache_app_icon).
-
-        Fallback: if the icon is not on disk yet (race condition or old
-        entries), extract it on the main thread and save to disk.
+        Reads from memory cache → disk cache (pre-populated by the
+        polling thread via ClipboardMonitor._cache_app_icon).
+        Never blocks the main thread with icon extraction; returns
+        empty string if the icon is not yet cached.
         """
         if not bundle_id:
             return ""
         if bundle_id in self._icon_mem_cache:
             return self._icon_mem_cache[bundle_id]
+
+        # Avoid repeated disk checks for icons we recently failed to find
+        now = time.time()
+        miss_until = self._icon_miss_until.get(bundle_id, 0.0)
+        if now < miss_until:
+            return ""
 
         icon_dir = self._monitor.icon_cache_dir
 
@@ -230,27 +237,15 @@ class ClipboardSource:
                     png = f.read()
                 uri = _png_to_data_uri(png)
                 self._icon_mem_cache[bundle_id] = uri
+                self._icon_miss_until.pop(bundle_id, None)
                 return uri
             except Exception:
                 pass
 
-        # Fallback: extract on main thread (race condition or old entry)
-        png = _get_app_icon_png(bundle_id)
-        if png is None:
-            self._icon_mem_cache[bundle_id] = ""
-            return ""
-
-        # Save to disk so next time we hit the fast path
-        try:
-            os.makedirs(icon_dir, exist_ok=True)
-            with open(png_path, "wb") as f:
-                f.write(png)
-        except Exception:
-            logger.debug("Failed to cache icon for %s", bundle_id, exc_info=True)
-
-        uri = _png_to_data_uri(png)
-        self._icon_mem_cache[bundle_id] = uri
-        return uri
+        # Icon not cached yet — suppress disk checks for a while.
+        # Polling thread will cache it on the next clipboard change.
+        self._icon_miss_until[bundle_id] = now + self._ICON_MISS_TTL
+        return ""
 
     def search(self, query: str) -> List[ChooserItem]:
         """Search clipboard history entries."""
@@ -302,7 +297,11 @@ class ClipboardSource:
                 def _do_delete_img(ip=ep, m=monitor):
                     m.delete_image(ip)
 
-                preview = self._make_preview(entry)
+                # Lazy preview — image thumbnails are expensive
+                _entry = entry  # capture for lambda
+
+                def _lazy_preview(e=_entry):
+                    return self._make_preview(e)
 
                 results.append(
                     ChooserItem(
@@ -310,7 +309,7 @@ class ClipboardSource:
                         subtitle=f"{subtitle}  {time_ago}".strip() if subtitle else time_ago,
                         icon=self._get_icon_uri(entry.source_bundle_id),
                         item_id=f"cb:img:{ep}",
-                        preview=preview,
+                        preview=_lazy_preview,
                         action=_do_paste_img,
                         secondary_action=_do_copy_img,
                         delete_action=_do_delete_img,
@@ -341,8 +340,6 @@ class ClipboardSource:
                 def _do_delete_text(t=text, m=monitor):
                     m.delete_text(t)
 
-                preview = self._make_preview(entry)
-
                 # Use first 64 chars of text as stable id
                 text_key = text[:64].replace("\n", " ")
                 results.append(
@@ -351,7 +348,7 @@ class ClipboardSource:
                         subtitle=f"{subtitle}  {time_ago}".strip() if subtitle else time_ago,
                         icon=self._get_icon_uri(entry.source_bundle_id),
                         item_id=f"cb:txt:{text_key}",
-                        preview=preview,
+                        preview={"type": "text", "content": text},
                         action=_do_paste,
                         secondary_action=_do_copy,
                         delete_action=_do_delete_text,

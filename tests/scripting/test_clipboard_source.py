@@ -238,7 +238,7 @@ class TestImageEntries:
         assert "Safari" in result[0].subtitle
         assert "ago" in result[0].subtitle
 
-    def test_image_entry_has_preview(self):
+    def test_image_entry_has_lazy_preview(self):
         now = time.time()
         monitor = self._make_monitor_with_entries([
             {
@@ -250,12 +250,14 @@ class TestImageEntries:
             },
         ])
         source = ClipboardSource(monitor)
-        # Patch os.path.isfile to return False (no actual file)
         with patch("os.path.isfile", return_value=False):
             result = source.search("")
+        # Image preview is a lazy callable
         assert result[0].preview is not None
-        assert result[0].preview["type"] == "image"
-        assert result[0].preview["src"] == ""  # no file
+        assert callable(result[0].preview)
+        with patch("os.path.isfile", return_value=False):
+            resolved = result[0].preview()
+        assert resolved["type"] == "image"
 
     def test_image_entry_has_actions(self):
         now = time.time()
@@ -374,13 +376,13 @@ class TestMaxResults:
         result = source.search("")
         assert len(result) == 10
 
-    def test_max_results_default_is_50(self):
+    def test_max_results_default_is_30(self):
         now = time.time()
         entries = [{"text": f"entry {i}", "timestamp": now - i} for i in range(80)]
         monitor = self._make_monitor_with_entries(entries)
         source = ClipboardSource(monitor)
         result = source.search("")
-        assert len(result) == 50
+        assert len(result) == 30
 
     def test_max_results_with_filter(self):
         now = time.time()
@@ -600,8 +602,8 @@ class TestIconCaching:
         assert bundle_id in source._icon_mem_cache
         assert source._icon_mem_cache[bundle_id].startswith("data:image/png;base64,")
 
-    def test_fallback_extracts_on_main_thread(self, tmp_path):
-        """When disk cache is empty (race condition), fallback extracts icon."""
+    def test_uncached_icon_returns_empty_no_block(self, tmp_path):
+        """When disk cache is empty, return empty (no main-thread fallback)."""
         icon_dir = str(tmp_path / "icons")
         monitor = self._make_monitor(
             [{
@@ -611,38 +613,63 @@ class TestIconCaching:
             icon_cache_dir=icon_dir,
         )
         source = ClipboardSource(monitor)
-        with patch(
-            "wenzi.scripting.sources.clipboard_source._get_app_icon_png",
-            return_value=self._FAKE_PNG,
-        ):
-            result = source.search("")
+        result = source.search("")
+        assert result[0].icon == ""
 
-        assert result[0].icon.startswith("data:image/png;base64,")
-        # Verify fallback saved to disk
-        from wenzi.scripting.clipboard_monitor import _icon_cache_path
-        assert os.path.isfile(_icon_cache_path(icon_dir, "com.apple.Notes"))
-
-    def test_fallback_missing_app_caches_empty_string(self, tmp_path):
+    def test_disk_miss_suppressed_by_ttl(self, tmp_path):
+        """Repeated disk misses are suppressed by TTL."""
         icon_dir = str(tmp_path / "icons")
+        os.makedirs(icon_dir)
         monitor = self._make_monitor(
             [{
                 "text": "hello", "timestamp": time.time(),
-                "source_bundle_id": "com.nonexistent.app",
+                "source_bundle_id": "com.test.app",
             }],
             icon_cache_dir=icon_dir,
         )
         source = ClipboardSource(monitor)
-        with patch(
-            "wenzi.scripting.sources.clipboard_source._get_app_icon_png",
-            return_value=None,
-        ):
-            result = source.search("")
-        assert result[0].icon == ""
-        assert source._icon_mem_cache["com.nonexistent.app"] == ""
+        source.search("")
+        # Second search should not re-check disk (suppressed by TTL)
+        assert "com.test.app" in source._icon_miss_until
+
+    def test_disk_miss_recovery_after_cache(self, tmp_path):
+        """When icon appears on disk after a miss, it's picked up."""
+        icon_dir = str(tmp_path / "icons")
+        os.makedirs(icon_dir)
+        bundle_id = "com.apple.Notes"
+
+        monitor = self._make_monitor(
+            [{
+                "text": "hello", "timestamp": time.time(),
+                "source_bundle_id": bundle_id,
+            }],
+            icon_cache_dir=icon_dir,
+        )
+        source = ClipboardSource(monitor)
+        source.search("")
+        assert source._icon_mem_cache.get(bundle_id) is None
+
+        # Simulate polling thread caching the icon
+        from wenzi.scripting.clipboard_monitor import _icon_cache_path
+        with open(_icon_cache_path(icon_dir, bundle_id), "wb") as f:
+            f.write(self._FAKE_PNG)
+        # Expire the miss TTL and invalidate empty-query cache
+        source._icon_miss_until[bundle_id] = 0
+        source._empty_cache = None
+
+        result = source.search("")
+        assert result[0].icon.startswith("data:image/png;base64,")
+        assert bundle_id in source._icon_mem_cache
 
     def test_image_entry_also_gets_icon(self, tmp_path):
         icon_dir = str(tmp_path / "icons")
         bundle_id = "com.apple.Safari"
+
+        # Pre-cache icon on disk
+        os.makedirs(icon_dir)
+        from wenzi.scripting.clipboard_monitor import _icon_cache_path
+        with open(_icon_cache_path(icon_dir, bundle_id), "wb") as f:
+            f.write(self._FAKE_PNG)
 
         monitor = self._make_monitor(
             [{
@@ -656,10 +683,7 @@ class TestIconCaching:
             icon_cache_dir=icon_dir,
         )
         source = ClipboardSource(monitor)
-        with patch(
-            "wenzi.scripting.sources.clipboard_source._get_app_icon_png",
-            return_value=self._FAKE_PNG,
-        ), patch.object(
+        with patch.object(
             source, "_make_image_preview",
             return_value={"type": "image", "src": "", "info": ""},
         ):

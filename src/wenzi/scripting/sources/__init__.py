@@ -22,7 +22,8 @@ class ChooserItem:
     subtitle: str = ""
     icon: str = ""  # data: URI (base64 PNG) or empty
     item_id: str = ""  # Stable identifier for usage tracking
-    preview: Optional[Dict] = field(default=None, repr=False)  # {"type": "text"|"image", ...}
+    # {"type": "text"|"image", ...} or a callable returning such a dict
+    preview: object = field(default=None, repr=False)
     action: Optional[Callable] = field(default=None, repr=False)
     secondary_action: Optional[Callable] = field(default=None, repr=False)  # Cmd+Enter
     reveal_path: Optional[str] = None  # For Cmd+Enter (reveal in Finder)

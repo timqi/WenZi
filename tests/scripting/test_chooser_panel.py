@@ -411,32 +411,29 @@ class TestPushItemsToJS:
         assert '"Web browser"' in call_args
         assert '"hasReveal": true' in call_args
 
-    def test_serializes_preview(self):
+    def test_preview_only_for_selected_item(self):
+        """Only the selected item (default 0) includes inline preview."""
         panel = _make_panel()
         panel._current_items = [
             ChooserItem(
-                title="Test",
-                preview={"type": "text", "content": "hello world"},
+                title="First",
+                preview={"type": "text", "content": "hello"},
+            ),
+            ChooserItem(
+                title="Second",
+                preview={"type": "text", "content": "world"},
             ),
         ]
         panel._push_items_to_js()
         call_args = panel._eval_js.call_args[0][0]
-        # Format: setResults([...],version) — extract the JSON array
-        inner = call_args[len("setResults("):-1]
+        sr_part = call_args.split(";")[0]
+        inner = sr_part[len("setResults("):-1]
         json_part = inner.rsplit(",", 1)[0]
         parsed = json.loads(json_part)
-        assert parsed[0]["preview"]["type"] == "text"
-        assert parsed[0]["preview"]["content"] == "hello world"
-
-    def test_no_preview_key_when_none(self):
-        panel = _make_panel()
-        panel._current_items = [ChooserItem(title="Test")]
-        panel._push_items_to_js()
-        call_args = panel._eval_js.call_args[0][0]
-        inner = call_args[len("setResults("):-1]
-        json_part = inner.rsplit(",", 1)[0]
-        parsed = json.loads(json_part)
-        assert "preview" not in parsed[0]
+        # First item (selected) has preview
+        assert parsed[0]["preview"]["content"] == "hello"
+        # Second item does not
+        assert "preview" not in parsed[1]
 
     def test_version_increments(self):
         panel = _make_panel()

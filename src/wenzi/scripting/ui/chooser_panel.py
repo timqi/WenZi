@@ -164,6 +164,8 @@ class ChooserPanel:
         self._sources: Dict[str, ChooserSource] = {}
         self._current_items: List[ChooserItem] = []
         self._items_version: int = 0  # incremented on every setResults push
+        self._js_icon_cache: dict[str, str] = {}  # icon data URI → short key
+        self._js_icon_counter: int = 0
         self._closing: bool = False
         self._last_query: str = ""  # Track query for usage recording
 
@@ -224,6 +226,8 @@ class ChooserPanel:
         self._on_close = on_close
         self._pending_initial_query = initial_query
         self._pending_placeholder = placeholder
+        self._js_icon_cache.clear()
+        self._js_icon_counter = 0
 
         if self._panel is not None and self._panel.isVisible():
             # Already visible — apply initial query if provided, else focus
@@ -325,6 +329,9 @@ class ChooserPanel:
         ``cb hello``), the matching source is activated and the prefix is
         stripped.  Otherwise all non-prefix sources are searched.
         """
+        import time as _time
+        _t0 = _time.perf_counter()
+
         self._last_query = query
         source = None
 
@@ -356,24 +363,50 @@ class ChooserPanel:
                     continue  # Skip prefix-only sources
                 if src.search is not None:
                     try:
+                        _ts = _time.perf_counter()
                         all_items.extend(src.search(query))
+                        _te = _time.perf_counter()
+                        logger.debug(
+                            "[perf] source %s search: %.1fms (%d items)",
+                            src.name, (_te - _ts) * 1000, len(all_items),
+                        )
                     except Exception:
                         logger.exception("Chooser source %s search error", src.name)
             self._current_items = all_items[:self._MAX_TOTAL_RESULTS]
         else:
             try:
+                _ts = _time.perf_counter()
                 items = source.search(query) if source.search else []
+                _te = _time.perf_counter()
+                logger.debug(
+                    "[perf] source %s search: %.1fms (%d items)",
+                    source.name, (_te - _ts) * 1000, len(items),
+                )
                 self._current_items = items[:self._MAX_TOTAL_RESULTS]
             except Exception:
                 logger.exception("Chooser source %s search error", source.name)
                 self._current_items = []
 
         # Apply usage-based boosting
+        _tb = _time.perf_counter()
         if self._usage_tracker and self._current_items:
             self._boost_by_usage(query)
+        _tb2 = _time.perf_counter()
 
-        self._push_items_to_js()
-        self._push_action_hints(source)
+        _tp = _time.perf_counter()
+        self._push_items_to_js(source=source)
+        _tp2 = _time.perf_counter()
+
+        _total = _time.perf_counter()
+        logger.debug(
+            "[perf] _do_search total: %.1fms "
+            "(boost=%.1fms, push=%.1fms, items=%d, query=%r)",
+            (_total - _t0) * 1000,
+            (_tb2 - _tb) * 1000,
+            (_tp2 - _tp) * 1000,
+            len(self._current_items),
+            query[:20],
+        )
 
     def _boost_by_usage(self, query: str) -> None:
         """Re-sort items by usage frequency while preserving source order."""
@@ -386,15 +419,41 @@ class ChooserPanel:
         scored.sort(key=lambda x: (x[0], x[1]))
         self._current_items = [item for _, _, item in scored]
 
-    def _push_items_to_js(self, selected_index: Optional[int] = None) -> None:
-        """Serialize current items and send to the web view."""
+    _DEFAULT_ACTION_HINTS = {
+        "enter": "Open",
+        "cmd_enter": "Reveal",
+    }
+
+    def _push_items_to_js(
+        self,
+        selected_index: Optional[int] = None,
+        source=None,
+    ) -> None:
+        """Serialize current items and send to the web view.
+
+        Builds a single JS snippet combining icon cache updates, result
+        items, and action hints to minimise evaluateJavaScript round-trips.
+        """
         self._items_version += 1
+
+        # Collect new icons that JS hasn't seen yet
+        new_icons: dict[str, str] = {}
         js_items = []
         for item in self._current_items:
-            js_item = {
+            icon_key = ""
+            if item.icon:
+                if item.icon in self._js_icon_cache:
+                    icon_key = self._js_icon_cache[item.icon]
+                else:
+                    self._js_icon_counter += 1
+                    icon_key = f"i{self._js_icon_counter}"
+                    self._js_icon_cache[item.icon] = icon_key
+                    new_icons[icon_key] = item.icon
+
+            js_item: dict = {
                 "title": item.title,
                 "subtitle": item.subtitle,
-                "icon": item.icon,
+                "iconKey": icon_key,
                 "badge": "",
                 "hasReveal": (
                     item.reveal_path is not None
@@ -403,30 +462,46 @@ class ChooserPanel:
                 "hasModifiers": bool(item.modifiers),
                 "deletable": item.delete_action is not None,
             }
-            if item.preview is not None:
-                js_item["preview"] = item.preview
+            # Include preview only for the selected item to keep payload
+            # small while avoiding an extra bridge round-trip.
+            sel = (
+                selected_index if selected_index is not None else 0
+            )
+            if len(js_items) == sel and item.preview is not None:
+                preview = item.preview
+                if callable(preview):
+                    try:
+                        preview = preview()
+                    except Exception:
+                        preview = None
+                    item.preview = preview  # cache resolved value
+                if preview is not None:
+                    js_item["preview"] = preview
             js_items.append(js_item)
+
+        # Build a single JS snippet
+        parts: list[str] = []
+        if new_icons:
+            parts.append(
+                f"setIconCache({json.dumps(new_icons, ensure_ascii=False)})"
+            )
+
         idx_arg = "" if selected_index is None else f",{selected_index}"
-        self._eval_js(
+        parts.append(
             f"setResults({json.dumps(js_items, ensure_ascii=False)},"
             f"{self._items_version}{idx_arg})"
         )
 
-    _DEFAULT_ACTION_HINTS = {
-        "enter": "Open",
-        "cmd_enter": "Reveal",
-    }
-
-    def _push_action_hints(self, source) -> None:
-        """Send source-specific action hints to the JS footer."""
         hints = (
             source.action_hints
             if source is not None and source.action_hints
             else self._DEFAULT_ACTION_HINTS
         )
-        self._eval_js(
+        parts.append(
             f"setActionHints({json.dumps(hints, ensure_ascii=False)})"
         )
+
+        self._eval_js(";".join(parts))
 
     # ------------------------------------------------------------------
     # JS message handler
@@ -434,11 +509,17 @@ class ChooserPanel:
 
     def _handle_js_message(self, body: dict) -> None:
         """Dispatch messages from JavaScript."""
+        import time as _time
+        _t0 = _time.perf_counter()
         msg_type = body.get("type", "")
 
         if msg_type == "search":
             query = body.get("query", "")
             self._do_search(query)
+            logger.debug(
+                "[perf] handle 'search' message total: %.1fms",
+                (_time.perf_counter() - _t0) * 1000,
+            )
 
         elif msg_type == "execute":
             index = body.get("index", 0)
@@ -450,6 +531,9 @@ class ChooserPanel:
             index = body.get("index", 0)
             version = body.get("version", self._items_version)
             self._reveal_item(index, version)
+
+        elif msg_type == "log":
+            logger.debug("%s", body.get("text", ""))
 
         elif msg_type == "close":
             from PyObjCTools import AppHelper
@@ -583,11 +667,23 @@ class ChooserPanel:
         """Send preview data for the item at *index* to JS."""
         if 0 <= index < len(self._current_items):
             item = self._current_items[index]
-            if item.preview is not None:
-                self._eval_js(
-                    f"setPreview({json.dumps(item.preview, ensure_ascii=False)})"
-                )
-                return
+            preview = item.preview
+            if preview is not None:
+                # Resolve lazy preview (callable → dict)
+                if callable(preview):
+                    try:
+                        preview = preview()
+                    except Exception:
+                        logger.debug("Preview provider error", exc_info=True)
+                        preview = None
+                    # Cache the resolved result
+                    item.preview = preview
+                if preview is not None:
+                    self._eval_js(
+                        f"setPreview("
+                        f"{json.dumps(preview, ensure_ascii=False)})"
+                    )
+                    return
         self._eval_js("setPreview(null)")
 
     # ------------------------------------------------------------------

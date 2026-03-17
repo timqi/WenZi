@@ -233,6 +233,7 @@ var items = [];
 var selectedIndex = -1;
 var itemsVersion = 0;
 var hasAnyIcon = false;  // true when at least one item has an icon
+var _iconCache = {};  // iconKey → data URI
 var _lastMouseX = -1, _lastMouseY = -1;  // suppress scroll-induced hover
 var _PLACEHOLDER_SVG = "data:image/svg+xml,"
     + "%3Csvg xmlns='http://www.w3.org/2000/svg' "
@@ -339,10 +340,11 @@ function _createRow(item, i) {
     var row = document.createElement('div');
     row.className = 'result-item' + (i === selectedIndex ? ' selected' : '');
 
-    if (item.icon) {
+    var _iconSrc = item.iconKey ? _iconCache[item.iconKey] : null;
+    if (_iconSrc) {
         var img = document.createElement('img');
         img.className = 'icon';
-        img.src = item.icon;
+        img.src = _iconSrc;
         img.draggable = false;
         row.appendChild(img);
     } else if (hasAnyIcon) {
@@ -439,7 +441,6 @@ function updatePreview() {
         if (item.preview) {
             setPreview(item.preview);
         } else {
-            // Request preview from Python (for lazy-loaded content)
             post('requestPreview', { index: selectedIndex });
         }
     } else {
@@ -612,10 +613,17 @@ document.addEventListener('keyup', function(e) {
 
 // --- Python -> JS API ---
 
+function setIconCache(icons) {
+    for (var key in icons) {
+        _iconCache[key] = icons[key];
+    }
+}
+
 function setResults(newItems, version, selectedIdx) {
+    var _t0 = performance.now();
     items = newItems || [];
     itemsVersion = version || 0;
-    hasAnyIcon = items.some(function(it) { return !!it.icon; });
+    hasAnyIcon = items.some(function(it) { return !!it.iconKey; });
     if (typeof selectedIdx === 'number') {
         // Preserve scroll position for delete/refresh operations
         selectedIndex = Math.max(0, Math.min(selectedIdx, items.length - 1));
@@ -639,6 +647,13 @@ function setResults(newItems, version, selectedIdx) {
             resultList.scrollTop = itemBottom - viewportHeight;
             _renderVisibleRows();
         }
+    }
+    var _elapsed = performance.now() - _t0;
+    if (_elapsed > 2) {
+        window.webkit.messageHandlers.chooser.postMessage({
+            type: 'log',
+            text: '[perf] setResults JS: ' + _elapsed.toFixed(1) + 'ms (' + items.length + ' items)'
+        });
     }
 }
 
