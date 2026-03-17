@@ -6,6 +6,7 @@ import logging
 from typing import Callable, Dict, List, Optional
 
 from wenzi.scripting.sources import ChooserItem, ChooserSource, ModifierAction
+from wenzi.scripting.sources.command_source import CommandEntry, CommandSource
 from wenzi.scripting.ui.chooser_panel import ChooserPanel
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class ChooserAPI:
         self._panel = ChooserPanel()
         self._panel._event_callback = self._fire_event
         self._event_handlers: Dict[str, List[Callable]] = {}
+        self._command_source = CommandSource()
 
     @property
     def panel(self) -> ChooserPanel:
@@ -67,6 +69,11 @@ class ChooserAPI:
     def _get_panel(self) -> ChooserPanel:
         """Internal access to the panel instance."""
         return self._panel
+
+    def _ensure_command_source(self) -> None:
+        """Re-register the command source if it was removed (e.g. by disable_chooser)."""
+        if "commands" not in self._panel._sources:
+            self._panel.register_source(self._command_source.as_chooser_source())
 
     def register_source(self, source: ChooserSource) -> None:
         """Register a data source."""
@@ -120,10 +127,10 @@ class ChooserAPI:
     # pick() — use the chooser as a generic selection UI
     # ------------------------------------------------------------------
 
-    # Reserved prefix for pick() mode.  Using ``>`` keeps the UI clean
-    # (resembles a command prompt) while isolating pick items from other
-    # sources.  User-defined sources should avoid this prefix.
-    _PICK_PREFIX = ">"
+    # Reserved prefix for pick() mode.  Using ``?`` isolates pick items
+    # from other sources.  ``>`` is reserved for the command source.
+    # User-defined sources should avoid both prefixes.
+    _PICK_PREFIX = "?"
 
     def pick(
         self,
@@ -137,7 +144,7 @@ class ChooserAPI:
         dict.  If the user dismisses the panel without selecting, *callback*
         is called with ``None``.
 
-        The pick source is isolated via a reserved ``>`` prefix so that
+        The pick source is isolated via a reserved ``?`` prefix so that
         other registered sources do not contribute results.
 
         Args:
@@ -243,6 +250,79 @@ class ChooserAPI:
                 handler(*args)
             except Exception:
                 logger.exception("Chooser event handler error (%s)", event)
+
+    # ------------------------------------------------------------------
+    # Source decorator
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Command registration
+    # ------------------------------------------------------------------
+
+    def register_command(
+        self,
+        name: str,
+        title: str,
+        action: Callable[[str], None],
+        subtitle: str = "",
+        icon: str = "",
+        modifiers: Optional[Dict] = None,
+    ) -> None:
+        """Register a named command in the command palette (``>`` prefix).
+
+        Args:
+            name: Unique command name (single token, e.g. ``"reload-scripts"``).
+            title: Human-readable title shown in the launcher.
+            action: Callback receiving the args string: ``action(args)``.
+            subtitle: Optional description shown below the title.
+            icon: Optional icon (``file://`` URL or ``data:`` URI).
+            modifiers: Optional modifier actions, e.g.
+                ``{"alt": {"subtitle": "Force", "action": callable}}``.
+        """
+        entry = CommandEntry(
+            name=name,
+            title=title,
+            subtitle=subtitle,
+            icon=icon,
+            action=action,
+            modifiers=_parse_modifiers(modifiers),
+        )
+        self._command_source.register(entry)
+
+    def unregister_command(self, name: str) -> None:
+        """Remove a registered command by name."""
+        self._command_source.unregister(name)
+
+    def command(
+        self,
+        name: str,
+        title: str,
+        subtitle: str = "",
+        icon: str = "",
+        modifiers: Optional[Dict] = None,
+    ) -> Callable:
+        """Decorator to register a function as a chooser command.
+
+        The decorated function receives a single ``args`` string::
+
+            @wz.chooser.command("greet", title="Greet")
+            def greet(args):
+                name = args.strip() or "World"
+                wz.notify.show(f"Hello, {name}!")
+        """
+
+        def decorator(func: Callable[[str], None]) -> Callable:
+            self.register_command(
+                name=name,
+                title=title,
+                action=func,
+                subtitle=subtitle,
+                icon=icon,
+                modifiers=modifiers,
+            )
+            return func
+
+        return decorator
 
     # ------------------------------------------------------------------
     # Source decorator

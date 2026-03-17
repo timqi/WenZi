@@ -101,6 +101,8 @@ class ScriptEngine:
     def enable_chooser(self) -> None:
         """Enable the chooser at runtime: register sources, bind hotkeys."""
         self._register_builtin_sources()
+        # Re-register the built-in command source (cleared by disable_chooser)
+        self._wz.chooser._ensure_command_source()
         self._bind_chooser_hotkey()
         self._bind_source_hotkeys()
         self._wz.hotkey.start()
@@ -349,6 +351,9 @@ class ScriptEngine:
         if not chooser_config.get("enabled", True):
             logger.info("Chooser disabled via config, skipping source registration")
             return
+
+        # Command source (always registered when chooser is enabled)
+        self._wz.chooser._ensure_command_source()
 
         # Usage learning tracker
         if chooser_config.get("usage_learning", True):

@@ -807,6 +807,10 @@ class ChooserPanel:
             expanded = body.get("expanded", False)
             self._resize_panel(expanded)
 
+        elif msg_type == "tab":
+            index = body.get("index", -1)
+            self._handle_tab_complete(index)
+
         elif msg_type == "shiftPreview":
             is_open = body.get("open", False)
             index = body.get("index", -1)
@@ -837,6 +841,41 @@ class ChooserPanel:
         self._history_index = new_index
         query = history[new_index]
         self._eval_js(f"setHistoryQuery({json.dumps(query)})")
+
+    def _handle_tab_complete(self, index: int) -> None:
+        """Handle Tab key: call active source's complete callback."""
+        query = self._last_query or ""
+
+        # Resolve the active prefix source from the current query
+        source = None
+        prefix_str = ""
+        for src in self._sources.values():
+            if src.prefix:
+                trigger = src.prefix + " "
+                if query.startswith(trigger):
+                    source = src
+                    prefix_str = trigger
+                    break
+
+        if source is None or source.complete is None:
+            return
+
+        stripped_query = query[len(prefix_str):]
+        if not (0 <= index < len(self._current_items)):
+            return
+
+        item = self._current_items[index]
+        try:
+            completed = source.complete(stripped_query, item)
+        except Exception:
+            logger.exception("Tab complete error for source %s", source.name)
+            return
+
+        if completed is None:
+            return
+
+        new_query = prefix_str + completed
+        self._eval_js(f"setInputValue({json.dumps(new_query, ensure_ascii=False)})")
 
     def _delete_item(self, index: int, version: int = 0) -> None:
         """Delete an item and refresh the list, preserving selection position."""

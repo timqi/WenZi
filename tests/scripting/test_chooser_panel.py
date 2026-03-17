@@ -1636,3 +1636,97 @@ class TestCompactCalcHeight:
              patch("wenzi.scripting.ui.chooser_panel.restore_accessory"):
             panel.close()
         assert panel._compact_results is False
+
+
+class TestTabCompletion:
+    def test_tab_calls_complete_and_updates_input(self):
+        panel = _make_panel()
+
+        def _complete(query, item):
+            return "greet "
+
+        src = ChooserSource(
+            name="commands",
+            prefix=">",
+            search=lambda q: [ChooserItem(title="Greet", item_id="cmd:greet")],
+            complete=_complete,
+        )
+        panel.register_source(src)
+
+        # Simulate search to populate items
+        panel._do_search("> gre")
+        assert len(panel._current_items) == 1
+
+        # Simulate Tab press
+        panel._handle_tab_complete(0)
+        # Should call setInputValue with prefix + completed query
+        panel._eval_js.assert_called_with('setInputValue("> greet ")')
+
+    def test_tab_noop_without_prefix_source(self):
+        panel = _make_panel()
+        panel.register_source(
+            _make_source("apps", items=[ChooserItem(title="Safari")])
+        )
+        panel._do_search("saf")
+        call_count = panel._eval_js.call_count
+        panel._handle_tab_complete(0)
+        # No additional JS calls — Tab is a no-op
+        assert panel._eval_js.call_count == call_count
+
+    def test_tab_noop_without_complete_callback(self):
+        panel = _make_panel()
+        src = ChooserSource(
+            name="clipboard",
+            prefix="cb",
+            search=lambda q: [ChooserItem(title="Hello")],
+            # No complete callback
+        )
+        panel.register_source(src)
+        panel._do_search("cb hello")
+        call_count = panel._eval_js.call_count
+        panel._handle_tab_complete(0)
+        assert panel._eval_js.call_count == call_count
+
+    def test_tab_noop_invalid_index(self):
+        panel = _make_panel()
+        src = ChooserSource(
+            name="commands",
+            prefix=">",
+            search=lambda q: [ChooserItem(title="Greet", item_id="cmd:greet")],
+            complete=lambda q, i: "greet ",
+        )
+        panel.register_source(src)
+        panel._do_search("> gre")
+        call_count = panel._eval_js.call_count
+        panel._handle_tab_complete(5)  # Out of range
+        assert panel._eval_js.call_count == call_count
+
+    def test_tab_complete_returns_none(self):
+        panel = _make_panel()
+        src = ChooserSource(
+            name="commands",
+            prefix=">",
+            search=lambda q: [ChooserItem(title="Unknown")],
+            complete=lambda q, i: None,
+        )
+        panel.register_source(src)
+        panel._do_search("> unk")
+        call_count = panel._eval_js.call_count
+        panel._handle_tab_complete(0)
+        assert panel._eval_js.call_count == call_count
+
+    def test_tab_message_dispatched(self):
+        panel = _make_panel()
+        src = ChooserSource(
+            name="commands",
+            prefix=">",
+            search=lambda q: [ChooserItem(title="Greet", item_id="cmd:greet")],
+            complete=lambda q, i: "greet ",
+        )
+        panel.register_source(src)
+        panel._do_search("> gre")
+
+        panel._handle_js_message({"type": "tab", "index": 0})
+        # Verify setInputValue was called
+        calls = [str(c) for c in panel._eval_js.call_args_list]
+        assert any("setInputValue" in c for c in calls)

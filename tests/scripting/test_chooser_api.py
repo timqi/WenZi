@@ -199,17 +199,17 @@ class TestChooserAPI:
         with patch("PyObjCTools.AppHelper.callAfter") as mock_call:
             api.pick(items, callback=lambda item: results.append(item))
             mock_call.assert_called_once()
-            # Should pre-fill with "> " prefix for source isolation
+            # Should pre-fill with "? " prefix for source isolation
             _, kwargs = mock_call.call_args
-            assert kwargs.get("initial_query") == "> "
+            assert kwargs.get("initial_query") == "? "
             assert kwargs.get("placeholder") == "Choose..."
 
-        # A temporary source should be registered with prefix ">"
+        # A temporary source should be registered with prefix "?"
         source_names = list(api.panel._sources.keys())
         pick_sources = [n for n in source_names if n.startswith("__pick_")]
         assert len(pick_sources) == 1
         src = api.panel._sources[pick_sources[0]]
-        assert src.prefix == ">"
+        assert src.prefix == "?"
 
         # Search should return items when query is empty
         found = src.search("")
@@ -363,3 +363,74 @@ class TestChooserAPI:
             api.pick([{"title": "A"}], callback=lambda item: None)
             _, kwargs = mock_call.call_args
             assert kwargs.get("placeholder") == "Choose..."
+
+
+class TestChooserAPICommands:
+    def test_register_command(self):
+        api = ChooserAPI()
+        api.register_command(
+            name="test-cmd",
+            title="Test Command",
+            action=lambda args: None,
+        )
+        assert "test-cmd" in api._command_source._commands
+
+    def test_unregister_command(self):
+        api = ChooserAPI()
+        api.register_command(
+            name="test-cmd",
+            title="Test Command",
+            action=lambda args: None,
+        )
+        api.unregister_command("test-cmd")
+        assert "test-cmd" not in api._command_source._commands
+
+    def test_command_decorator(self):
+        api = ChooserAPI()
+        called = []
+
+        @api.command("greet", title="Greet", subtitle="Say hello")
+        def greet(args):
+            called.append(args)
+
+        assert "greet" in api._command_source._commands
+        entry = api._command_source._commands["greet"]
+        assert entry.title == "Greet"
+        assert entry.subtitle == "Say hello"
+        entry.action("World")
+        assert called == ["World"]
+
+    def test_command_decorator_with_modifiers(self):
+        api = ChooserAPI()
+        alt_called = []
+
+        @api.command(
+            "deploy", title="Deploy",
+            modifiers={"alt": {"subtitle": "Force", "action": lambda a: alt_called.append(a)}},
+        )
+        def deploy(args):
+            pass
+
+        entry = api._command_source._commands["deploy"]
+        assert entry.modifiers is not None
+        assert "alt" in entry.modifiers
+        assert entry.modifiers["alt"].subtitle == "Force"
+
+    def test_command_source_not_registered_on_init(self):
+        api = ChooserAPI()
+        # Command source is registered lazily via _ensure_command_source
+        assert "commands" not in api.panel._sources
+
+    def test_ensure_command_source_registers(self):
+        api = ChooserAPI()
+        api._ensure_command_source()
+        assert "commands" in api.panel._sources
+        src = api.panel._sources["commands"]
+        assert src.prefix == ">"
+
+    def test_ensure_command_source_after_clear(self):
+        api = ChooserAPI()
+        api.panel._sources.clear()
+        assert "commands" not in api.panel._sources
+        api._ensure_command_source()
+        assert "commands" in api.panel._sources

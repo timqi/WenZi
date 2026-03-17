@@ -47,9 +47,12 @@ class ChooserSource:
     search: Callable[[str], List[ChooserItem]] = field(default=None, repr=False)
     priority: int = 0  # Higher values appear first
     action_hints: Optional[Dict[str, str]] = field(default=None, repr=False)
-    # action_hints keys: "enter", "cmd_enter", "delete"
+    # action_hints keys: "enter", "cmd_enter", "delete", "tab"
     # e.g. {"enter": "Paste", "cmd_enter": "Copy", "delete": "Delete"}
     show_preview: bool = False  # Show the preview panel when this source is active
+    complete: Optional[Callable[[str, "ChooserItem"], Optional[str]]] = field(
+        default=None, repr=False,
+    )  # Tab completion: (query, selected_item) -> completed query (without prefix) or None
 
 
 # ---------------------------------------------------------------------------

@@ -540,6 +540,11 @@ searchInput.addEventListener('input', function() {
 
 // --- Keyboard navigation ---
 document.addEventListener('keydown', function(e) {
+    // Discard leading space when input is empty
+    if (e.key === ' ' && searchInput.value === '') {
+        e.preventDefault();
+        return;
+    }
     if (e.key === 'Escape') {
         e.preventDefault();
         if (qlPreviewOpen) {
@@ -564,6 +569,13 @@ document.addEventListener('keydown', function(e) {
             post('historyUp');
         } else {
             updateSelection(selectedIndex - 1);
+        }
+        return;
+    }
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        if (selectedIndex >= 0 && selectedIndex < items.length) {
+            post('tab', { index: selectedIndex });
         }
         return;
     }
@@ -696,17 +708,6 @@ function setResults(newItems, version, selectedIdx) {
 
 function setPrefixHints(hints) {
     prefixHints = hints || [];
-    if (hints.length > 0) {
-        footerRight.textContent = hints.join('  ');
-    } else {
-        footerRight.textContent = '';
-    }
-    // Update placeholder with prefix hints
-    if (hints.length > 0) {
-        searchInput.placeholder = 'Search...  (' + hints.join(', ') + ')';
-    } else {
-        searchInput.placeholder = 'Search...';
-    }
 }
 
 function setModifierSubtitle(index, subtitle) {
@@ -788,6 +789,9 @@ function setActionHints(hints) {
     }
     if (hints.shift) {
         parts.push('<kbd>\u21e7</kbd> ' + hints.shift);
+    }
+    if (hints.tab) {
+        parts.push('<kbd>\u21e5</kbd> ' + hints.tab);
     }
     parts.push('<kbd>Esc</kbd> Close');
     footerLeft.innerHTML = parts.join('  ');
