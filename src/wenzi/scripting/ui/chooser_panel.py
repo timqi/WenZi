@@ -187,6 +187,7 @@ class ChooserPanel:
         self._previous_app = None  # NSRunningApplication saved on show()
         self._ql_panel = None  # Quick Look preview panel
         self._calc_mode: bool = False  # Calculator pin mode
+        self._calc_sticky: bool = False  # Sticky: keep pinned for incomplete expressions
         self._esc_tap = None  # CGEventTap for global ESC
         self._esc_source = None  # CFRunLoopSource for ESC tap
         self._is_expanded: bool = False  # Panel height state
@@ -269,7 +270,7 @@ class ChooserPanel:
                 pass
 
             # Calculator mode: keep panel visible, listen for ESC
-            if self._has_calc_results():
+            if self._should_pin_for_calc():
                 self._enter_calc_mode()
                 return
 
@@ -289,6 +290,10 @@ class ChooserPanel:
             item.item_id.startswith("calc:") for item in self._current_items
         )
 
+    def _should_pin_for_calc(self) -> bool:
+        """Whether the panel should stay visible for calculator use."""
+        return self._has_calc_results() or self._calc_sticky
+
     def _update_hides_on_deactivate(self) -> None:
         """Set hidesOnDeactivate based on whether calc results are present.
 
@@ -297,7 +302,7 @@ class ChooserPanel:
         """
         if self._panel is not None:
             try:
-                self._panel.setHidesOnDeactivate_(not self._has_calc_results())
+                self._panel.setHidesOnDeactivate_(not self._should_pin_for_calc())
             except Exception:
                 pass
 
@@ -462,6 +467,7 @@ class ChooserPanel:
         if self._closing:
             return
         self._closing = True
+        self._calc_sticky = False
         self._exit_calc_mode()
 
         if self._ql_panel is not None:
@@ -558,6 +564,7 @@ class ChooserPanel:
         if source is None:
             if not query.strip():
                 self._current_items = []
+                self._calc_sticky = False
                 self._eval_js("setResults([])")
                 self._update_hides_on_deactivate()
                 return
@@ -587,6 +594,12 @@ class ChooserPanel:
         # Apply usage-based boosting
         if self._usage_tracker and self._current_items:
             self._boost_by_usage(query)
+
+        # Update calculator sticky mode
+        if self._has_calc_results():
+            self._calc_sticky = True
+        elif not any(ch.isdigit() for ch in query):
+            self._calc_sticky = False
 
         self._update_hides_on_deactivate()
         self._push_items_to_js(source=source)

@@ -1181,6 +1181,90 @@ class TestCalcMode:
         assert panel._calc_mode is False
         panel._stop_esc_tap.assert_called_once()
 
+    def test_calc_sticky_set_on_calc_result(self):
+        """_calc_sticky should be set when calc results appear."""
+        panel = _make_panel()
+        panel._panel = MagicMock()
+        calc_source = _make_source(
+            "calculator", items=[_make_calc_item()], priority=12,
+        )
+        panel.register_source(calc_source)
+        panel._do_search("2 + 3")
+        assert panel._calc_sticky is True
+
+    def test_calc_sticky_persists_for_incomplete_expression(self):
+        """_calc_sticky should keep hidesOnDeactivate=False for incomplete expressions."""
+        panel = _make_panel()
+        panel._panel = MagicMock()
+        calc_source = _make_source(
+            "calculator", items=[_make_calc_item()], priority=12,
+        )
+        panel.register_source(calc_source)
+
+        # First: complete expression → sticky set
+        panel._do_search("2 + 3")
+        assert panel._calc_sticky is True
+
+        # Second: incomplete expression (no calc result) but has digits
+        panel._current_items = []  # simulate no calc result
+        panel._do_search("2 + 3 +")
+        assert panel._calc_sticky is True
+        panel._panel.setHidesOnDeactivate_.assert_called_with(False)
+
+    def test_calc_sticky_cleared_on_empty_query(self):
+        panel = _make_panel()
+        panel._panel = MagicMock()
+        panel._calc_sticky = True
+        panel._do_search("")
+        assert panel._calc_sticky is False
+
+    def test_calc_sticky_cleared_on_no_digits(self):
+        """Typing a non-math query should clear _calc_sticky."""
+        panel = _make_panel()
+        panel._panel = MagicMock()
+        panel._calc_sticky = True
+        panel.register_source(
+            _make_source("apps", items=[ChooserItem(title="Safari")])
+        )
+        panel._do_search("safari")
+        assert panel._calc_sticky is False
+
+    def test_calc_sticky_kept_when_digits_present(self):
+        """Query with digits should keep _calc_sticky."""
+        panel = _make_panel()
+        panel._panel = MagicMock()
+        panel._calc_sticky = True
+        panel.register_source(
+            _make_source("apps", items=[ChooserItem(title="App")])
+        )
+        panel._do_search("2+")
+        assert panel._calc_sticky is True
+
+    def test_calc_sticky_cleared_on_close(self):
+        panel = _make_panel()
+        panel._calc_sticky = True
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)), \
+             patch("wenzi.scripting.ui.chooser_panel.restore_accessory"), \
+             patch("wenzi.scripting.ui.chooser_panel.reactivate_app"):
+            panel.close()
+        assert panel._calc_sticky is False
+
+    def test_maybe_close_enters_calc_mode_with_sticky(self):
+        """_maybe_close should enter calc mode when sticky is set (no calc results)."""
+        panel = _make_panel()
+        panel._panel = MagicMock()
+        panel._current_items = []  # No calc results
+        panel._calc_sticky = True  # But sticky from previous calc
+        panel._start_esc_tap = MagicMock()
+
+        with patch("PyObjCTools.AppHelper.callLater") as mock_later, \
+             patch("wenzi.scripting.ui.chooser_panel.restore_accessory"):
+            panel._maybe_close()
+            _check = mock_later.call_args[0][1]
+            _check()
+
+        assert panel._calc_mode is True
+
 
 # ---------------------------------------------------------------------------
 # Panel resize (collapsed ↔ expanded)
