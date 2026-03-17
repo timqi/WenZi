@@ -6,17 +6,135 @@ the "f" prefix (e.g. "f readme").
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import subprocess
-from typing import List, Optional
+import threading
+from typing import List, Optional, Set
 
+from wenzi.config import DEFAULT_ICON_CACHE_DIR as _CFG_ICON_CACHE_DIR
 from wenzi.scripting.sources import ChooserItem, ChooserSource
 from wenzi.scripting.sources._mdquery import mdquery_search
+from wenzi.scripting.sources.app_source import _cache_key as _app_cache_key
 
 logger = logging.getLogger(__name__)
 
 _MAX_RESULTS = 30
+_ICON_SIZE = 32
+_DEFAULT_ICON_CACHE_DIR = os.path.expanduser(_CFG_ICON_CACHE_DIR)
+
+# Common extensions to pre-warm in background on init
+_COMMON_EXTENSIONS = [
+    ".pdf", ".txt", ".md", ".py", ".js", ".ts", ".html", ".css",
+    ".json", ".yaml", ".yml", ".xml", ".png", ".jpg", ".jpeg",
+    ".gif", ".svg", ".mp4", ".mov", ".mp3", ".zip", ".gz", ".dmg",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv",
+    ".sh", ".rb", ".go", ".rs", ".java", ".c", ".cpp", ".h",
+]
+
+
+def _icon_png_path_for_ext(icon_cache_dir: str, ext: str) -> str:
+    """Return the disk cache path for a file-type icon."""
+    safe = ext.lstrip(".") or "_none"
+    return os.path.join(icon_cache_dir, f"filetype_{safe}.png")
+
+
+def _icon_png_path_for_folder(icon_cache_dir: str, path: str) -> str:
+    """Return the disk cache path for a folder icon (hashed by path)."""
+    h = hashlib.md5(path.encode()).hexdigest()
+    return os.path.join(icon_cache_dir, f"folder_{h}.png")
+
+
+def _extract_filetype_icon(ext: str, icon_cache_dir: str) -> None:
+    """Extract icon for a file extension and write to disk cache.
+
+    Uses NSWorkspace.iconForFileType_ which accepts an extension string.
+    Must NOT be called on the main thread.
+    """
+    png_path = _icon_png_path_for_ext(icon_cache_dir, ext)
+    if os.path.isfile(png_path):
+        return
+    try:
+        from AppKit import (
+            NSBitmapImageRep,
+            NSCompositingOperationCopy,
+            NSImage,
+            NSPNGFileType,
+            NSWorkspace,
+        )
+        from Foundation import NSMakeRect, NSSize
+
+        ws = NSWorkspace.sharedWorkspace()
+        icon = ws.iconForFileType_(ext)
+        if icon is None:
+            return
+
+        size = NSSize(_ICON_SIZE, _ICON_SIZE)
+        target = NSImage.alloc().initWithSize_(size)
+        target.lockFocus()
+        icon.drawInRect_fromRect_operation_fraction_(
+            NSMakeRect(0, 0, _ICON_SIZE, _ICON_SIZE),
+            NSMakeRect(0, 0, icon.size().width, icon.size().height),
+            NSCompositingOperationCopy,
+            1.0,
+        )
+        target.unlockFocus()
+
+        rep = NSBitmapImageRep.imageRepWithData_(target.TIFFRepresentation())
+        png_data = rep.representationUsingType_properties_(NSPNGFileType, None)
+        if png_data:
+            os.makedirs(icon_cache_dir, exist_ok=True)
+            with open(png_path, "wb") as f:
+                f.write(bytes(png_data))
+    except Exception:
+        logger.debug("Failed to extract icon for extension %s", ext, exc_info=True)
+
+
+def _extract_folder_icon(path: str, icon_cache_dir: str) -> None:
+    """Extract icon for a specific folder and write to disk cache.
+
+    Uses NSWorkspace.iconForFile_ to get the folder's actual icon
+    (including special icons for Downloads, Documents, etc.).
+    Must NOT be called on the main thread.
+    """
+    png_path = _icon_png_path_for_folder(icon_cache_dir, path)
+    if os.path.isfile(png_path):
+        return
+    try:
+        from AppKit import (
+            NSBitmapImageRep,
+            NSCompositingOperationCopy,
+            NSImage,
+            NSPNGFileType,
+            NSWorkspace,
+        )
+        from Foundation import NSMakeRect, NSSize
+
+        ws = NSWorkspace.sharedWorkspace()
+        icon = ws.iconForFile_(path)
+        if icon is None:
+            return
+
+        size = NSSize(_ICON_SIZE, _ICON_SIZE)
+        target = NSImage.alloc().initWithSize_(size)
+        target.lockFocus()
+        icon.drawInRect_fromRect_operation_fraction_(
+            NSMakeRect(0, 0, _ICON_SIZE, _ICON_SIZE),
+            NSMakeRect(0, 0, icon.size().width, icon.size().height),
+            NSCompositingOperationCopy,
+            1.0,
+        )
+        target.unlockFocus()
+
+        rep = NSBitmapImageRep.imageRepWithData_(target.TIFFRepresentation())
+        png_data = rep.representationUsingType_properties_(NSPNGFileType, None)
+        if png_data:
+            os.makedirs(icon_cache_dir, exist_ok=True)
+            with open(png_path, "wb") as f:
+                f.write(bytes(png_data))
+    except Exception:
+        logger.debug("Failed to extract folder icon for %s", path, exc_info=True)
 
 
 def _mdfind(query: str, max_results: int = _MAX_RESULTS) -> list[str]:
@@ -71,10 +189,109 @@ def _file_type_label(path: str) -> str:
 
 
 class FileSource:
-    """File search data source using macOS Spotlight."""
+    """File search data source using macOS Spotlight.
 
-    def __init__(self, max_results: int = _MAX_RESULTS) -> None:
+    Icons are resolved from disk cache only (no AppKit on main thread).
+    Missing icons are extracted in a background thread and become
+    available on the next search.
+    """
+
+    def __init__(
+        self,
+        max_results: int = _MAX_RESULTS,
+        icon_cache_dir: Optional[str] = None,
+    ) -> None:
         self._max_results = max_results
+        self._icon_cache_dir = icon_cache_dir or _DEFAULT_ICON_CACHE_DIR
+        # Track extensions already submitted for background extraction
+        self._pending_exts: Set[str] = set()
+        self._pending_folders: Set[str] = set()
+        self._lock = threading.Lock()
+        self._prewarm_common_extensions()
+
+    def _prewarm_common_extensions(self) -> None:
+        """Pre-extract icons for common file extensions in background."""
+        cache_dir = self._icon_cache_dir
+
+        def _warm():
+            for ext in _COMMON_EXTENSIONS:
+                _extract_filetype_icon(ext, cache_dir)
+
+        threading.Thread(target=_warm, daemon=True).start()
+
+    def _get_icon_url(self, path: str) -> str:
+        """Return a file:// URL for the file's icon from disk cache.
+
+        Only checks disk — never calls AppKit. Schedules background
+        extraction for cache misses.
+        """
+        if os.path.isdir(path):
+            return self._get_folder_icon_url(path)
+
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".app":
+            return self._get_app_icon_url(path)
+
+        if not ext:
+            ext = "public.data"
+
+        png_path = _icon_png_path_for_ext(self._icon_cache_dir, ext)
+        if os.path.isfile(png_path):
+            return "file://" + png_path
+
+        # Schedule background extraction
+        self._schedule_ext_extraction(ext)
+        return ""
+
+    def _get_folder_icon_url(self, path: str) -> str:
+        """Return file:// URL for a folder icon from disk cache."""
+        png_path = _icon_png_path_for_folder(self._icon_cache_dir, path)
+        if os.path.isfile(png_path):
+            return "file://" + png_path
+
+        # Schedule background extraction
+        self._schedule_folder_extraction(path)
+        return ""
+
+    def _get_app_icon_url(self, path: str) -> str:
+        """Return file:// URL for a .app icon, reusing app_source's cache."""
+        key = _app_cache_key(path)
+        png_path = os.path.join(self._icon_cache_dir, f"{key}.png")
+        if os.path.isfile(png_path):
+            return "file://" + png_path
+        return ""
+
+    def _schedule_ext_extraction(self, ext: str) -> None:
+        """Submit extension icon extraction to background thread (deduped)."""
+        with self._lock:
+            if ext in self._pending_exts:
+                return
+            self._pending_exts.add(ext)
+
+        cache_dir = self._icon_cache_dir
+
+        def _extract(e=ext, d=cache_dir):
+            _extract_filetype_icon(e, d)
+            with self._lock:
+                self._pending_exts.discard(e)
+
+        threading.Thread(target=_extract, daemon=True).start()
+
+    def _schedule_folder_extraction(self, path: str) -> None:
+        """Submit folder icon extraction to background thread (deduped)."""
+        with self._lock:
+            if path in self._pending_folders:
+                return
+            self._pending_folders.add(path)
+
+        cache_dir = self._icon_cache_dir
+
+        def _extract(p=path, d=cache_dir):
+            _extract_folder_icon(p, d)
+            with self._lock:
+                self._pending_folders.discard(p)
+
+        threading.Thread(target=_extract, daemon=True).start()
 
     def search(self, query: str) -> List[ChooserItem]:
         """Search files by name using mdfind."""
@@ -100,6 +317,7 @@ class FileSource:
                 ChooserItem(
                     title=name,
                     subtitle=subtitle,
+                    icon=self._get_icon_url(path),
                     item_id=f"file:{path}",
                     action=lambda p=path: _open_file(p),
                     reveal_path=path,
