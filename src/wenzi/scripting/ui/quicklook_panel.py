@@ -1,8 +1,10 @@
-"""Quick Look preview panel using QLPreviewView.
+"""Quick Look preview panel using the system QLPreviewPanel.
 
-Provides a standalone NSPanel that displays a macOS Quick Look preview
-for a given file path.  Used by the Chooser when the user toggles
-Shift-preview mode.
+Uses the macOS shared QLPreviewPanel singleton with a data-source
+protocol instead of the lower-level QLPreviewView.  QLPreviewPanel is
+designed by Apple for rapid file navigation (it's what Finder uses)
+and safely handles item switching without the KVO crashes that plague
+QLPreviewView.
 """
 
 from __future__ import annotations
@@ -13,28 +15,23 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Panel dimensions
-_QL_WIDTH = 680
-_QL_HEIGHT = 520
-_QL_MIN_WIDTH = 300
-_QL_MIN_HEIGHT = 200
-
 
 class QuickLookPanel:
-    """In-process Quick Look preview panel.
+    """System Quick Look preview panel wrapper.
 
-    Wraps an NSPanel containing a QLPreviewView.  The panel is centered
-    on screen and supports resize, drag, and trackpad pinch-to-zoom.
+    Uses ``QLPreviewPanel.sharedPreviewPanel()`` with a data-source
+    object that vends a single NSURL.  Switching files simply updates
+    the URL and calls ``reloadData()`` — the panel handles the rest.
 
     Parameters:
         on_resign_key: Called when the panel loses key window status.
-            The caller (ChooserPanel) uses this to decide whether to
-            close everything.
+        on_shift_toggle: Called when Shift is tapped while the panel
+            has focus.
     """
 
     def __init__(self, on_resign_key=None, on_shift_toggle=None) -> None:
-        self._panel = None
-        self._ql_view = None
+        self._native_panel = None  # QLPreviewPanel singleton ref
+        self._data_source = None
         self._delegate = None
         self._current_path: Optional[str] = None
         self._on_resign_key = on_resign_key
@@ -42,6 +39,7 @@ class QuickLookPanel:
         self._key_monitor = None
         self._shift_alone: bool = False
         self._shift_down_time: float = 0.0
+        self._configured: bool = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -49,49 +47,62 @@ class QuickLookPanel:
 
     @property
     def is_visible(self) -> bool:
-        return self._panel is not None and self._panel.isVisible()
+        return self._native_panel is not None and self._native_panel.isVisible()
+
+    @property
+    def is_key_window(self) -> bool:
+        """Return True if the QL panel is currently the key window."""
+        if self._native_panel is None:
+            return False
+        try:
+            from AppKit import NSApp
+
+            return NSApp.keyWindow() == self._native_panel
+        except Exception:
+            return False
 
     def show(self, path: str, anchor_panel) -> None:
-        """Show the Quick Look panel for *path*, anchored to *anchor_panel*."""
+        """Show the Quick Look panel for *path*."""
         if not path or not os.path.exists(path):
             return
 
-        if self._panel is None:
-            self._build_panel(anchor_panel)
-            self._center_on_screen()
+        if not self._configured:
+            self._configure_panel()
 
-        self._set_preview_item(path)
+        self._update_preview(path)
 
-        # orderFront_ (not makeKeyAndOrderFront_) to avoid stealing focus
-        self._panel.orderFront_(None)
+        if self._native_panel is not None:
+            self._native_panel.orderFront_(None)
 
     def update(self, path: str) -> None:
         """Update the preview to a different file."""
-        if self._panel is None or not path or not os.path.exists(path):
+        if not self._configured or not path or not os.path.exists(path):
             return
-        self._set_preview_item(path)
+        self._update_preview(path)
 
     def close(self) -> None:
-        """Close and release the panel."""
+        """Hide the panel and release our data source / delegate."""
         self._remove_key_monitor()
-        if self._panel is not None:
-            self._panel.setDelegate_(None)
-            self._panel.orderOut_(None)
+        if self._native_panel is not None:
+            self._native_panel.setDelegate_(None)
+            self._native_panel.setDataSource_(None)
+            self._native_panel.orderOut_(None)
         if self._delegate is not None:
             self._delegate._panel_ref = None
-        self._panel = None
-        self._ql_view = None
+        if self._data_source is not None:
+            self._data_source._url = None
+        self._native_panel = None
+        self._data_source = None
         self._delegate = None
         self._current_path = None
+        self._configured = False
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
-    def _set_preview_item(self, path: str) -> None:
-        """Set the QLPreviewView's preview item to the given path."""
-        if self._ql_view is None:
-            return
+    def _update_preview(self, path: str) -> None:
+        """Update the data-source URL and tell the panel to reload."""
         if path == self._current_path:
             return
         self._current_path = path
@@ -99,67 +110,46 @@ class QuickLookPanel:
             from Foundation import NSURL
 
             url = NSURL.fileURLWithPath_(path)
-            self._ql_view.setPreviewItem_(url)
+            if self._data_source is not None:
+                self._data_source._url = url
+            if self._native_panel is not None:
+                self._native_panel.reloadData()
         except Exception:
-            logger.debug("Failed to set preview item: %s", path, exc_info=True)
+            logger.debug("Failed to update preview: %s", path, exc_info=True)
 
-    def _build_panel(self, anchor_panel) -> None:
-        """Create the NSPanel with an embedded QLPreviewView."""
+    def _configure_panel(self) -> None:
+        """Obtain the shared QLPreviewPanel and configure it."""
         try:
-            from AppKit import (
-                NSBackingStoreBuffered,
-                NSColor,
-                NSResizableWindowMask,
-                NSStatusWindowLevel,
-                NSTitledWindowMask,
-            )
-            from Foundation import NSMakeRect, NSSize
-            from Quartz import QLPreviewView
+            from AppKit import NSStatusWindowLevel
+            from Quartz import QLPreviewPanel
 
-            style = NSTitledWindowMask | NSResizableWindowMask
-            panel = _get_ql_panel_class().alloc().initWithContentRect_styleMask_backing_defer_(
-                NSMakeRect(0, 0, _QL_WIDTH, _QL_HEIGHT),
-                style,
-                NSBackingStoreBuffered,
-                False,
-            )
-            panel.setLevel_(NSStatusWindowLevel + 1)
-            panel.setHidesOnDeactivate_(True)
-            panel.setFloatingPanel_(True)
-            panel.setMovableByWindowBackground_(True)
-            panel.setCollectionBehavior_(1 << 4)  # canJoinAllSpaces
-            panel.setTitle_("Quick Look")
-            panel.setBackgroundColor_(NSColor.windowBackgroundColor())
-            panel.setMinSize_(NSSize(_QL_MIN_WIDTH, _QL_MIN_HEIGHT))
+            panel = QLPreviewPanel.sharedPreviewPanel()
 
-            # Resign-key delegate
+            # Data source
+            ds_cls = _get_ql_data_source_class()
+            data_source = ds_cls.alloc().init()
+            panel.setDataSource_(data_source)
+
+            # Delegate (resign-key forwarding)
             delegate_cls = _get_ql_delegate_class()
             delegate = delegate_cls.alloc().init()
             delegate._panel_ref = self
             panel.setDelegate_(delegate)
 
-            # QLPreviewView fills the content area
-            content_frame = panel.contentView().bounds()
-            ql_view = QLPreviewView.alloc().initWithFrame_style_(
-                content_frame, 0,
-            )
-            ql_view.setAutoresizingMask_(0x12)  # Width + Height sizable
-            panel.contentView().addSubview_(ql_view)
+            # Panel properties
+            panel.setLevel_(NSStatusWindowLevel + 1)
+            panel.setHidesOnDeactivate_(True)
+            panel.setFloatingPanel_(True)
+            panel.setCollectionBehavior_(1 << 4)  # canJoinAllSpaces
 
-            self._panel = panel
-            self._ql_view = ql_view
+            self._native_panel = panel
+            self._data_source = data_source
             self._delegate = delegate
+            self._configured = True
             self._install_key_monitor()
         except Exception:
-            logger.exception("Failed to build Quick Look panel")
-            self._panel = None
-            self._ql_view = None
-
-    def _center_on_screen(self) -> None:
-        """Center the QL panel on the main screen."""
-        if self._panel is None:
-            return
-        self._panel.center()
+            logger.exception("Failed to configure Quick Look panel")
+            self._configured = False
 
     def _install_key_monitor(self) -> None:
         """Install a local event monitor to detect Shift-alone taps.
@@ -178,7 +168,7 @@ class QuickLookPanel:
 
             def _handler(event):
                 # Only handle when QL panel is key
-                if NSApp.keyWindow() != self._panel:
+                if NSApp.keyWindow() != self._native_panel:
                     return event
 
                 flags = event.modifierFlags()
@@ -223,25 +213,35 @@ class QuickLookPanel:
 
 
 # ---------------------------------------------------------------------------
-# NSPanel subclass (lazy-created, unique ObjC class name)
+# QLPreviewPanelDataSource (lazy-created, unique ObjC class name)
 # ---------------------------------------------------------------------------
-_QLPanel = None
+_QLDataSource = None
 
 
-def _get_ql_panel_class():
-    """Return an NSPanel subclass that can become key for user interaction."""
-    global _QLPanel
-    if _QLPanel is not None:
-        return _QLPanel
+def _get_ql_data_source_class():
+    """Return an NSObject subclass implementing QLPreviewPanelDataSource."""
+    global _QLDataSource
+    if _QLDataSource is not None:
+        return _QLDataSource
 
-    from AppKit import NSPanel
+    import objc
+    from Foundation import NSObject
 
-    class QuickLookPreviewPanel(NSPanel):
-        def canBecomeKeyWindow(self):
-            return True
+    import Quartz  # noqa: F401 — ensure protocol is loaded
 
-    _QLPanel = QuickLookPreviewPanel
-    return _QLPanel
+    QLPreviewPanelDataSource = objc.protocolNamed("QLPreviewPanelDataSource")
+
+    class QuickLookDataSource(NSObject, protocols=[QLPreviewPanelDataSource]):
+        _url = None  # NSURL for the current file
+
+        def numberOfPreviewItemsInPreviewPanel_(self, panel):
+            return 1 if self._url is not None else 0
+
+        def previewPanel_previewItemAtIndex_(self, panel, index):
+            return self._url  # NSURL conforms to QLPreviewItem
+
+    _QLDataSource = QuickLookDataSource
+    return _QLDataSource
 
 
 # ---------------------------------------------------------------------------

@@ -718,17 +718,17 @@ class TestQuickLookIntegration:
         """_maybe_close should not close when QL panel is the key window."""
         panel = _make_panel()
         mock_ql = MagicMock()
-        mock_ql._panel = MagicMock()
+        mock_ql.is_key_window = True
         panel._ql_panel = mock_ql
         panel._panel = MagicMock()
         panel.close = MagicMock()
 
         mock_nsapp = MagicMock()
-        mock_nsapp.keyWindow.return_value = mock_ql._panel
+        # Return something other than chooser panel so first check doesn't match
+        mock_nsapp.keyWindow.return_value = MagicMock()
 
         with patch("PyObjCTools.AppHelper.callLater") as mock_later:
             panel._maybe_close()
-            # Extract and run the deferred _check callback
             check_fn = mock_later.call_args[0][1]
 
         with patch("AppKit.NSApp", mock_nsapp):

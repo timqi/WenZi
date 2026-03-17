@@ -228,8 +228,7 @@ class ChooserPanel:
                 # QL panel is now key — user is interacting with preview
                 if (
                     self._ql_panel is not None
-                    and self._ql_panel._panel is not None
-                    and key == self._ql_panel._panel
+                    and self._ql_panel.is_key_window
                 ):
                     return
             except Exception:
