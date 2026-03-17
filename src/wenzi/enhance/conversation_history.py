@@ -50,6 +50,24 @@ class ConversationHistory:
         self._full_cache: Optional[List[Dict[str, Any]]] = None
         self._full_cache_mtime: float = 0.0
 
+        # Monotonically increasing counter for change detection.
+        # Bumped on every log() call so that consumers (e.g. TextEnhancer)
+        # can cheaply detect whether new entries were appended.
+        self._log_count: int = 0
+
+    # ------------------------------------------------------------------
+    # Public properties
+    # ------------------------------------------------------------------
+
+    @property
+    def log_count(self) -> int:
+        """Number of ``log()`` calls since this instance was created.
+
+        Used by :class:`TextEnhancer` as a cheap O(1) change-detection
+        signal to avoid unnecessary ``get_recent()`` calls.
+        """
+        return self._log_count
+
     # ------------------------------------------------------------------
     # Cache helpers
     # ------------------------------------------------------------------
@@ -214,6 +232,7 @@ class ConversationHistory:
         logger.debug("Conversation logged: %s", self._history_path)
 
         self._append_cache_record(record)
+        self._log_count += 1
         self._maybe_rotate()
         return ts
 
@@ -650,12 +669,36 @@ class ConversationHistory:
         return True
 
     # ------------------------------------------------------------------
-    # Prompt formatting (stateless, no caching needed)
+    # Prompt formatting
     # ------------------------------------------------------------------
+
+    # Header used by both format_for_prompt and the incremental builder
+    # in TextEnhancer.
+    HISTORY_PROMPT_HEADER = (
+        "---\n"
+        "以下是用户近期的对话记录，用于学习纠错偏好和话题上下文。\n"
+        "若 ASR 识别与最终确认不同则用→分隔（识别→确认），相同则表示无需纠错：\n"
+        "\n"
+    )
+    HISTORY_PROMPT_FOOTER = "---"
 
     # Maximum total characters for formatted history injected into the
     # system prompt.  Keeps token usage bounded regardless of entry count.
     _MAX_PROMPT_CHARS = 2000
+
+    @staticmethod
+    def format_entry_line(entry: Dict[str, Any]) -> str:
+        """Format a single history entry as a prompt line.
+
+        Returns a string like ``- final_text`` when ASR matches final, or
+        ``- asr_text → final_text`` when they differ.  Newlines in the
+        text are replaced with the ⏎ symbol.
+        """
+        asr = entry.get("asr_text", "").replace("\n", "\u23ce")
+        final = entry.get("final_text", "").replace("\n", "\u23ce")
+        if asr == final:
+            return f"- {final}"
+        return f"- {asr} → {final}"
 
     def format_for_prompt(
         self, entries: List[Dict[str, Any]], max_chars: int = 0
@@ -679,25 +722,11 @@ class ConversationHistory:
         if max_chars <= 0:
             max_chars = self._MAX_PROMPT_CHARS
 
-        header_lines = [
-            "---",
-            "以下是用户近期的对话记录，用于学习纠错偏好和话题上下文。",
-            "若 ASR 识别与最终确认不同则用→分隔（识别→确认），相同则表示无需纠错：",
-            "",
-        ]
-        footer = "---"
-        header_text = "\n".join(header_lines) + "\n"
+        header_text = self.HISTORY_PROMPT_HEADER
+        footer = self.HISTORY_PROMPT_FOOTER
         overhead = len(header_text) + len(footer) + 1  # +1 for trailing \n
 
-        # Format all entry lines, then select from newest backwards
-        formatted: List[str] = []
-        for entry in entries:
-            asr = entry.get("asr_text", "").replace("\n", "\u23ce")
-            final = entry.get("final_text", "").replace("\n", "\u23ce")
-            if asr == final:
-                formatted.append(f"- {final}")
-            else:
-                formatted.append(f"- {asr} → {final}")
+        formatted = [self.format_entry_line(e) for e in entries]
 
         # Select entries from newest (end) to oldest, respecting budget
         budget = max_chars - overhead

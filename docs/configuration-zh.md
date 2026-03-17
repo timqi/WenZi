@@ -68,7 +68,9 @@
     },
     "conversation_history": {
       "enabled": false,
-      "max_entries": 10
+      "max_entries": 10,
+      "refresh_threshold": 50,
+      "max_history_chars": 6000
     }
   },
   "clipboard_enhance": {
@@ -165,9 +167,13 @@
 | 键名 | 默认值 | 说明 |
 |-----|---------|-------------|
 | `ai_enhance.conversation_history.enabled` | `false` | 启用对话历史上下文注入 |
-| `ai_enhance.conversation_history.max_entries` | `10` | 注入的最近已确认条目数量 |
+| `ai_enhance.conversation_history.max_entries` | `10` | 重建后的基础条目数（也是初始条目数） |
+| `ai_enhance.conversation_history.refresh_threshold` | `50` | 触发重建的最大条目数 |
+| `ai_enhance.conversation_history.max_history_chars` | `6000` | 触发重建的最大总字符数 |
 
 > **注意：** 对话历史超过 20,000 条记录时会自动轮转归档。旧记录按月归档到 `conversation_history_archives/` 目录下的 JSONL 文件中。此上限不可配置。
+
+> **提示词缓存优化：** 对话历史采用追加式构建，保持系统提示词前缀稳定不变，从而让大模型 API 的提示词缓存（OpenAI、DeepSeek 等）可以复用已缓存的 KV 状态。当条目数达到 `refresh_threshold` 或总字符数达到 `max_history_chars` 时，会以最近 `max_entries` 条为基础重建。大多数 API 提供商要求缓存前缀至少达到 **1024 tokens**（约 500-700 个中文字符）。如果你使用的增强模式提示词较短，建议适当增大 `max_entries`（如改为 20），以确保重建后系统提示词能超过此阈值。
 
 ### 剪贴板增强
 

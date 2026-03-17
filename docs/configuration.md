@@ -68,7 +68,9 @@ The config file is always `config.json` inside the resolved directory.
     },
     "conversation_history": {
       "enabled": false,
-      "max_entries": 10
+      "max_entries": 10,
+      "refresh_threshold": 50,
+      "max_history_chars": 6000
     }
   },
   "clipboard_enhance": {
@@ -165,9 +167,13 @@ The config file is always `config.json` inside the resolved directory.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ai_enhance.conversation_history.enabled` | `false` | Enable conversation history context injection |
-| `ai_enhance.conversation_history.max_entries` | `10` | Number of recent confirmed entries to inject |
+| `ai_enhance.conversation_history.max_entries` | `10` | Base number of entries after a rebuild (also the initial count) |
+| `ai_enhance.conversation_history.refresh_threshold` | `50` | Max entry count before triggering a rebuild |
+| `ai_enhance.conversation_history.max_history_chars` | `6000` | Max total characters before triggering a rebuild |
 
 > **Note:** Conversation history is automatically rotated when it exceeds 20,000 records. Older records are archived into monthly JSONL files under `conversation_history_archives/`. This limit is not configurable.
+
+> **Prompt caching:** History entries are appended incrementally to keep the system prompt prefix stable, which allows LLM API-level prompt caching (OpenAI, DeepSeek, etc.) to reuse cached KV state. When the entry count reaches `refresh_threshold` or total characters reach `max_history_chars`, the history is rebuilt with the most recent `max_entries` as a new base. Most API providers require the cached prefix to be at least **1024 tokens** (~500–700 Chinese characters). If your enhancement mode prompt is short, consider increasing `max_entries` (e.g., to 20) so the system prompt exceeds this threshold right after a rebuild.
 
 ### Clipboard Enhancement
 

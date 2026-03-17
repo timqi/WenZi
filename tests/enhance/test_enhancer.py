@@ -1249,13 +1249,16 @@ class TestConversationHistoryIntegration:
     def test_enhance_with_history_injects_context(self):
         mock_client = _make_mock_client("enhanced text")
         mock_history = MagicMock(spec=ConversationHistory)
+        mock_history.log_count = 1
         mock_history.get_recent.return_value = [
-            {"asr_text": "你好", "enhanced_text": "你好。", "final_text": "你好。"},
+            {
+                "asr_text": "你好",
+                "enhanced_text": "你好。",
+                "final_text": "你好。",
+                "timestamp": "2025-01-01T00:00:00",
+            },
         ]
-        mock_history.format_for_prompt.return_value = (
-            "---\n以下是用户近期的对话记录，用于学习纠错偏好和话题上下文。\n"
-            "若 ASR 识别与最终确认不同则用→分隔（识别→确认），相同则表示无需纠错：\n\n- 你好 → 你好。\n---"
-        )
+        mock_history.format_entry_line = ConversationHistory.format_entry_line
 
         cfg = _make_config(
             enabled=True,
@@ -1297,6 +1300,7 @@ class TestConversationHistoryIntegration:
     def test_enhance_history_retrieval_failure_graceful(self):
         mock_client = _make_mock_client("enhanced text")
         mock_history = MagicMock(spec=ConversationHistory)
+        mock_history.log_count = 1
         mock_history.get_recent.side_effect = RuntimeError("read error")
 
         cfg = _make_config(
@@ -1320,6 +1324,7 @@ class TestConversationHistoryIntegration:
     def test_enhance_history_empty_results_no_injection(self):
         mock_client = _make_mock_client("enhanced text")
         mock_history = MagicMock(spec=ConversationHistory)
+        mock_history.log_count = 1
         mock_history.get_recent.return_value = []
 
         cfg = _make_config(
@@ -1340,6 +1345,253 @@ class TestConversationHistoryIntegration:
         call_kwargs = mock_client.chat.completions.create.call_args
         system_msg = call_kwargs.kwargs["messages"][0]["content"]
         assert "对话历史记录" not in system_msg
+
+
+class TestIncrementalHistoryContext:
+    """Test the incremental history context builder for cache optimization."""
+
+    def _make_enhancer(self, **history_overrides):
+        """Create an enhancer with history enabled and a real ConversationHistory."""
+        history_cfg = {
+            "enabled": True,
+            "max_entries": 3,
+            "refresh_threshold": 8,
+            "max_history_chars": 6000,
+        }
+        history_cfg.update(history_overrides)
+        cfg = _make_config(
+            enabled=True,
+            conversation_history=history_cfg,
+        )
+        with patch("wenzi.enhance.enhancer.TextEnhancer._init_providers"):
+            enhancer = TextEnhancer(cfg)
+        return enhancer
+
+    def _make_entry(self, idx, preview=True, ts=None):
+        return {
+            "asr_text": f"asr_{idx}",
+            "final_text": f"final_{idx}",
+            "timestamp": ts or f"2025-01-01T00:00:{idx:02d}",
+            "preview_enabled": preview,
+        }
+
+    def _make_mock_history(self, entries, log_count=0):
+        mock_history = MagicMock(spec=ConversationHistory)
+        mock_history.log_count = log_count
+        mock_history.get_recent.return_value = entries
+        mock_history.format_entry_line = ConversationHistory.format_entry_line
+        return mock_history
+
+    def test_first_build_uses_max_entries(self):
+        """First call builds from the most recent max_entries entries."""
+        enhancer = self._make_enhancer()
+        entries = [self._make_entry(i) for i in range(10)]
+        enhancer._conversation_history = self._make_mock_history(entries, log_count=1)
+
+        result = enhancer._build_history_context()
+
+        assert result != ""
+        # max_entries=3, so only last 3 entries used as base
+        assert "final_7" in result
+        assert "final_8" in result
+        assert "final_9" in result
+        assert "final_6" not in result
+        assert len(enhancer._history_entry_lines) == 3
+
+    def test_fast_path_no_log_change(self):
+        """When log_count unchanged, return cached result without calling get_recent."""
+        enhancer = self._make_enhancer()
+        entries = [self._make_entry(i) for i in range(3)]
+        mock_history = self._make_mock_history(entries, log_count=1)
+        enhancer._conversation_history = mock_history
+
+        result1 = enhancer._build_history_context()
+        mock_history.get_recent.reset_mock()
+
+        # Same log_count → fast path
+        result2 = enhancer._build_history_context()
+
+        assert result1 == result2
+        mock_history.get_recent.assert_not_called()
+
+    def test_append_new_entry(self):
+        """New entries are appended to existing list."""
+        enhancer = self._make_enhancer()
+
+        # Initial build with 3 entries
+        entries_v1 = [self._make_entry(i) for i in range(3)]
+        mock_h = self._make_mock_history(entries_v1, log_count=1)
+        enhancer._conversation_history = mock_h
+        result1 = enhancer._build_history_context()
+
+        # Simulate new entry added
+        entries_v2 = entries_v1 + [self._make_entry(3)]
+        mock_h.log_count = 2
+        mock_h.get_recent.return_value = entries_v2
+        result2 = enhancer._build_history_context()
+
+        assert "final_3" in result2
+        assert len(enhancer._history_entry_lines) == 4
+        # Prefix should be preserved (the first 3 entry lines unchanged)
+        assert result2.startswith(result1.rsplit("\n---", 1)[0])
+
+    def test_append_preserves_prefix(self):
+        """Appending new entries keeps the prompt prefix identical for cache hits."""
+        enhancer = self._make_enhancer()
+
+        entries = [self._make_entry(i) for i in range(3)]
+        mock_h = self._make_mock_history(entries, log_count=1)
+        enhancer._conversation_history = mock_h
+        result1 = enhancer._build_history_context()
+
+        # Strip footer to get prefix
+        prefix1 = result1.rsplit("\n---", 1)[0]
+
+        # Add entry 3
+        entries2 = entries + [self._make_entry(3)]
+        mock_h.log_count = 2
+        mock_h.get_recent.return_value = entries2
+        result2 = enhancer._build_history_context()
+        prefix2 = result2.rsplit("\n---", 1)[0]
+
+        # Add entry 4
+        entries3 = entries2 + [self._make_entry(4)]
+        mock_h.log_count = 3
+        mock_h.get_recent.return_value = entries3
+        result3 = enhancer._build_history_context()
+
+        # Each prefix should be a proper prefix of the next
+        assert prefix2.startswith(prefix1)
+        assert result3.rsplit("\n---", 1)[0].startswith(prefix2)
+
+    def test_rebuild_on_count_threshold(self):
+        """Rebuild when projected entry count would reach refresh_threshold."""
+        enhancer = self._make_enhancer(max_entries=2, refresh_threshold=5)
+
+        # Initial build: 2 entries → base of 2
+        entries = [self._make_entry(i) for i in range(2)]
+        mock_h = self._make_mock_history(entries, log_count=1)
+        enhancer._conversation_history = mock_h
+        enhancer._build_history_context()
+        assert len(enhancer._history_entry_lines) == 2
+
+        # Append entries 2, 3 → now 4 total
+        for i in range(2, 4):
+            entries.append(self._make_entry(i))
+            mock_h.log_count = i
+            mock_h.get_recent.return_value = list(entries)
+            enhancer._build_history_context()
+        assert len(enhancer._history_entry_lines) == 4
+
+        # Adding entry 4 would make 5 (>=threshold) → triggers rebuild
+        entries.append(self._make_entry(4))
+        mock_h.log_count = 4
+        mock_h.get_recent.return_value = list(entries)
+        enhancer._build_history_context()
+
+        # Rebuilt with max_entries=2 → only last 2 entries
+        assert len(enhancer._history_entry_lines) == 2
+        assert "final_3" in enhancer._history_entry_lines[0]
+        assert "final_4" in enhancer._history_entry_lines[1]
+
+    def test_rebuild_on_chars_threshold(self):
+        """Rebuild when total chars reaches max_history_chars."""
+        enhancer = self._make_enhancer(
+            max_entries=2, refresh_threshold=100, max_history_chars=100
+        )
+
+        entries = [self._make_entry(i) for i in range(2)]
+        mock_h = self._make_mock_history(entries, log_count=1)
+        enhancer._conversation_history = mock_h
+        enhancer._build_history_context()
+
+        # Add long entries to exceed char limit
+        for i in range(2, 20):
+            entry = {
+                "asr_text": f"{'x' * 30}_{i}",
+                "final_text": f"{'y' * 30}_{i}",
+                "timestamp": f"2025-01-01T00:00:{i:02d}",
+                "preview_enabled": True,
+            }
+            entries.append(entry)
+            mock_h.log_count = i
+            mock_h.get_recent.return_value = list(entries)
+            enhancer._build_history_context()
+
+        # Should have rebuilt (entry_lines back to max_entries=2)
+        assert len(enhancer._history_entry_lines) == 2
+
+    def test_rebuild_on_anchor_not_found(self):
+        """Rebuild when last known timestamp not found (rotation/deletion)."""
+        enhancer = self._make_enhancer()
+
+        # Initial build
+        entries_v1 = [self._make_entry(i) for i in range(3)]
+        mock_h = self._make_mock_history(entries_v1, log_count=1)
+        enhancer._conversation_history = mock_h
+        enhancer._build_history_context()
+        assert enhancer._history_last_ts == "2025-01-01T00:00:02"
+
+        # Simulate rotation: completely different entries
+        entries_v2 = [self._make_entry(i + 100) for i in range(5)]
+        mock_h.log_count = 2
+        mock_h.get_recent.return_value = entries_v2
+        result = enhancer._build_history_context()
+
+        # Should have rebuilt with last max_entries entries
+        assert len(enhancer._history_entry_lines) == 3
+        assert "final_104" in result
+
+    def test_non_qualifying_log_no_append(self):
+        """Non-qualifying log() (e.g. preview_enabled=False) does not append."""
+        enhancer = self._make_enhancer()
+
+        entries = [self._make_entry(i) for i in range(3)]
+        mock_h = self._make_mock_history(entries, log_count=1)
+        enhancer._conversation_history = mock_h
+        enhancer._build_history_context()
+
+        # log_count increases but get_recent returns same entries
+        # (the non-qualifying entry is filtered out)
+        mock_h.log_count = 2
+        mock_h.get_recent.return_value = entries  # unchanged
+        enhancer._build_history_context()
+
+        assert len(enhancer._history_entry_lines) == 3
+        assert enhancer._history_last_ts == "2025-01-01T00:00:02"
+
+    def test_empty_history_returns_empty_string(self):
+        enhancer = self._make_enhancer()
+        mock_h = self._make_mock_history([], log_count=1)
+        enhancer._conversation_history = mock_h
+
+        result = enhancer._build_history_context()
+        assert result == ""
+
+    def test_config_validation_threshold_le_max_entries(self):
+        """refresh_threshold <= max_entries is auto-corrected."""
+        enhancer = self._make_enhancer(max_entries=10, refresh_threshold=5)
+        # Should auto-correct to max_entries * 5 = 50
+        assert enhancer._history_refresh_threshold == 50
+
+    def test_system_prompt_ordering(self):
+        """System prompt should order: mode → thinking → history → vocab."""
+        enhancer = self._make_enhancer()
+        enhancer._thinking = True
+
+        entries = [self._make_entry(0)]
+        mock_h = self._make_mock_history(entries, log_count=1)
+        enhancer._conversation_history = mock_h
+
+        mode_def = _TEST_MODES["proofread"]
+        result = enhancer._build_system_content("test", mode_def)
+
+        # Find positions of each section
+        mode_pos = result.find("proofread prompt")
+        thinking_pos = result.find("Keep your internal reasoning")
+        history_pos = result.find("对话记录")
+
+        assert mode_pos < thinking_pos < history_pos
 
 
 class TestLastSystemPrompt:

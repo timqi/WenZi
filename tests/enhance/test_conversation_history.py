@@ -296,6 +296,52 @@ class TestConversationHistoryFormatForPrompt:
         assert len(result) <= history._MAX_PROMPT_CHARS
 
 
+class TestConversationHistoryLogCount:
+    def test_log_count_starts_at_zero(self, history):
+        assert history.log_count == 0
+
+    def test_log_count_increments_on_log(self, history):
+        history.log("a", "A", "A", "proofread", True)
+        assert history.log_count == 1
+        history.log("b", "B", "B", "proofread", True)
+        assert history.log_count == 2
+
+    def test_log_count_increments_for_non_preview(self, history):
+        """log_count increments even for non-preview entries."""
+        history.log("a", "A", "A", "proofread", False)
+        assert history.log_count == 1
+
+
+class TestConversationHistoryFormatEntryLine:
+    def test_same_asr_and_final(self):
+        entry = {"asr_text": "hello", "final_text": "hello"}
+        assert ConversationHistory.format_entry_line(entry) == "- hello"
+
+    def test_different_asr_and_final(self):
+        entry = {"asr_text": "hello", "final_text": "Hello!"}
+        assert ConversationHistory.format_entry_line(entry) == "- hello → Hello!"
+
+    def test_newlines_replaced(self):
+        entry = {"asr_text": "a\nb", "final_text": "a\nc"}
+        result = ConversationHistory.format_entry_line(entry)
+        assert "a\u23ceb → a\u23cec" in result
+
+    def test_missing_fields_use_empty_string(self):
+        result = ConversationHistory.format_entry_line({})
+        assert result == "- "
+
+    def test_consistency_with_format_for_prompt(self, history):
+        """format_entry_line output should match what format_for_prompt generates."""
+        entries = [
+            {"asr_text": "你好", "final_text": "你好"},
+            {"asr_text": "平平", "final_text": "萍萍"},
+        ]
+        prompt = history.format_for_prompt(entries, max_chars=10000)
+        for entry in entries:
+            line = ConversationHistory.format_entry_line(entry)
+            assert line in prompt
+
+
 class TestConversationHistoryGetAll:
     def test_get_all_returns_newest_first(self, history):
         history.log("first", "First", "First", "proofread", True)

@@ -252,6 +252,31 @@ class TextEnhancer:
                 **({"config_dir": config_dir} if config_dir else {})
             )
 
+        # Incremental history cache for prompt caching optimization.
+        # Instead of rebuilding the history section from scratch on every
+        # request, we append new entries and keep the prefix stable so that
+        # LLM API-level prompt caching can kick in.
+        self._history_entry_lines: List[str] = []
+        self._history_last_log_count: int = 0
+        self._history_last_ts: str = ""
+        self._history_total_chars: int = 0
+        self._history_refresh_threshold: int = history_cfg.get(
+            "refresh_threshold", 50
+        )
+        self._max_history_chars: int = history_cfg.get(
+            "max_history_chars", 6000
+        )
+        # Guard: threshold must exceed base size to avoid rebuild-every-request
+        if self._history_refresh_threshold <= self._history_max_entries:
+            logger.warning(
+                "refresh_threshold (%d) must be greater than max_entries (%d), "
+                "using %d",
+                self._history_refresh_threshold,
+                self._history_max_entries,
+                self._history_max_entries * 5,
+            )
+            self._history_refresh_threshold = self._history_max_entries * 5
+
         # Validate active provider/model
         if self._active_provider not in self._providers and self._providers:
             self._active_provider = next(iter(self._providers))
@@ -514,9 +539,32 @@ class TextEnhancer:
         return result
 
     def _build_system_content(self, text: str, mode_def: "ModeDefinition") -> str:
-        """Build system prompt with vocabulary and history context."""
+        """Build system prompt with vocabulary and history context.
+
+        Components are ordered by stability (most stable first) so that
+        LLM API-level prompt caching can match the longest possible prefix:
+
+        1. mode prompt  — static per mode
+        2. thinking hint — static within a session
+        3. history context — append-only, changes infrequently
+        4. vocabulary context — dynamic per request (semantic search)
+        """
         system_content = mode_def.prompt
 
+        # 1. Static: thinking brevity hint
+        if self._thinking:
+            system_content = f"{system_content}\n\n{THINKING_BREVITY_HINT}"
+
+        # 2. Semi-dynamic: conversation history (append-only for cache hits)
+        if self._history_enabled:
+            try:
+                history_context = self._build_history_context()
+                if history_context:
+                    system_content = f"{system_content}\n\n{history_context}"
+            except Exception as e:
+                logger.warning("Conversation history retrieval failed: %s", e)
+
+        # 3. Dynamic: vocabulary (changes per request)
         if self._vocab_enabled and self._vocab_index is not None:
             try:
                 if not self._vocab_index.is_loaded:
@@ -526,7 +574,7 @@ class TextEnhancer:
                 )
                 if entries:
                     vocab_context = self._vocab_index.format_for_prompt(entries)
-                    system_content = f"{mode_def.prompt}\n\n{vocab_context}"
+                    system_content = f"{system_content}\n\n{vocab_context}"
                     logger.info(
                         "Vocabulary matched: %s",
                         ", ".join(e.term for e in entries),
@@ -534,27 +582,128 @@ class TextEnhancer:
             except Exception as e:
                 logger.warning("Vocabulary retrieval failed: %s", e)
 
-        if self._history_enabled:
-            try:
-                entries = self._conversation_history.get_recent(
-                    max_entries=self._history_max_entries
-                )
-                if entries:
-                    history_context = self._conversation_history.format_for_prompt(
-                        entries
-                    )
-                    system_content = f"{system_content}\n\n{history_context}"
-                    logger.info(
-                        "Conversation history injected: %d entries",
-                        len(entries),
-                    )
-            except Exception as e:
-                logger.warning("Conversation history retrieval failed: %s", e)
-
-        if self._thinking:
-            system_content = f"{system_content}\n\n{THINKING_BREVITY_HINT}"
-
         return system_content
+
+    # ------------------------------------------------------------------
+    # Incremental history context builder
+    # ------------------------------------------------------------------
+
+    def _build_history_context(self) -> str:
+        """Build history section incrementally for better API cache hit rate.
+
+        Instead of rebuilding the full history string on every request, this
+        method appends only new entries to the existing list.  This keeps the
+        system prompt prefix stable across consecutive requests so that LLM
+        API-level prompt caching (OpenAI, DeepSeek, etc.) can reuse the
+        cached KV state.
+
+        Rebuild triggers (resets to ``_history_max_entries`` base entries):
+        - Entry count reaches ``_history_refresh_threshold``
+        - Total character count reaches ``_max_history_chars``
+        - Anchor timestamp not found (rotation, deletion, etc.)
+        """
+        ch = self._conversation_history
+
+        # Fast path: no new log() calls since last build — return cached
+        lc = ch.log_count
+        if lc == self._history_last_log_count and self._history_entry_lines:
+            return self._format_history_section()
+        self._history_last_log_count = lc
+
+        # Fetch up to threshold entries for comparison
+        entries = ch.get_recent(max_entries=self._history_refresh_threshold)
+        if not entries:
+            self._history_entry_lines = []
+            self._history_total_chars = 0
+            self._history_last_ts = ""
+            return ""
+
+        latest_ts = entries[-1].get("timestamp", "")
+
+        # No qualifying entries were added (e.g. non-preview log)
+        if latest_ts == self._history_last_ts and self._history_entry_lines:
+            return self._format_history_section()
+
+        # First build
+        if not self._history_entry_lines:
+            return self._full_rebuild_history(entries)
+
+        # Find new entries by walking backwards from the end
+        new_entries: list = []
+        for e in reversed(entries):
+            if e.get("timestamp") == self._history_last_ts:
+                break
+            new_entries.append(e)
+        else:
+            # Anchor not found — structural change (rotation, deletion)
+            logger.info("History anchor not found, performing full rebuild")
+            return self._full_rebuild_history(entries)
+
+        if not new_entries:
+            return self._format_history_section()
+
+        new_entries.reverse()
+
+        # Pre-check: would appending exceed thresholds?
+        new_lines = [ch.format_entry_line(e) for e in new_entries]
+        new_chars = sum(len(line) + 1 for line in new_lines)  # +1 for \n
+        projected_count = len(self._history_entry_lines) + len(new_lines)
+        projected_chars = self._history_total_chars + new_chars
+
+        if (
+            projected_count >= self._history_refresh_threshold
+            or projected_chars >= self._max_history_chars
+        ):
+            logger.info(
+                "History threshold reached (entries=%d, chars=%d), rebuilding",
+                projected_count,
+                projected_chars,
+            )
+            return self._full_rebuild_history(entries)
+
+        # Safe to append
+        self._history_entry_lines.extend(new_lines)
+        self._history_total_chars = projected_chars
+        self._history_last_ts = latest_ts
+        logger.info(
+            "History cache appended %d entries (total %d, chars %d)",
+            len(new_lines),
+            len(self._history_entry_lines),
+            self._history_total_chars,
+        )
+
+        return self._format_history_section()
+
+    def _full_rebuild_history(
+        self, entries: List[Dict[str, Any]]
+    ) -> str:
+        """Rebuild history cache from scratch with the most recent base entries."""
+        ch = self._conversation_history
+        base = entries[-self._history_max_entries:]
+        self._history_entry_lines = [ch.format_entry_line(e) for e in base]
+        self._history_total_chars = sum(
+            len(line) + 1 for line in self._history_entry_lines
+        )
+        self._history_last_ts = (
+            entries[-1].get("timestamp", "") if entries else ""
+        )
+        logger.info(
+            "History cache rebuilt with %d entries (chars %d)",
+            len(self._history_entry_lines),
+            self._history_total_chars,
+        )
+        return self._format_history_section()
+
+    def _format_history_section(self) -> str:
+        """Format the cached entry lines into a complete history section."""
+        if not self._history_entry_lines:
+            return ""
+        return (
+            ConversationHistory.HISTORY_PROMPT_HEADER
+            + "\n".join(self._history_entry_lines)
+            + "\n"
+            + ConversationHistory.HISTORY_PROMPT_FOOTER
+        )
 
     def _build_request_kwargs(
         self, text: str, system_content: str, **extra_kwargs: Any
