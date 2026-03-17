@@ -306,6 +306,7 @@ class FileSource:
             prefix=prefix,
             search=self.search,
             priority=3,
+            description="Search files",
             action_hints={
                 "enter": "Open",
                 "cmd_enter": "Reveal",
@@ -390,6 +391,7 @@ class FolderSource:
             prefix=prefix,
             search=self.search,
             priority=3,
+            description="Search folders",
             action_hints={
                 "enter": "Open",
                 "cmd_enter": "Reveal",

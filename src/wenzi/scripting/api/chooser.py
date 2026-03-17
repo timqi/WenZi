@@ -78,6 +78,48 @@ class ChooserAPI:
             self._panel.register_source(
                 self._command_source.as_promoted_chooser_source(),
             )
+        if "help" not in self._command_source._commands:
+            self._register_help_command()
+
+    def _register_help_command(self) -> None:
+        """Register the built-in help command."""
+
+        def _help_action(args: str) -> None:
+            # Snapshot sources on the calling thread
+            sources = list(self._panel._sources.values())
+            items = []
+            for src in sorted(sources, key=lambda s: (s.prefix or "")):
+                if not src.prefix:
+                    continue
+                desc = src.description or src.name
+                # Filter by args if provided
+                if args.strip():
+                    from wenzi.scripting.sources import fuzzy_match
+
+                    m1, _ = fuzzy_match(args.strip(), desc)
+                    m2, _ = fuzzy_match(args.strip(), src.prefix)
+                    if not m1 and not m2:
+                        continue
+                items.append({
+                    "title": desc,
+                    "subtitle": f"{src.prefix} <query>",
+                    "item_id": f"help:{src.name}",
+                    "action": lambda p=src.prefix: self.show_source(p),
+                })
+            if items:
+                self.pick(
+                    items,
+                    callback=lambda _: None,
+                    placeholder="Available prefixes...",
+                )
+
+        self._command_source.register(CommandEntry(
+            name="help",
+            title="Help",
+            subtitle="Show available prefixes",
+            action=_help_action,
+            promoted=True,
+        ))
 
     def register_source(self, source: ChooserSource) -> None:
         """Register a data source."""
@@ -349,13 +391,15 @@ class ChooserAPI:
         prefix: Optional[str] = None,
         priority: int = 0,
         action_hints: Optional[dict] = None,
+        description: str = "",
     ) -> Callable:
         """Decorator to register a search function as a chooser source.
 
         The decorated function receives a query string and returns a list of
         item dicts.  All :class:`ChooserItem` fields are supported::
 
-            @wz.chooser.source("todos", prefix="td", priority=5)
+            @wz.chooser.source("todos", prefix="td", priority=5,
+                               description="Search TODOs")
             def search_todos(query):
                 return [{
                     "title": "Fix bug #123",
@@ -386,6 +430,7 @@ class ChooserAPI:
                 prefix=prefix,
                 search=_search,
                 priority=priority,
+                description=description,
                 action_hints=action_hints,
             )
             self._panel.register_source(src)

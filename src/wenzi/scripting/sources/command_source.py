@@ -163,6 +163,7 @@ class CommandSource:
             search=self.search,
             complete=self.complete,
             priority=8,
+            description="Command palette",
             action_hints={
                 "enter": "Run",
                 "tab": "Complete",

@@ -213,6 +213,7 @@ class CalculatorSource:
             prefix=None,
             search=self.search,
             priority=12,
+            description="Calculator & unit conversion",
             action_hints={
                 "enter": "Paste",
                 "cmd_enter": "Copy",

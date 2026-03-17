@@ -49,6 +49,7 @@ class ChooserSource:
     action_hints: Optional[Dict[str, str]] = field(default=None, repr=False)
     # action_hints keys: "enter", "cmd_enter", "delete", "tab"
     # e.g. {"enter": "Paste", "cmd_enter": "Copy", "delete": "Delete"}
+    description: str = ""  # Human-readable description shown in help
     show_preview: bool = False  # Show the preview panel when this source is active
     complete: Optional[Callable[[str, "ChooserItem"], Optional[str]]] = field(
         default=None, repr=False,

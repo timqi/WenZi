@@ -480,3 +480,134 @@ class TestChooserAPICommands:
         promoted_src = api.panel._sources["commands-promoted"]
         items = promoted_src.search("debug")
         assert items == []
+
+
+class TestHelpCommand:
+    def test_help_registered_on_ensure(self):
+        api = ChooserAPI()
+        api._ensure_command_source()
+        assert "help" in api._command_source._commands
+        entry = api._command_source._commands["help"]
+        assert entry.promoted is True
+
+    def test_help_not_re_registered(self):
+        """Calling _ensure_command_source twice should not trigger overwrite."""
+        api = ChooserAPI()
+        api._ensure_command_source()
+        entry1 = api._command_source._commands["help"]
+        api._ensure_command_source()
+        entry2 = api._command_source._commands["help"]
+        assert entry1 is entry2
+
+    def test_help_visible_in_promoted_search(self):
+        api = ChooserAPI()
+        api._ensure_command_source()
+        promoted_src = api.panel._sources["commands-promoted"]
+        items = promoted_src.search("help")
+        assert len(items) == 1
+        assert items[0].title == "Help"
+
+    def test_help_visible_in_prefixed_search(self):
+        api = ChooserAPI()
+        api._ensure_command_source()
+        cmd_src = api.panel._sources["commands"]
+        items = cmd_src.search("help")
+        assert any(i.title == "Help" for i in items)
+
+    def test_help_action_calls_pick_with_prefixed_sources(self):
+        api = ChooserAPI()
+        api._ensure_command_source()
+
+        # Register a source with prefix and description
+        src = ChooserSource(
+            name="clipboard", prefix="cb", search=lambda q: [],
+            description="Clipboard history",
+        )
+        api.register_source(src)
+
+        pick_calls = []
+
+        def mock_pick(items, callback, placeholder="Choose..."):
+            pick_calls.append(items)
+
+        api.pick = mock_pick
+
+        # Execute help action
+        entry = api._command_source._commands["help"]
+        entry.action("")
+
+        assert len(pick_calls) == 1
+        items = pick_calls[0]
+        # Should include "cb" (clipboard) and ">" (commands)
+        prefixes = [i["subtitle"] for i in items]
+        assert any("cb" in p for p in prefixes)
+        assert any(">" in p for p in prefixes)
+
+    def test_help_action_filters_by_args(self):
+        api = ChooserAPI()
+        api._ensure_command_source()
+
+        api.register_source(ChooserSource(
+            name="clipboard", prefix="cb", search=lambda q: [],
+            description="Clipboard history",
+        ))
+        api.register_source(ChooserSource(
+            name="files", prefix="f", search=lambda q: [],
+            description="Search files",
+        ))
+
+        pick_calls = []
+        api.pick = lambda items, callback, placeholder="": pick_calls.append(items)
+
+        entry = api._command_source._commands["help"]
+        entry.action("clip")
+
+        assert len(pick_calls) == 1
+        items = pick_calls[0]
+        # Only clipboard should match "clip"
+        assert len(items) == 1
+        assert items[0]["title"] == "Clipboard history"
+
+    def test_help_action_skips_sources_without_prefix(self):
+        api = ChooserAPI()
+        api._ensure_command_source()
+
+        # App source has no prefix
+        api.register_source(ChooserSource(
+            name="apps", prefix=None, search=lambda q: [],
+            description="Search applications",
+        ))
+        api.register_source(ChooserSource(
+            name="clipboard", prefix="cb", search=lambda q: [],
+            description="Clipboard history",
+        ))
+
+        pick_calls = []
+        api.pick = lambda items, callback, placeholder="": pick_calls.append(items)
+
+        entry = api._command_source._commands["help"]
+        entry.action("")
+
+        items = pick_calls[0]
+        titles = [i["title"] for i in items]
+        assert "Search applications" not in titles
+        assert "Clipboard history" in titles
+
+    def test_help_uses_source_name_as_fallback(self):
+        api = ChooserAPI()
+        api._ensure_command_source()
+
+        api.register_source(ChooserSource(
+            name="my-source", prefix="ms", search=lambda q: [],
+            # No description
+        ))
+
+        pick_calls = []
+        api.pick = lambda items, callback, placeholder="": pick_calls.append(items)
+
+        entry = api._command_source._commands["help"]
+        entry.action("")
+
+        items = pick_calls[0]
+        titles = [i["title"] for i in items]
+        assert "my-source" in titles

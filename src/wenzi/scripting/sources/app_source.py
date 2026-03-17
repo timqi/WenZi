@@ -361,6 +361,7 @@ class AppSource:
             prefix=None,
             search=self.search,
             priority=10,
+            description="Search applications",
             action_hints={
                 "enter": "Launch",
                 "cmd_enter": "Reveal",
