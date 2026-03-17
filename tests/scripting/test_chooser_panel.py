@@ -277,7 +277,7 @@ class TestItemExecution:
         ]
         panel.close = MagicMock()
         with patch("subprocess.Popen") as mock_popen, \
-             patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: fn()):
+             patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)):
             panel._reveal_item(0)
             mock_popen.assert_called_once()
             args = mock_popen.call_args[0][0]
@@ -303,7 +303,7 @@ class TestItemExecution:
             ),
         ]
         panel.close = MagicMock()
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: fn()):
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)):
             panel._reveal_item(0)
         assert called == ["copied"]
 
@@ -346,7 +346,7 @@ class TestJSMessageHandling:
             ChooserItem(title="Test", action=lambda: called.append(True))
         ]
         panel.close = MagicMock()
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: fn()):
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)):
             panel._handle_js_message({"type": "execute", "index": 0})
         time.sleep(0.3)
         assert called == [True]
@@ -515,7 +515,7 @@ class TestUsageTrackerIntegration:
         ]
         panel.close = MagicMock()
 
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: fn()):
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)):
             panel._execute_item(0)
 
         assert tracker.score("saf", "app:Safari") == 1
@@ -529,7 +529,7 @@ class TestCloseReactivation:
         panel._previous_app = mock_app
 
         call_order = []
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: (call_order.append(fn), fn())):
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: (call_order.append(fn), fn(*a, **kw))):
             with patch("wenzi.scripting.ui.chooser_panel.reactivate_app") as mock_reactivate, \
                  patch("wenzi.scripting.ui.chooser_panel.restore_accessory") as mock_restore:
                 panel.close()
@@ -552,7 +552,7 @@ class TestCloseReactivation:
         """close() should clear _previous_app after use."""
         panel = _make_panel()
         panel._previous_app = MagicMock()
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: fn()), \
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)), \
              patch("wenzi.scripting.ui.chooser_panel.reactivate_app"), \
              patch("wenzi.scripting.ui.chooser_panel.restore_accessory"):
             panel.close()
@@ -562,7 +562,7 @@ class TestCloseReactivation:
         """close() should not crash when _previous_app is None."""
         panel = _make_panel()
         panel._previous_app = None
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: fn()), \
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)), \
              patch("wenzi.scripting.ui.chooser_panel.reactivate_app") as mock_reactivate, \
              patch("wenzi.scripting.ui.chooser_panel.restore_accessory"):
             panel.close()
@@ -696,7 +696,7 @@ class TestQuickLookIntegration:
         panel = _make_panel()
         mock_ql = MagicMock()
         panel._ql_panel = mock_ql
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: fn()), \
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)), \
              patch("wenzi.scripting.ui.chooser_panel.reactivate_app"), \
              patch("wenzi.scripting.ui.chooser_panel.restore_accessory"):
             panel.close()
@@ -824,7 +824,7 @@ class TestModifierActions:
             ),
         ]
         panel.close = MagicMock()
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: fn()):
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)):
             panel._execute_item(0, modifier="alt")
         time.sleep(0.3)
         assert called == ["alt"]
@@ -847,7 +847,7 @@ class TestModifierActions:
             ),
         ]
         panel.close = MagicMock()
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn: fn()):
+        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)):
             panel._execute_item(0)
         time.sleep(0.3)
         assert called == ["default"]
