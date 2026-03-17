@@ -89,40 +89,31 @@ class PreviewController:
         final_text: str,
         audio_duration: float = 0.0,
     ) -> str | None:
-        """Log enhancement result, with per-step logging for chain modes.
+        """Log enhancement result to conversation history.
 
-        For chain modes, each intermediate step is logged under its own
-        ``enhance_mode`` so that per-mode history caching works correctly.
-        The last step receives the user's ``final_text`` and
-        ``user_corrected`` flag.
+        Chain modes (identified by ``is_chain`` flag in *result_holder*)
+        skip logging entirely — the user cannot verify intermediate step
+        results, so recording them as confirmed history could mislead the
+        LLM.  Chain modes only *read* from each step's per-mode history
+        during execution.
 
         Returns:
-            The timestamp of the last logged record (used for preview history).
+            The timestamp of the logged record, or ``None`` for chain modes.
         """
-        chain_steps = result_holder.get("chain_step_results")
-        stt_model = app._current_stt_model()
-        llm_model = app._current_llm_model()
-        user_corrected = bool(result_holder.get("user_corrected"))
-
-        if chain_steps and len(chain_steps) > 1:
-            # Chain modes only *read* from each step's per-mode history
-            # during execution — they do not *write* to any mode's history.
-            # The user cannot verify or correct intermediate step results,
-            # so logging them as confirmed history could mislead the LLM.
+        if result_holder.get("is_chain"):
             return None
-        else:
-            # Non-chain mode or single-step chain
-            return app._conversation_history.log(
-                asr_text=asr_text,
-                enhanced_text=result_holder.get("enhanced_text"),
-                final_text=final_text,
-                enhance_mode=app._enhance_mode,
-                preview_enabled=True,
-                stt_model=stt_model,
-                llm_model=llm_model,
-                user_corrected=user_corrected,
-                audio_duration=audio_duration,
-            )
+
+        return app._conversation_history.log(
+            asr_text=asr_text,
+            enhanced_text=result_holder.get("enhanced_text"),
+            final_text=final_text,
+            enhance_mode=app._enhance_mode,
+            preview_enabled=True,
+            stt_model=app._current_stt_model(),
+            llm_model=app._current_llm_model(),
+            user_corrected=bool(result_holder.get("user_corrected")),
+            audio_duration=audio_duration,
+        )
 
     def _save_to_preview_history(
         self,

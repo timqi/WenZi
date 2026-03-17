@@ -255,7 +255,6 @@ class EnhanceController:
         }
         cancelled = False
         all_display_parts: list[str] = []
-        chain_step_results: list[dict] = []
 
         try:
             for step_idx, step_id in enumerate(chain_steps, 1):
@@ -344,14 +343,6 @@ class EnhanceController:
 
                 # This step's output becomes next step's input
                 step_result = "".join(collected).strip()
-
-                # Record per-step result for per-mode history logging
-                chain_step_results.append({
-                    "asr_text": input_text,
-                    "enhanced_text": step_result or input_text,
-                    "enhance_mode": step_id,
-                })
-
                 if step_result:
                     input_text = step_result
 
@@ -385,7 +376,7 @@ class EnhanceController:
                 result_holder["enhanced_text"] = enhanced
                 result_holder["system_prompt"] = system_prompt
                 result_holder["thinking_text"] = self._preview_panel._thinking_text
-                result_holder["chain_step_results"] = chain_step_results
+                result_holder["is_chain"] = True
             self._preview_panel.set_enhance_complete(
                 request_id=request_id,
                 usage=total_usage if total_usage["total_tokens"] > 0 else None,

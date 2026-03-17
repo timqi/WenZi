@@ -291,25 +291,11 @@ class TestLogWithChainSteps:
 
     @patch("wenzi.controllers.preview_controller.save_config")
     def test_chain_mode_skips_logging(self, _mock_save, ctrl, mock_app):
-        """Chain mode with 2+ steps does not log to conversation history."""
-        mock_app._current_stt_model.return_value = "funasr"
-        mock_app._current_llm_model.return_value = "gpt-4o"
-
+        """Chain mode (is_chain=True) does not log to conversation history."""
         result_holder = {
             "enhanced_text": "Hello World",
             "user_corrected": True,
-            "chain_step_results": [
-                {
-                    "asr_text": "你好试解",
-                    "enhanced_text": "你好世界",
-                    "enhance_mode": "proofread",
-                },
-                {
-                    "asr_text": "你好世界",
-                    "enhanced_text": "Hello World",
-                    "enhance_mode": "translate_en",
-                },
-            ],
+            "is_chain": True,
         }
 
         ts = ctrl._log_with_chain_steps(
@@ -324,41 +310,8 @@ class TestLogWithChainSteps:
         mock_app._conversation_history.log.assert_not_called()
 
     @patch("wenzi.controllers.preview_controller.save_config")
-    def test_single_step_chain_logs_as_single(self, _mock_save, ctrl, mock_app):
-        """Chain with only 1 step falls back to single-entry logging."""
-        mock_app._enhance_mode = "translate_en_plus"
-        mock_app._current_stt_model.return_value = "funasr"
-        mock_app._current_llm_model.return_value = "gpt-4o"
-        mock_app._conversation_history.log.return_value = "ts-001"
-
-        result_holder = {
-            "enhanced_text": "Hello",
-            "user_corrected": False,
-            "chain_step_results": [
-                {
-                    "asr_text": "你好",
-                    "enhanced_text": "Hello",
-                    "enhance_mode": "translate_en",
-                },
-            ],
-        }
-
-        ts = ctrl._log_with_chain_steps(
-            mock_app,
-            result_holder=result_holder,
-            asr_text="你好",
-            final_text="Hello",
-        )
-
-        assert ts == "ts-001"
-        # Single log, under app._enhance_mode (the chain mode ID)
-        mock_app._conversation_history.log.assert_called_once()
-        call_kwargs = mock_app._conversation_history.log.call_args.kwargs
-        assert call_kwargs["enhance_mode"] == "translate_en_plus"
-
-    @patch("wenzi.controllers.preview_controller.save_config")
-    def test_no_chain_step_results_key(self, _mock_save, ctrl, mock_app):
-        """result_holder without chain_step_results uses single-entry path."""
+    def test_non_chain_without_flag_logs_normally(self, _mock_save, ctrl, mock_app):
+        """result_holder without is_chain flag logs normally."""
         mock_app._enhance_mode = "proofread"
         mock_app._current_stt_model.return_value = "funasr"
         mock_app._current_llm_model.return_value = "gpt-4o"
@@ -377,14 +330,14 @@ class TestLogWithChainSteps:
         assert mock_app._conversation_history.log.call_args.kwargs["enhance_mode"] == "proofread"
 
     @patch("wenzi.controllers.preview_controller.save_config")
-    def test_chain_empty_step_results(self, _mock_save, ctrl, mock_app):
-        """Empty chain_step_results list uses single-entry path."""
+    def test_is_chain_false_logs_normally(self, _mock_save, ctrl, mock_app):
+        """is_chain=False still logs normally."""
         mock_app._enhance_mode = "proofread"
         mock_app._current_stt_model.return_value = "funasr"
         mock_app._current_llm_model.return_value = "gpt-4o"
         mock_app._conversation_history.log.return_value = "ts-001"
 
-        result_holder = {"enhanced_text": "Hello.", "chain_step_results": []}
+        result_holder = {"enhanced_text": "Hello.", "is_chain": False}
 
         ctrl._log_with_chain_steps(
             mock_app,
