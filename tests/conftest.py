@@ -115,17 +115,15 @@ def _safe_default_paths(tmp_path, monkeypatch):
 
     monkeypatch.setattr("builtins.open", _guarded_open)
 
-    # Guard destructive os/shutil operations
-    _GUARDED_OPS = {
+    # Guard destructive os operations (single-path argument)
+    _GUARDED_SINGLE = {
         "os.remove": os.remove,
         "os.unlink": os.unlink,
         "os.makedirs": os.makedirs,
         "os.mkdir": os.mkdir,
-        "os.rename": os.rename,
-        "os.replace": os.replace,
     }
-    for dotpath, original_fn in _GUARDED_OPS.items():
-        mod_name, fn_name = dotpath.rsplit(".", 1)
+    for dotpath, original_fn in _GUARDED_SINGLE.items():
+        _mod, fn_name = dotpath.rsplit(".", 1)
 
         def _make_guard(orig, name):
             def _guard(path, *a, **kw):
@@ -136,20 +134,58 @@ def _safe_default_paths(tmp_path, monkeypatch):
 
         monkeypatch.setattr(dotpath, _make_guard(original_fn, fn_name))
 
-    import shutil
-    for fn_name in ("rmtree", "copytree"):
-        original_fn = getattr(shutil, fn_name)
+    # Guard os operations with two path arguments (src, dst)
+    _GUARDED_DUAL = {
+        "os.rename": os.rename,
+        "os.replace": os.replace,
+    }
+    for dotpath, original_fn in _GUARDED_DUAL.items():
+        _mod, fn_name = dotpath.rsplit(".", 1)
 
-        def _make_shutil_guard(orig, name):
-            def _guard(path, *a, **kw):
-                if _is_guarded(path):
-                    _reject(name, path)
-                return orig(path, *a, **kw)
+        def _make_dual_guard(orig, name):
+            def _guard(src, dst, *a, **kw):
+                if _is_guarded(src):
+                    _reject(name, src)
+                if _is_guarded(dst):
+                    _reject(name, dst)
+                return orig(src, dst, *a, **kw)
             return _guard
 
-        monkeypatch.setattr(
-            f"shutil.{fn_name}", _make_shutil_guard(original_fn, fn_name),
-        )
+        monkeypatch.setattr(dotpath, _make_dual_guard(original_fn, fn_name))
+
+    # Guard shutil operations
+    import shutil
+
+    # rmtree: single path
+    _orig_rmtree = shutil.rmtree
+
+    def _guarded_rmtree(path, *a, **kw):
+        if _is_guarded(path):
+            _reject("rmtree", path)
+        return _orig_rmtree(path, *a, **kw)
+
+    monkeypatch.setattr("shutil.rmtree", _guarded_rmtree)
+
+    # copytree: check both src and dst
+    _orig_copytree = shutil.copytree
+
+    def _guarded_copytree(src, dst, *a, **kw):
+        if _is_guarded(dst):
+            _reject("copytree", dst)
+        return _orig_copytree(src, dst, *a, **kw)
+
+    monkeypatch.setattr("shutil.copytree", _guarded_copytree)
+
+    # Guard sqlite3.connect
+    import sqlite3
+    _orig_sqlite3_connect = sqlite3.connect
+
+    def _guarded_sqlite3_connect(database, *a, **kw):
+        if _is_guarded(database):
+            _reject("sqlite3.connect", database)
+        return _orig_sqlite3_connect(database, *a, **kw)
+
+    monkeypatch.setattr("sqlite3.connect", _guarded_sqlite3_connect)
 
 
 class MockAppKitModules:
