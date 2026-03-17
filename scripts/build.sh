@@ -12,7 +12,7 @@ if [ -n "${CODESIGN_IDENTITY:-}" ]; then
     SIGN_MODE="identity"
 else
     SIGN_IDENTITY=$(security find-identity -p codesigning \
-        | grep -m1 ')' | awk '{print $2}')
+        | grep -m1 ')' | awk '{print $2}' || true)
     if [ -n "$SIGN_IDENTITY" ]; then
         SIGN_MODE="identity"
     else

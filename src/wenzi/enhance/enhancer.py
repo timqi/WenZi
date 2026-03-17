@@ -62,6 +62,12 @@ def _is_deepseek_reasoning_model(model_lower: str) -> bool:
     )
 
 
+def _is_deepseek_thinking_model(model_lower: str) -> bool:
+    """Check if model is a DeepSeek model that supports enable_thinking."""
+    lower = model_lower.lower()
+    return "deepseek" in lower and not _is_deepseek_reasoning_model(lower)
+
+
 def build_thinking_body(model: str, enabled: bool) -> Dict[str, Any]:
     """Build extra_body parameters to control thinking for a given model.
 
@@ -72,6 +78,7 @@ def build_thinking_body(model: str, enabled: bool) -> Dict[str, Any]:
     |-------------------|-------------------------------------------|-------------------------------------------|
     | GLM               | {"thinking": {"type": "enabled"}}         | {"thinking": {"type": "disabled"}}        |
     | Qwen              | chat_template_kwargs enable_thinking=True | chat_template_kwargs enable_thinking=False|
+    | DeepSeek (V3 etc) | {"enable_thinking": true}                 | {"enable_thinking": false}                |
     | OpenAI reasoning  | {"reasoning_effort": "low"}               | {} (no param)                             |
     | DeepSeek reasoning| {"reasoning_effort": "low"}               | {} (no param)                             |
     | Other             | {} (no param)                             | {} (no param)                             |
@@ -86,6 +93,9 @@ def build_thinking_body(model: str, enabled: bool) -> Dict[str, Any]:
 
     if "qwen" in model_lower:
         return {"chat_template_kwargs": {"enable_thinking": enabled}}
+
+    if _is_deepseek_thinking_model(model_lower):
+        return {"enable_thinking": enabled}
 
     if _is_openai_reasoning_model(model_lower) or _is_deepseek_reasoning_model(
         model_lower

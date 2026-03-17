@@ -14,6 +14,7 @@ from wenzi.enhance.enhancer import (
     build_thinking_body,
     strip_think_tags,
     _is_deepseek_reasoning_model,
+    _is_deepseek_thinking_model,
     _is_openai_reasoning_model,
     create_enhancer,
 )
@@ -840,6 +841,22 @@ class TestThinkingAndExtraBody:
         result = build_thinking_body("deepseek-r1", enabled=False)
         assert result == {}
 
+    def test_build_thinking_body_deepseek_v3_disabled(self):
+        result = build_thinking_body("deepseek-v3", enabled=False)
+        assert result == {"enable_thinking": False}
+
+    def test_build_thinking_body_deepseek_v3_enabled(self):
+        result = build_thinking_body("deepseek-v3", enabled=True)
+        assert result == {"enable_thinking": True}
+
+    def test_build_thinking_body_deepseek_chat_disabled(self):
+        result = build_thinking_body("deepseek-chat", enabled=False)
+        assert result == {"enable_thinking": False}
+
+    def test_build_thinking_body_deepseek_chat_enabled(self):
+        result = build_thinking_body("deepseek-chat", enabled=True)
+        assert result == {"enable_thinking": True}
+
     def test_build_thinking_body_unknown_model(self):
         result = build_thinking_body("llama-3.1:8b", enabled=False)
         assert result == {}
@@ -868,6 +885,14 @@ class TestThinkingAndExtraBody:
         assert _is_deepseek_reasoning_model("deepseek-reasoner") is True
         assert _is_deepseek_reasoning_model("deepseek-chat") is False
         assert _is_deepseek_reasoning_model("deepseek-v3") is False
+
+    def test_is_deepseek_thinking_model(self):
+        assert _is_deepseek_thinking_model("deepseek-v3") is True
+        assert _is_deepseek_thinking_model("deepseek-chat") is True
+        assert _is_deepseek_thinking_model("DeepSeek-V3.2") is True
+        assert _is_deepseek_thinking_model("deepseek-r1") is False
+        assert _is_deepseek_thinking_model("deepseek-reasoner") is False
+        assert _is_deepseek_thinking_model("qwen2.5") is False
 
     def test_enhance_passes_extra_body_when_thinking_off(self):
         mock_client = _make_mock_client("enhanced")
