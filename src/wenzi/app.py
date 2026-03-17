@@ -219,7 +219,7 @@ class WenZiApp(StatusBarApp):
         fb_cfg = self._config.get("feedback", {})
         self._sound_manager = SoundManager(
             enabled=fb_cfg.get("sound_enabled", True),
-            volume=fb_cfg.get("sound_volume", 0.4),
+            volume=fb_cfg.get("sound_volume", 0.1),
             config_dir=self._config_dir,
         )
         self._recording_indicator = RecordingIndicatorPanel()

@@ -47,7 +47,7 @@ class SoundManager:
     def __init__(
         self,
         enabled: bool = True,
-        volume: float = 0.4,
+        volume: float = 0.1,
         config_dir: str | None = None,
     ) -> None:
         self._enabled = enabled
