@@ -6,7 +6,6 @@ ClipboardMonitor. Activated via ">cb" prefix or Tab key switching.
 
 from __future__ import annotations
 
-import base64
 import logging
 import os
 import time
@@ -78,52 +77,6 @@ def _format_file_size(size_bytes: int) -> str:
     if size_bytes < 1024 * 1024:
         return f"{size_bytes / 1024:.1f} KB"
     return f"{size_bytes / (1024 * 1024):.1f} MB"
-
-
-def _make_thumbnail_data_uri(image_path: str, max_dim: int = 480) -> str:
-    """Read a PNG file, resize to fit *max_dim*, return as base64 data URI."""
-    from AppKit import NSBitmapImageRep, NSPNGFileType
-
-    with open(image_path, "rb") as f:
-        raw = f.read()
-
-    from Foundation import NSData
-
-    ns_data = NSData.dataWithBytes_length_(raw, len(raw))
-    rep = NSBitmapImageRep.imageRepWithData_(ns_data)
-    if rep is None:
-        return ""
-
-    w, h = int(rep.pixelsWide()), int(rep.pixelsHigh())
-    if max(w, h) > max_dim:
-        scale = max_dim / max(w, h)
-        new_w, new_h = int(w * scale), int(h * scale)
-        from AppKit import NSGraphicsContext, NSImage
-        from Foundation import NSMakeRect, NSMakeSize
-
-        img = NSImage.alloc().initWithSize_(NSMakeSize(new_w, new_h))
-        img.lockFocus()
-        NSGraphicsContext.currentContext().setImageInterpolation_(3)  # High
-        rep.drawInRect_(NSMakeRect(0, 0, new_w, new_h))
-        img.unlockFocus()
-
-        tiff_data = img.TIFFRepresentation()
-        rep = NSBitmapImageRep.imageRepWithData_(tiff_data)
-        if rep is None:
-            return ""
-
-    png_data = rep.representationUsingType_properties_(NSPNGFileType, {})
-    if png_data is None:
-        return ""
-
-    b64 = base64.b64encode(bytes(png_data)).decode("ascii")
-    return f"data:image/png;base64,{b64}"
-
-
-def _png_to_data_uri(png_bytes: bytes) -> str:
-    """Convert PNG bytes to a base64 data URI."""
-    b64 = base64.b64encode(png_bytes).decode("ascii")
-    return f"data:image/png;base64,{b64}"
 
 
 def _paste_image(image_path: str) -> None:
@@ -205,7 +158,6 @@ class ClipboardSource:
         self._empty_cache_time: float = 0.0
         self._icon_mem_cache: Dict[str, str] = {}  # bundle_id → data URI or ""
         self._icon_miss_until: Dict[str, float] = {}  # bundle_id → retry-after ts
-        self._thumbnail_cache: Dict[str, str] = {}  # image_path → data URI
 
     _ICON_MISS_TTL = 30.0  # seconds before rechecking disk for a missed icon
 
@@ -293,7 +245,6 @@ class ClipboardSource:
                 def _do_delete_img(ip=ep, m=monitor):
                     m.delete_image(ip)
 
-                # Lazy preview — image thumbnails are expensive
                 _entry = entry  # capture for lambda
 
                 def _lazy_preview(e=_entry):
@@ -380,29 +331,17 @@ class ClipboardSource:
         return {"type": "text", "content": entry.text}
 
     def _make_image_preview(self, entry) -> dict:
-        """Build an image preview dict with a base64 data URI thumbnail."""
+        """Build an image preview dict with a file:// URL."""
         info_parts = []
         if entry.image_width and entry.image_height:
             info_parts.append(f"{entry.image_width}\u00d7{entry.image_height}")
         if entry.image_size:
             info_parts.append(_format_file_size(entry.image_size))
 
-        # Use cached thumbnail if available
-        src = self._thumbnail_cache.get(entry.image_path, None)
-        if src is None:
-            src = ""
-            full_path = os.path.join(
-                self._monitor.image_dir, entry.image_path,
-            )
-            try:
-                if os.path.isfile(full_path):
-                    src = _make_thumbnail_data_uri(full_path)
-            except Exception:
-                logger.debug(
-                    "Failed to create thumbnail for %s",
-                    full_path, exc_info=True,
-                )
-            self._thumbnail_cache[entry.image_path] = src
+        full_path = os.path.join(
+            self._monitor.image_dir, entry.image_path,
+        )
+        src = "file://" + full_path if os.path.isfile(full_path) else ""
 
         return {
             "type": "image",
