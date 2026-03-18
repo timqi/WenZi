@@ -148,7 +148,8 @@ class VocabularyBuilder:
                             i, len(batches), len(batch), attempt + 1,
                         )
                         extracted, batch_usage, response_text = await self._extract_batch(
-                            messages, user_prompt, client=client, on_stream_chunk=on_chunk
+                            messages, user_prompt, client=client,
+                            on_stream_chunk=on_chunk, cancel_event=cancel_event,
                         )
                         break
                     except Exception as e:
@@ -168,6 +169,12 @@ class VocabularyBuilder:
                         cancelled = True
                     else:
                         aborted = True
+                    break
+
+                # Mid-stream cancel: _extract_batch returned empty results
+                if cancel_event is not None and cancel_event.is_set() and not extracted:
+                    logger.info("Build cancelled mid-stream at batch %d/%d", i, len(batches))
+                    cancelled = True
                     break
 
                 # Append this turn to the session for KV cache continuity
@@ -330,6 +337,7 @@ class VocabularyBuilder:
         *,
         client: Any = None,
         on_stream_chunk: Optional[Callable[[str], None]] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> tuple[List[Dict[str, Any]], Dict[str, int], str]:
         """Call LLM to extract vocabulary entries from a batch of records.
 
@@ -342,6 +350,8 @@ class VocabularyBuilder:
             client: AsyncOpenAI client to use for API calls.
             on_stream_chunk: If provided, use streaming mode and call this
                 with each text chunk as it arrives.
+            cancel_event: If set during streaming, the extraction is
+                interrupted and returns empty results.
 
         Returns:
             A tuple of (entries, usage, response_text).
@@ -361,6 +371,7 @@ class VocabularyBuilder:
         if on_stream_chunk is not None:
             # Streaming path — request usage in final chunk
             stream_options = {"include_usage": True}
+            cancelled = False
             async with asyncio.timeout(self._batch_timeout):
                 async with await client.chat.completions.create(
                     model=model,
@@ -371,12 +382,18 @@ class VocabularyBuilder:
                 ) as stream:
                     parts: List[str] = []
                     async for chunk in stream:
+                        if cancel_event is not None and cancel_event.is_set():
+                            logger.info("Streaming cancelled mid-batch")
+                            cancelled = True
+                            break
                         if chunk.choices and chunk.choices[0].delta.content:
                             delta = chunk.choices[0].delta.content
                             parts.append(delta)
                             on_stream_chunk(delta)
                         if chunk.usage is not None:
                             usage = self._extract_usage(chunk.usage)
+                if cancelled:
+                    return [], usage, ""
                 content = "".join(parts)
         else:
             # Non-streaming path

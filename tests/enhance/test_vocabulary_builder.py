@@ -852,6 +852,50 @@ class TestExtractBatchStreaming:
         assert len(entries) == 1
         assert entries[0]["term"] == "Python"
 
+    def test_cancel_interrupts_streaming(self):
+        """cancel_event should interrupt streaming and return empty results."""
+        builder = VocabularyBuilder(_make_config())
+        user_prompt = "asr_text: test\nfinal_text: test"
+        messages = _mock_messages()
+
+        pipe_parts = ["term|categ", "ory|variants|context\n", "Python|tech|派森|", "编程语言"]
+
+        cancel_event = threading.Event()
+        chunks_received = []
+
+        chunks = []
+        for part in pipe_parts:
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = part
+            chunk.usage = None
+            chunks.append(chunk)
+
+        async def mock_create(**kwargs):
+            return _AsyncStreamMock(chunks)
+
+        mock_client = MagicMock()
+        mock_client.close = AsyncMock()
+        mock_client.chat.completions.create = mock_create
+
+        def on_chunk(c):
+            chunks_received.append(c)
+            # Cancel after receiving the first chunk
+            if len(chunks_received) == 1:
+                cancel_event.set()
+
+        entries, usage, text = asyncio.run(
+            builder._extract_batch(
+                messages, user_prompt, client=mock_client,
+                on_stream_chunk=on_chunk, cancel_event=cancel_event,
+            )
+        )
+
+        # Should have stopped early — got 1 chunk, then cancel was detected
+        assert len(chunks_received) == 1
+        assert entries == []
+        assert text == ""
+
     def test_no_callback_uses_non_streaming(self):
         """Without on_stream_chunk, the non-streaming path is used."""
         builder = VocabularyBuilder(_make_config())
