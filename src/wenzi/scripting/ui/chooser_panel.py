@@ -186,6 +186,7 @@ class ChooserPanel:
         self._pending_initial_query: Optional[str] = None
         self._pending_placeholder: Optional[str] = None
         self._event_callback: Optional[Callable] = None  # (event, *args)
+        self._snippet_expander = None  # SnippetExpander to suppress on show
         self._previous_app = None  # NSRunningApplication saved on show()
         self._ql_panel = None  # Quick Look preview panel
         self._calc_mode: bool = False  # Calculator pin mode
@@ -491,6 +492,9 @@ class ChooserPanel:
         NSApp.setActivationPolicy_(0)  # Regular (foreground)
         NSApp.activateIgnoringOtherApps_(True)
 
+        if self._snippet_expander is not None:
+            self._snippet_expander.suppress()
+
         self._fire_event("open")
 
     def close(self) -> None:
@@ -498,6 +502,9 @@ class ChooserPanel:
         if self._closing:
             return
         self._closing = True
+
+        if self._snippet_expander is not None:
+            self._snippet_expander.resume()
         self._calc_sticky = False
         self._exit_calc_mode()
 

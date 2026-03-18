@@ -52,7 +52,8 @@ from typing import Dict, List, Optional, Tuple
 
 from wenzi.config import DEFAULT_SNIPPETS_DIR as _CFG_SNIPPETS_DIR
 from wenzi.scripting.sources import (
-    ChooserItem, ChooserSource, copy_to_clipboard, fuzzy_match, paste_text,
+    ChooserItem, ChooserSource, ModifierAction,
+    copy_to_clipboard, fuzzy_match, paste_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -758,6 +759,14 @@ class SnippetSource:
                 preview_content = content
 
             if is_random:
+                def _do_edit_random(vs=variants, r=raw, fp=file_path):
+                    from wenzi.scripting.ui.quick_edit_panel import (
+                        open_quick_edit,
+                    )
+                    open_quick_edit(
+                        _pick_and_resolve(vs, r), reveal_path=fp,
+                    )
+
                 items.append(
                     ChooserItem(
                         title=title,
@@ -775,9 +784,19 @@ class SnippetSource:
                             self._store, n, cat,
                         ),
                         confirm_delete=True,
+                        modifiers={"alt": ModifierAction(
+                            subtitle="Quick Edit",
+                            action=_do_edit_random,
+                        )},
                     )
                 )
             else:
+                def _do_edit(c=content, r=raw, fp=file_path):
+                    from wenzi.scripting.ui.quick_edit_panel import (
+                        open_quick_edit,
+                    )
+                    open_quick_edit(_resolve(c, r), reveal_path=fp)
+
                 items.append(
                     ChooserItem(
                         title=title,
@@ -795,6 +814,10 @@ class SnippetSource:
                             self._store, n, cat,
                         ),
                         confirm_delete=True,
+                        modifiers={"alt": ModifierAction(
+                            subtitle="Quick Edit",
+                            action=_do_edit,
+                        )},
                     )
                 )
 
@@ -829,6 +852,7 @@ class SnippetSource:
             action_hints={
                 "enter": "Paste",
                 "cmd_enter": "Copy",
+                "alt_enter": "Edit",
                 "delete": "Delete",
             },
             show_preview=True,

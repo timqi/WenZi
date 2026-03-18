@@ -1093,7 +1093,7 @@ class SettingsPanel:
 
         hk_display = NSTextField.labelWithString_(hotkey_val or "None")
         hk_display.setFrame_(
-            NSMakeRect(pad + 80, y + 2, 120, self._CONTROL_HEIGHT)
+            NSMakeRect(pad + 105, y + 2, 120, self._CONTROL_HEIGHT)
         )
         hk_display.setFont_(small_font)
         hk_display.setTextColor_(NSColor.secondaryLabelColor())
@@ -1107,7 +1107,7 @@ class SettingsPanel:
             hk_btn_title = "Record"
             hk_btn_action = b"launcherHotkeyRecord:"
         hk_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(pad + 205, y - 1, 60, 22)
+            NSMakeRect(pad + 230, y - 1, 60, 22)
         )
         hk_btn.setTitle_(hk_btn_title)
         hk_btn.setBezelStyle_(1)
@@ -1126,7 +1126,7 @@ class SettingsPanel:
 
         new_sn_hk_label = NSTextField.labelWithString_(new_sn_hotkey or "None")
         new_sn_hk_label.setFrame_(
-            NSMakeRect(pad + 80, y + 2, 120, self._CONTROL_HEIGHT)
+            NSMakeRect(pad + 105, y + 2, 120, self._CONTROL_HEIGHT)
         )
         new_sn_hk_label.setFont_(small_font)
         new_sn_hk_label.setTextColor_(NSColor.secondaryLabelColor())
@@ -1140,7 +1140,7 @@ class SettingsPanel:
             btn_title = "Record"
             btn_action = b"newSnippetHotkeyRecord:"
         new_sn_hk_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(pad + 205, y - 1, 60, 22)
+            NSMakeRect(pad + 230, y - 1, 60, 22)
         )
         new_sn_hk_btn.setTitle_(btn_title)
         new_sn_hk_btn.setBezelStyle_(1)

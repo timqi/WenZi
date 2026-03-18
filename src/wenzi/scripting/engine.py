@@ -296,6 +296,8 @@ class ScriptEngine:
 
                 self._snippet_expander = SnippetExpander(self._snippet_store)
                 self._snippet_expander.start()
+                panel = self._wz.chooser._get_panel()
+                panel._snippet_expander = self._snippet_expander
             logger.info("Snippet source enabled at runtime")
         except Exception:
             logger.exception("Failed to enable snippet source")
@@ -496,6 +498,8 @@ class ScriptEngine:
 
                 self._snippet_expander = SnippetExpander(self._snippet_store)
                 self._snippet_expander.start()
+                panel = self._wz.chooser._get_panel()
+                panel._snippet_expander = self._snippet_expander
                 logger.info("Snippet keyword expander started")
             except Exception:
                 logger.exception("Failed to start snippet expander")

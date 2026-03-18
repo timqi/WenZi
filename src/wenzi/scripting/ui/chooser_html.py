@@ -852,6 +852,9 @@ function setActionHints(hints) {
     if (hints.cmd_enter) {
         parts.push('<kbd>\u2318\u21b5</kbd> ' + hints.cmd_enter);
     }
+    if (hints.alt_enter) {
+        parts.push('<kbd>\u2325\u21b5</kbd> ' + hints.alt_enter);
+    }
     if (hints['delete']) {
         parts.push('<kbd>\u2318\u232b</kbd> ' + hints['delete']);
     }

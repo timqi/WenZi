@@ -130,6 +130,7 @@ a = Analysis(
         'wenzi.scripting.ui.chooser_panel',
         'wenzi.scripting.ui.leader_alert',
         'wenzi.scripting.ui.quicklook_panel',
+        'wenzi.scripting.ui.quick_edit_panel',
         'wenzi.scripting.ui.snippet_editor_panel',
         # third-party
         'sounddevice',

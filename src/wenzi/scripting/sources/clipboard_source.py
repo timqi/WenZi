@@ -16,7 +16,8 @@ from wenzi.scripting.clipboard_monitor import (
     _icon_cache_path,
 )
 from wenzi.scripting.sources import (
-    ChooserItem, ChooserSource, copy_to_clipboard, paste_text,
+    ChooserItem, ChooserSource, ModifierAction,
+    copy_to_clipboard, paste_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -257,6 +258,12 @@ class ClipboardSource:
 
                 # Use first 64 chars of text as stable id
                 text_key = text[:64].replace("\n", " ")
+                def _do_edit(t=text):
+                    from wenzi.scripting.ui.quick_edit_panel import (
+                        open_quick_edit,
+                    )
+                    open_quick_edit(t)
+
                 results.append(
                     ChooserItem(
                         title=display,
@@ -267,6 +274,10 @@ class ClipboardSource:
                         action=_do_paste,
                         secondary_action=_do_copy,
                         delete_action=_do_delete_text,
+                        modifiers={"alt": ModifierAction(
+                            subtitle="Quick Edit",
+                            action=_do_edit,
+                        )},
                     )
                 )
                 if len(results) >= self._max_results:
@@ -328,6 +339,7 @@ class ClipboardSource:
             action_hints={
                 "enter": "Paste",
                 "cmd_enter": "Copy",
+                "alt_enter": "Edit",
                 "delete": "Delete",
             },
             show_preview=True,
