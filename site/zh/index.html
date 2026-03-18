@@ -61,63 +61,39 @@
     <div class="features-grid">
 
       <div class="feature-card fade-in">
-        <div class="feature-icon">&#128268;</div>
-        <h3>零配置启动</h3>
-        <p>默认使用 Apple 设备端语音识别 — 无需下载模型、无需 API 密钥，开箱即用。可随时切换到 FunASR 或 MLX-Whisper 获取更高准确度。</p>
-      </div>
-
-      <div class="feature-card fade-in">
         <div class="feature-icon">&#127911;</div>
-        <h3>多引擎支持</h3>
-        <p>五大语音引擎：Apple Speech（系统内置）、FunASR（中文优化）、MLX-Whisper（99 种语言，Apple GPU 加速）、Sherpa-ONNX 及远程 Whisper API。</p>
+        <h3>多引擎语音识别</h3>
+        <p>五大引擎 — Apple Speech（零配置）、FunASR（中文优化）、MLX-Whisper（99 种语言，Apple GPU 加速）、Sherpa-ONNX 及 Whisper API。录音时实时流式转写浮层。</p>
       </div>
 
       <div class="feature-card fade-in">
         <div class="feature-icon">&#10024;</div>
         <h3>AI 增强</h3>
-        <p>可选的 LLM 驱动文本纠错、润色、补全和翻译，支持任何 OpenAI 兼容 API。</p>
-      </div>
-
-      <div class="feature-card fade-in">
-        <div class="feature-icon">&#128279;</div>
-        <h3>链式模式</h3>
-        <p>多步骤增强管道 — 例如先纠错润色再翻译 — 通过 Markdown 文件灵活定义。</p>
+        <p>LLM 驱动的纠错、翻译和链式管道，支持任何 OpenAI 兼容 API。剪贴板增强（<code>Ctrl+Cmd+V</code>）可直接处理选中文本。支持扩展思维可视化。</p>
       </div>
 
       <div class="feature-card fade-in">
         <div class="feature-icon">&#128218;</div>
-        <h3>个人词库</h3>
-        <p>基于向量检索的个人词库，从纠正历史中学习专有名词和领域术语，越用越准确。</p>
+        <h3>自进化纠错</h3>
+        <p>个人词库从纠正历史中学习专业术语，会话历史实现话题连续性。越用越准确。</p>
       </div>
 
       <div class="feature-card fade-in">
-        <div class="feature-icon">&#127908;</div>
-        <h3>实时流式转写</h3>
-        <p>录音时浮动显示实时转写结果 — 边说边看，文字即时呈现。</p>
-      </div>
-
-      <div class="feature-card fade-in">
-        <div class="feature-icon">&#128197;</div>
-        <h3>历史记录与统计</h3>
-        <p>浏览历史转写记录，支持标签筛选、时间范围过滤和删除。交互式堆叠柱状图直观展示使用趋势。</p>
+        <div class="feature-icon">&#128269;</div>
+        <h3>启动器与代码片段</h3>
+        <p>Alfred 风格搜索面板 — 应用、文件、剪贴板历史、书签、计算器（含单位换算）及命令面板。代码片段输入时自动展开。</p>
       </div>
 
       <div class="feature-card fade-in">
         <div class="feature-icon">&#128187;</div>
-        <h3>脚本系统</h3>
-        <p>基于 Python 的插件系统，通过 Leader 键和快捷键自动化 macOS 操作 — 提示框、剪贴板、Shell 命令等。</p>
-      </div>
-
-      <div class="feature-card fade-in">
-        <div class="feature-icon">&#127761;</div>
-        <h3>深色模式</h3>
-        <p>所有面板和窗口全面支持深色模式，自动跟随 macOS 系统外观设置。</p>
+        <h3>脚本与自动化</h3>
+        <p>Python 插件系统，支持 Leader 键、快捷键、事件监听、持久化存储和 Shell 命令，实现 macOS 自动化。</p>
       </div>
 
       <div class="feature-card fade-in">
         <div class="feature-icon">&#9889;</div>
-        <h3>轻量级</h3>
-        <p>仅在菜单栏运行，不占 Dock 位置。资源占用极小，快捷键即时响应。</p>
+        <h3>轻量原生</h3>
+        <p>仅在菜单栏运行，不占 Dock 位置。全面支持深色模式。历史浏览器支持标签筛选和交互式使用统计图表。</p>
       </div>
 
     </div>
@@ -133,17 +109,17 @@
       <div class="step fade-in">
         <div class="step-number">1</div>
         <h3>按住录音</h3>
-        <p>按住 <code>fn</code> 键（或自定义快捷键）开始说话。浮动指示器显示录音状态和音量条，实时转写浮层同步显示识别结果。按 <code>Space</code> 重新开始，<code>ESC</code> 或 <code>Fn+Cmd</code> 取消录音。</p>
+        <p>按住 <code>fn</code> 开始说话，实时浮层同步显示识别结果。<code>Cmd</code> 重新开始，<code>Space</code> 取消，<code>Z</code> 浏览最近历史。</p>
       </div>
       <div class="step fade-in">
         <div class="step-number">2</div>
         <h3>松开转写</h3>
-        <p>松开按键 — WenZi 使用选定的语音引擎转写语音，可选 AI 增强处理。</p>
+        <p>松开按键 — WenZi 转写语音，可选 AI 增强处理。</p>
       </div>
       <div class="step fade-in">
         <div class="step-number">3</div>
         <h3>自动输入</h3>
-        <p>转写结果自动输入到当前活动应用，或在 Web 预览面板中显示，供编辑、对比模型和确认。</p>
+        <p>结果自动输入到当前应用，或在预览面板中编辑、切换模式（<code>⌘1</code>–<code>⌘9</code>）、对比后确认。</p>
       </div>
     </div>
     <div class="screenshot fade-in">
@@ -290,88 +266,26 @@ uv run python -m wenzi</pre>
   <div class="container">
     <h2 class="section-title fade-in">文档</h2>
     <p class="section-subtitle fade-in">深入了解 WenZi 的每个功能</p>
-    <div class="docs-grid">
-
-      <a href="docs/user-guide.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#128214;</div>
-        <div>
-          <h3>用户指南</h3>
-          <p>从首次启动到高级用法的渐进式指南 — 11 个级别覆盖所有功能。</p>
-        </div>
-      </a>
-
-      <a href="docs/error-correction.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#128170;</div>
-        <div>
-          <h3>为什么纠错能力这么强</h3>
-          <p>五层纠错机制 — AI 增强、个人词库、对话历史、人工审核与自我进化闭环。</p>
-        </div>
-      </a>
-
-      <a href="docs/configuration.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#9881;</div>
-        <div>
-          <h3>配置参考</h3>
-          <p>所有配置选项详解。</p>
-        </div>
-      </a>
-
-      <a href="docs/enhance-modes.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#10024;</div>
-        <div>
-          <h3>AI 增强模式</h3>
-          <p>内置模式、链式管道、自定义模式创建，以及按场景分类的现成模板库。</p>
-        </div>
-      </a>
-
-      <a href="docs/enhance-mode-examples.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#128203;</div>
-        <div>
-          <h3>增强模式示例</h3>
-          <p>按场景分类的即用型增强模式模板。</p>
-        </div>
-      </a>
-
-      <a href="docs/prompt-optimization.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#128161;</div>
-        <div>
-          <h3>Prompt 优化工作流</h3>
-          <p>使用诊断工具系统性地提升 AI 增强质量。</p>
-        </div>
-      </a>
-
-      <a href="docs/provider-model-guide.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#128268;</div>
-        <div>
-          <h3>提供商与模型指南</h3>
-          <p>配置 ASR 和 LLM 提供商。</p>
-        </div>
-      </a>
-
-      <a href="docs/vocabulary-embedding-retrieval.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#128218;</div>
-        <div>
-          <h3>词汇表与向量检索</h3>
-          <p>个人词汇索引，提升专业术语纠错效果。</p>
-        </div>
-      </a>
-
-      <a href="docs/conversation-history-enhancement.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#128172;</div>
-        <div>
-          <h3>会话历史增强</h3>
-          <p>通过历史记录实现话题连续性和实体解析。</p>
-        </div>
-      </a>
-
-      <a href="docs/scripting.html" class="doc-card fade-in">
-        <div class="doc-card-icon">&#128187;</div>
-        <div>
-          <h3>脚本系统</h3>
-          <p>使用 Python 脚本自动化 macOS 任务——Leader 键、快捷键、提示、剪贴板等。</p>
-        </div>
-      </a>
-
+    <div class="docs-list fade-in">
+      <div class="docs-group">
+        <h3 class="docs-group-title">快速上手</h3>
+        <a href="docs/user-guide.html" class="doc-link">用户指南 <span>— 从首次启动到高级用法</span></a>
+        <a href="docs/configuration.html" class="doc-link">配置参考 <span>— 所有选项详解</span></a>
+        <a href="docs/provider-model-guide.html" class="doc-link">提供商与模型指南 <span>— 配置 ASR 和 LLM 提供商</span></a>
+      </div>
+      <div class="docs-group">
+        <h3 class="docs-group-title">AI 与增强</h3>
+        <a href="docs/error-correction.html" class="doc-link">纠错机制 <span>— 五层自进化纠错</span></a>
+        <a href="docs/enhance-modes.html" class="doc-link">增强模式 <span>— 内置、链式和自定义模式</span></a>
+        <a href="docs/enhance-mode-examples.html" class="doc-link">模式示例 <span>— 即用型模板</span></a>
+        <a href="docs/prompt-optimization.html" class="doc-link">Prompt 优化 <span>— 系统性提升 AI 质量</span></a>
+      </div>
+      <div class="docs-group">
+        <h3 class="docs-group-title">进阶</h3>
+        <a href="docs/vocabulary-embedding-retrieval.html" class="doc-link">词汇表检索 <span>— 个人术语索引</span></a>
+        <a href="docs/conversation-history-enhancement.html" class="doc-link">会话历史 <span>— 话题连续性与实体解析</span></a>
+        <a href="docs/scripting.html" class="doc-link">脚本系统 <span>— Python 插件、Leader 键、快捷键</span></a>
+      </div>
     </div>
   </div>
 </section>
