@@ -45,7 +45,13 @@ class AppUpdater:
 
     @staticmethod
     def get_app_bundle_path() -> Path:
-        """Get the path of the currently running .app bundle."""
+        """Get the path of the currently running .app bundle.
+
+        Honors WENZI_APP_PATH env var for dev-mode testing.
+        """
+        override = os.environ.get("WENZI_APP_PATH")
+        if override:
+            return Path(override)
         from AppKit import NSBundle
 
         bundle = NSBundle.mainBundle()

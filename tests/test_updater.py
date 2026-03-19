@@ -40,6 +40,12 @@ class TestGetAppBundlePath:
             assert result == Path("/Applications/WenZi.app")
 
 
+    def test_env_override(self):
+        with patch.dict("os.environ", {"WENZI_APP_PATH": "/tmp/TestWenZi.app"}):
+            result = AppUpdater.get_app_bundle_path()
+            assert result == Path("/tmp/TestWenZi.app")
+
+
 class TestIsWritable:
     def test_writable(self, tmp_path):
         app_path = tmp_path / "WenZi.app"

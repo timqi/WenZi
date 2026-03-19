@@ -28,6 +28,17 @@ _MENU_TITLE_PREFIX = "Update available"
 _RESTART_TITLE_PREFIX = "Restart to update"
 
 
+def _is_frozen() -> bool:
+    """Check if running as a frozen (packaged) app.
+
+    Also returns True when WENZI_FORCE_AUTO_UPDATE=1 is set,
+    allowing dev-mode testing of the full auto-update flow.
+    """
+    return getattr(sys, "frozen", False) or os.environ.get(
+        "WENZI_FORCE_AUTO_UPDATE"
+    ) == "1"
+
+
 def _parse_version(version_str: str) -> Optional[Tuple[int, ...]]:
     """Parse 'v0.1.2' or '0.1.2' into (0, 1, 2). Returns None on failure."""
     cleaned = version_str.strip().lstrip("v")
@@ -108,7 +119,7 @@ class UpdateController:
         if not self._enabled:
             return
         # Clean up leftover staged app before starting checks
-        if getattr(sys, "frozen", False):
+        if _is_frozen():
             from wenzi.updater import AppUpdater
 
             AppUpdater.cleanup_staged_app()
@@ -212,7 +223,7 @@ class UpdateController:
             return
 
         # In frozen mode, try auto-update if DMG asset is available
-        if getattr(sys, "frozen", False) and self._release_data is not None:
+        if _is_frozen() and self._release_data is not None:
             dmg_url = _find_dmg_url(self._release_data)
             if dmg_url is not None:
                 self._try_auto_update(dmg_url)

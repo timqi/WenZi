@@ -10,9 +10,30 @@ from wenzi.controllers.update_controller import (
     UpdateController,
     _fetch_latest_release,
     _find_dmg_url,
+    _is_frozen,
     _is_newer,
     _parse_version,
 )
+
+
+# --- _is_frozen ---
+
+
+class TestIsFrozen:
+    def test_false_by_default(self):
+        assert _is_frozen() is False
+
+    def test_true_when_sys_frozen(self):
+        with patch.object(sys, "frozen", True, create=True):
+            assert _is_frozen() is True
+
+    def test_true_when_env_set(self):
+        with patch.dict("os.environ", {"WENZI_FORCE_AUTO_UPDATE": "1"}):
+            assert _is_frozen() is True
+
+    def test_false_when_env_not_1(self):
+        with patch.dict("os.environ", {"WENZI_FORCE_AUTO_UPDATE": "0"}):
+            assert _is_frozen() is False
 
 
 # --- Version parsing and comparison ---
