@@ -260,13 +260,15 @@ class VocabularyBuilder:
                 # Cross-validate: term must appear in corrected texts
                 # (right side of diffs).  Terms only found on the ASR
                 # side are misrecognitions, not real vocabulary entries.
+                # Use word-boundary regex for ASCII terms to avoid
+                # substring false positives (e.g. "Git" inside "GitHub").
                 final_texts = " ".join(
                     r.get("final_text", "") for r in batch
                 ).lower()
                 before_count = len(extracted)
                 extracted = [
                     e for e in extracted
-                    if e["term"].lower() in final_texts
+                    if self._term_in_texts(e["term"].lower(), final_texts)
                 ]
                 dropped = before_count - len(extracted)
                 if dropped:
@@ -455,6 +457,31 @@ class VocabularyBuilder:
                 parts.append("".join(final_tokens[j1:j2]))
             # delete: omit old text silently
         return "".join(parts)
+
+    @staticmethod
+    def _term_in_texts(term_lower: str, texts_lower: str) -> bool:
+        """Check if *term_lower* appears in *texts_lower* as a whole token.
+
+        For ASCII terms, ensures the match is not a substring of a
+        longer ASCII word (e.g. ``"git"`` must not match inside
+        ``"github"``).  Checks that characters immediately before/after
+        the match are not ASCII alphanumeric.
+        """
+        start = 0
+        while True:
+            idx = texts_lower.find(term_lower, start)
+            if idx < 0:
+                return False
+            # Check character before the match
+            if idx > 0 and texts_lower[idx - 1].isascii() and texts_lower[idx - 1].isalnum():
+                start = idx + 1
+                continue
+            # Check character after the match
+            end = idx + len(term_lower)
+            if end < len(texts_lower) and texts_lower[end].isascii() and texts_lower[end].isalnum():
+                start = idx + 1
+                continue
+            return True
 
     @staticmethod
     def _build_user_prompt(
