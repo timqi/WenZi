@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import threading
 import urllib.request
 import webbrowser
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 if TYPE_CHECKING:
     from wenzi.app import WenZiApp
+    from wenzi.updater import AppUpdater
 
 from wenzi.statusbar import StatusMenuItem
 
@@ -21,8 +23,9 @@ GITHUB_REPO = "Airead/WenZi"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 _REQUEST_TIMEOUT = 10  # seconds
 
-# Menu item title prefix — used to identify the update item in the menu.
+# Menu item title prefixes.
 _MENU_TITLE_PREFIX = "Update available"
+_RESTART_TITLE_PREFIX = "Restart to update"
 
 
 def _parse_version(version_str: str) -> Optional[Tuple[int, ...]]:
@@ -67,6 +70,16 @@ def _fetch_latest_release() -> Optional[dict[str, Any]]:
         return None
 
 
+def _find_dmg_url(release_data: dict) -> Optional[str]:
+    """Find the .dmg asset download URL from release data."""
+    assets = release_data.get("assets", [])
+    for asset in assets:
+        name = asset.get("name", "")
+        if name.endswith(".dmg"):
+            return asset.get("browser_download_url")
+    return None
+
+
 class UpdateController:
     """Periodically checks GitHub for new releases and updates the app menu."""
 
@@ -83,6 +96,8 @@ class UpdateController:
         self._update_menu_item: Optional[StatusMenuItem] = None
         self._latest_version: Optional[str] = None
         self._release_url: Optional[str] = None
+        self._release_data: Optional[dict] = None
+        self._updater: Optional["AppUpdater"] = None
 
     @property
     def enabled(self) -> bool:
@@ -92,14 +107,21 @@ class UpdateController:
         """Start the periodic update check (first check runs immediately)."""
         if not self._enabled:
             return
+        # Clean up leftover staged app before starting checks
+        if getattr(sys, "frozen", False):
+            from wenzi.updater import AppUpdater
+
+            AppUpdater.cleanup_staged_app()
         threading.Thread(target=self._check_update, daemon=True).start()
 
     def stop(self) -> None:
-        """Cancel any pending timer."""
+        """Cancel any pending timer and running updater."""
         with self._lock:
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
+        if self._updater is not None:
+            self._updater.cancel()
 
     def _schedule_next_check(self) -> None:
         """Schedule the next update check after the configured interval."""
@@ -131,6 +153,7 @@ class UpdateController:
                 logger.info("New version available: %s (current: %s)", tag, current)
                 self._latest_version = tag
                 self._release_url = html_url
+                self._release_data = data
                 from PyObjCTools import AppHelper
 
                 AppHelper.callAfter(self._apply_update_menu, tag, html_url)
@@ -178,7 +201,160 @@ class UpdateController:
                 pass
             self._update_menu_item = None
 
-    def _on_update_click(self, _: Any) -> None:
+    def _open_release_in_browser(self) -> None:
         """Open the GitHub release page in the default browser."""
         if self._release_url:
             webbrowser.open(self._release_url)
+
+    def _on_update_click(self, _: Any) -> None:
+        """Handle update menu item click."""
+        if not self._release_url:
+            return
+
+        # In frozen mode, try auto-update if DMG asset is available
+        if getattr(sys, "frozen", False) and self._release_data is not None:
+            dmg_url = _find_dmg_url(self._release_data)
+            if dmg_url is not None:
+                self._try_auto_update(dmg_url)
+                return
+
+        self._open_release_in_browser()
+
+    def _try_auto_update(self, dmg_url: str) -> None:
+        """Attempt in-app auto-update with user confirmation."""
+        from wenzi.ui_helpers import restore_accessory, topmost_alert
+        from wenzi.updater import AppUpdater
+
+        app_path = AppUpdater.get_app_bundle_path()
+
+        if not AppUpdater.is_writable(app_path):
+            topmost_alert(
+                title="Cannot Auto-Update",
+                message=(
+                    f"WenZi.app is in a read-only location ({app_path.parent}).\n\n"
+                    "Please download the update manually from the browser."
+                ),
+            )
+            restore_accessory()
+            self._open_release_in_browser()
+            return
+
+        # Confirm with user
+        version = self._latest_version or "new version"
+        result = topmost_alert(
+            title=f"Update to {version}?",
+            message=(
+                "The update will be downloaded and installed automatically. "
+                "WenZi will restart after installation."
+            ),
+            ok="Install Update",
+            cancel="Cancel",
+        )
+        restore_accessory()
+
+        if result != 1:
+            return
+
+        self._start_auto_update(dmg_url)
+
+    def _start_auto_update(self, dmg_url: str) -> None:
+        """Create AppUpdater and start the download."""
+        if self._updater is not None:
+            return  # already in progress
+
+        from wenzi.updater import AppUpdater
+
+        self._updater = AppUpdater(
+            dmg_url=dmg_url,
+            version=self._latest_version or "",
+            on_progress=self._on_update_progress,
+            on_error=self._on_update_error,
+            on_ready=self._on_update_ready,
+        )
+        self._updater.start()
+
+    def _on_update_progress(self, msg: str) -> None:
+        """Update menu title with download progress (called from background)."""
+        from PyObjCTools import AppHelper
+
+        AppHelper.callAfter(self._set_menu_title, msg)
+
+    def _set_menu_title(self, title: str) -> None:
+        """Set the update menu item title (main thread)."""
+        if self._update_menu_item is not None:
+            self._update_menu_item.title = title
+
+    def _on_update_error(self, msg: str) -> None:
+        """Show error alert and restore menu (called from background)."""
+        from PyObjCTools import AppHelper
+
+        AppHelper.callAfter(self._show_update_error, msg)
+
+    def _show_update_error(self, msg: str) -> None:
+        """Show error alert with browser fallback (main thread)."""
+        from wenzi.ui_helpers import restore_accessory, topmost_alert
+
+        self._updater = None
+
+        # Restore menu title
+        if self._update_menu_item is not None and self._latest_version:
+            self._update_menu_item.title = (
+                f"{_MENU_TITLE_PREFIX}: {self._latest_version}"
+            )
+            self._update_menu_item.set_callback(self._on_update_click)
+
+        result = topmost_alert(
+            title="Update Failed",
+            message=f"{msg}\n\nWould you like to download the update manually?",
+            ok="Open in Browser",
+            cancel="Cancel",
+        )
+        restore_accessory()
+
+        if result == 1:
+            self._open_release_in_browser()
+
+    def _on_update_ready(self) -> None:
+        """Change menu to 'Restart to update' (called from background)."""
+        from PyObjCTools import AppHelper
+
+        AppHelper.callAfter(self._apply_restart_menu)
+
+    def _apply_restart_menu(self) -> None:
+        """Update menu to show restart option (main thread)."""
+        version = self._latest_version or ""
+        if self._update_menu_item is not None:
+            self._update_menu_item.title = f"{_RESTART_TITLE_PREFIX} {version}"
+            self._update_menu_item.set_callback(self._on_restart_to_update)
+
+    def _on_restart_to_update(self, _: Any) -> None:
+        """Confirm restart, swap app, and quit (main thread)."""
+        from wenzi.ui_helpers import restore_accessory, topmost_alert
+        from wenzi.updater import AppUpdater
+
+        version = self._latest_version or "new version"
+        result = topmost_alert(
+            title=f"Restart to update {version}?",
+            message="WenZi will quit and relaunch with the new version.",
+            ok="Restart Now",
+            cancel="Later",
+        )
+        restore_accessory()
+
+        if result != 1:
+            return
+
+        if not AppUpdater.perform_swap_and_relaunch():
+            topmost_alert(
+                title="Update Failed",
+                message=(
+                    "Could not apply the update. "
+                    "Please download and install manually."
+                ),
+            )
+            restore_accessory()
+            self._open_release_in_browser()
+            return
+
+        # Quit the app using existing quit flow
+        self._app._on_quit_click(None)

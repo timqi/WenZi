@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from unittest.mock import MagicMock, patch
 
 from wenzi.controllers.update_controller import (
     UpdateController,
     _fetch_latest_release,
+    _find_dmg_url,
     _is_newer,
     _parse_version,
 )
@@ -161,22 +163,6 @@ class TestUpdateControllerStart:
             mock_instance.start.assert_called_once()
 
 
-class TestUpdateControllerStop:
-    def test_stop_cancels_timer(self):
-        app = _make_app()
-        ctrl = UpdateController(app)
-        mock_timer = MagicMock()
-        ctrl._timer = mock_timer
-        ctrl.stop()
-        mock_timer.cancel.assert_called_once()
-        assert ctrl._timer is None
-
-    def test_stop_no_timer_noop(self):
-        app = _make_app()
-        ctrl = UpdateController(app)
-        ctrl.stop()  # should not raise
-
-
 class TestUpdateControllerCheckUpdate:
     @patch("wenzi.controllers.update_controller._fetch_latest_release")
     @patch("wenzi.controllers.update_controller.threading.Timer")
@@ -261,7 +247,8 @@ class TestUpdateControllerCheckUpdate:
 
 
 class TestUpdateControllerMenuClick:
-    def test_click_opens_browser(self):
+    def test_click_opens_browser_not_frozen(self):
+        """Non-frozen mode always opens browser."""
         app = _make_app()
         ctrl = UpdateController(app)
         ctrl._release_url = "https://github.com/Airead/WenZi/releases/tag/v0.2.0"
@@ -278,3 +265,233 @@ class TestUpdateControllerMenuClick:
         with patch("wenzi.controllers.update_controller.webbrowser.open") as mock_open:
             ctrl._on_update_click(None)
             mock_open.assert_not_called()
+
+    def test_click_frozen_with_dmg_tries_auto_update(self):
+        """In frozen mode with a DMG asset, should try auto-update."""
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._release_url = "https://github.com/Airead/WenZi/releases/tag/v0.2.0"
+        ctrl._release_data = {
+            "assets": [
+                {
+                    "name": "WenZi-0.2.0.dmg",
+                    "browser_download_url": "https://example.com/WenZi-0.2.0.dmg",
+                }
+            ]
+        }
+
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(ctrl, "_try_auto_update") as mock_try:
+            ctrl._on_update_click(None)
+            mock_try.assert_called_once_with("https://example.com/WenZi-0.2.0.dmg")
+
+    def test_click_frozen_no_dmg_opens_browser(self):
+        """In frozen mode without DMG asset, falls back to browser."""
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._release_url = "https://github.com/Airead/WenZi/releases/tag/v0.2.0"
+        ctrl._release_data = {"assets": []}
+
+        with patch.object(sys, "frozen", True, create=True), \
+             patch("wenzi.controllers.update_controller.webbrowser.open") as mock_open:
+            ctrl._on_update_click(None)
+            mock_open.assert_called_once_with(ctrl._release_url)
+
+
+class TestUpdateControllerStop:
+    def test_stop_cancels_timer(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        mock_timer = MagicMock()
+        ctrl._timer = mock_timer
+        ctrl.stop()
+        mock_timer.cancel.assert_called_once()
+        assert ctrl._timer is None
+
+    def test_stop_no_timer_noop(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl.stop()  # should not raise
+
+    def test_stop_cancels_updater(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        mock_updater = MagicMock()
+        ctrl._updater = mock_updater
+        ctrl.stop()
+        mock_updater.cancel.assert_called_once()
+
+
+# --- _find_dmg_url ---
+
+
+class TestFindDmgUrl:
+    def test_finds_dmg_asset(self):
+        data = {
+            "assets": [
+                {
+                    "name": "WenZi-0.2.0.dmg",
+                    "browser_download_url": "https://example.com/WenZi-0.2.0.dmg",
+                },
+                {
+                    "name": "checksums.txt",
+                    "browser_download_url": "https://example.com/checksums.txt",
+                },
+            ]
+        }
+        assert _find_dmg_url(data) == "https://example.com/WenZi-0.2.0.dmg"
+
+    def test_no_dmg_asset(self):
+        data = {
+            "assets": [
+                {
+                    "name": "source.tar.gz",
+                    "browser_download_url": "https://example.com/source.tar.gz",
+                }
+            ]
+        }
+        assert _find_dmg_url(data) is None
+
+    def test_empty_assets(self):
+        assert _find_dmg_url({"assets": []}) is None
+
+    def test_no_assets_key(self):
+        assert _find_dmg_url({}) is None
+
+
+# --- Auto-update integration ---
+
+
+class TestAutoUpdateIntegration:
+    def test_start_auto_update_creates_updater(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._latest_version = "v0.2.0"
+
+        with patch("wenzi.updater.AppUpdater") as MockUpdater:
+            mock_instance = MagicMock()
+            MockUpdater.return_value = mock_instance
+            ctrl._start_auto_update("https://example.com/WenZi-0.2.0.dmg")
+
+            MockUpdater.assert_called_once_with(
+                dmg_url="https://example.com/WenZi-0.2.0.dmg",
+                version="v0.2.0",
+                on_progress=ctrl._on_update_progress,
+                on_error=ctrl._on_update_error,
+                on_ready=ctrl._on_update_ready,
+            )
+            mock_instance.start.assert_called_once()
+            assert ctrl._updater is mock_instance
+
+    def test_start_auto_update_skips_if_already_running(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._updater = MagicMock()  # already running
+
+        with patch("wenzi.updater.AppUpdater") as MockUpdater:
+            ctrl._start_auto_update("https://example.com/WenZi-0.2.0.dmg")
+            MockUpdater.assert_not_called()
+
+    def test_set_menu_title(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        mock_item = MagicMock()
+        ctrl._update_menu_item = mock_item
+
+        ctrl._set_menu_title("Downloading... 42%")
+        assert mock_item.title == "Downloading... 42%"
+
+    def test_show_update_error_resets_updater(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._updater = MagicMock()
+        ctrl._latest_version = "v0.2.0"
+        mock_item = MagicMock()
+        ctrl._update_menu_item = mock_item
+
+        with patch("wenzi.ui_helpers.topmost_alert", return_value=0), \
+             patch("wenzi.ui_helpers.restore_accessory"):
+            ctrl._show_update_error("Download failed")
+
+        assert ctrl._updater is None
+
+    def test_show_update_error_opens_browser_on_confirm(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._updater = MagicMock()
+        ctrl._release_url = "https://example.com/releases"
+
+        with patch("wenzi.ui_helpers.topmost_alert", return_value=1), \
+             patch("wenzi.ui_helpers.restore_accessory"), \
+             patch("wenzi.controllers.update_controller.webbrowser.open") as mock_open:
+            ctrl._show_update_error("Download failed")
+            mock_open.assert_called_once_with("https://example.com/releases")
+
+    def test_apply_restart_menu(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._latest_version = "v0.2.0"
+        mock_item = MagicMock()
+        ctrl._update_menu_item = mock_item
+
+        ctrl._apply_restart_menu()
+        from wenzi.controllers.update_controller import _RESTART_TITLE_PREFIX
+        assert mock_item.title == f"{_RESTART_TITLE_PREFIX} v0.2.0"
+        mock_item.set_callback.assert_called_once_with(ctrl._on_restart_to_update)
+
+    def test_restart_to_update_success(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._latest_version = "v0.2.0"
+
+        with patch("wenzi.ui_helpers.topmost_alert", return_value=1), \
+             patch("wenzi.ui_helpers.restore_accessory"), \
+             patch("wenzi.updater.AppUpdater") as MockUpdater:
+            MockUpdater.perform_swap_and_relaunch.return_value = True
+            ctrl._on_restart_to_update(None)
+            MockUpdater.perform_swap_and_relaunch.assert_called_once()
+            app._on_quit_click.assert_called_once_with(None)
+
+    def test_restart_to_update_cancelled(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._latest_version = "v0.2.0"
+
+        with patch("wenzi.ui_helpers.topmost_alert", return_value=0), \
+             patch("wenzi.ui_helpers.restore_accessory"):
+            ctrl._on_restart_to_update(None)
+            app._on_quit_click.assert_not_called()
+
+    def test_restart_to_update_swap_fails(self):
+        app = _make_app()
+        ctrl = UpdateController(app)
+        ctrl._latest_version = "v0.2.0"
+        ctrl._release_url = "https://example.com/releases"
+
+        with patch("wenzi.ui_helpers.topmost_alert", return_value=1) as mock_alert, \
+             patch("wenzi.ui_helpers.restore_accessory"), \
+             patch("wenzi.updater.AppUpdater") as MockUpdater, \
+             patch("wenzi.controllers.update_controller.webbrowser.open") as mock_open:
+            MockUpdater.perform_swap_and_relaunch.return_value = False
+            ctrl._on_restart_to_update(None)
+            # Should show error alert and open browser
+            assert mock_alert.call_count == 2
+            mock_open.assert_called_once_with("https://example.com/releases")
+            app._on_quit_click.assert_not_called()
+
+    def test_check_update_saves_release_data(self):
+        """_check_update should save full release_data for auto-update."""
+        release_data = {
+            "tag_name": "v99.0.0",
+            "html_url": "https://github.com/Airead/WenZi/releases/tag/v99.0.0",
+            "assets": [{"name": "WenZi-99.0.0.dmg", "browser_download_url": "..."}],
+        }
+
+        with patch("wenzi.controllers.update_controller._fetch_latest_release", return_value=release_data), \
+             patch("wenzi.controllers.update_controller.threading.Timer"), \
+             patch("wenzi.__version__", "0.1.2"), \
+             patch("PyObjCTools.AppHelper"):
+            app = _make_app()
+            ctrl = UpdateController(app)
+            ctrl._check_update()
+            assert ctrl._release_data is release_data
