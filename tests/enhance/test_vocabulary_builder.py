@@ -319,14 +319,12 @@ class TestExtractBatch:
                 builder._extract_batch(messages, user_prompt, client=mock_client)
             )
 
-    def test_messages_include_session_history(self):
-        """Verify that session history is passed to the API call."""
+    def test_messages_are_system_plus_user(self):
+        """Each batch sends only system prompt + user message (no session history)."""
         builder = VocabularyBuilder(_make_config())
-        user_prompt = "asr_text: 派森\nfinal_text: Python"
+        user_prompt = "[派森→PyObjC]编程框架"
         messages = [
             {"role": "system", "content": "system prompt"},
-            {"role": "user", "content": "previous batch"},
-            {"role": "assistant", "content": "previous response"},
         ]
 
         mock_response = MagicMock()
@@ -342,14 +340,12 @@ class TestExtractBatch:
             builder._extract_batch(messages, user_prompt, client=mock_client)
         )
 
-        # Verify 4 messages: system + prev user + prev assistant + new user
+        # Verify 2 messages: system + user (no session history)
         call_kwargs = mock_client.chat.completions.create.call_args
         sent_messages = call_kwargs.kwargs.get("messages", call_kwargs[1].get("messages"))
-        assert len(sent_messages) == 4
+        assert len(sent_messages) == 2
         assert sent_messages[0]["role"] == "system"
         assert sent_messages[1]["role"] == "user"
-        assert sent_messages[2]["role"] == "assistant"
-        assert sent_messages[3]["role"] == "user"
 
 
 class TestParseLLMResponse:
@@ -1053,25 +1049,36 @@ class TestBuildWithCallbacks:
 class TestBuildPrompts:
     def test_system_prompt_contains_instructions(self):
         builder = VocabularyBuilder(_make_config())
-        prompt = builder._build_system_prompt([])
+        prompt = builder._build_system_prompt()
         assert "term|category|variants|context" in prompt
         assert "必须有 variants" in prompt
         assert "只提取专有名词" in prompt
-        assert "已存在" not in prompt  # No existing terms section when empty
 
-    def test_system_prompt_includes_existing_terms(self):
+    def test_system_prompt_is_static(self):
+        """System prompt should not contain existing terms (moved to user prompt)."""
         builder = VocabularyBuilder(_make_config())
-        prompt = builder._build_system_prompt(["Python", "Kubernetes"])
-        assert "已存在" in prompt
-        assert "Python" in prompt
-        assert "Kubernetes" in prompt
+        prompt = builder._build_system_prompt()
+        assert "已存在" not in prompt
 
     def test_system_prompt_explains_diff_format(self):
         """System prompt should explain the inline diff notation."""
         builder = VocabularyBuilder(_make_config())
-        prompt = builder._build_system_prompt([])
+        prompt = builder._build_system_prompt()
         assert "[旧文本→新文本]" in prompt
         assert "方括号" in prompt
+
+    def test_user_prompt_includes_existing_terms(self):
+        """Existing terms dedup hint should be in user prompt, not system prompt."""
+        batch = [
+            {"asr_text": "派森编程语言", "final_text": "Python编程语言"},
+        ]
+        prompt = VocabularyBuilder._build_user_prompt(
+            batch, existing_terms=["Kubernetes", "PyObjC"],
+        )
+        assert "已存在" in prompt
+        assert "Kubernetes" in prompt
+        assert "PyObjC" in prompt
+        assert "[派森→Python]" in prompt
 
     def test_user_prompt_uses_diff_format(self):
         """User prompt should use inline diff instead of arrow-separated format."""

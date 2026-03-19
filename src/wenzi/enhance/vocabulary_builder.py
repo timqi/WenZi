@@ -184,12 +184,9 @@ class VocabularyBuilder:
                 api_key=provider_cfg["api_key"],
             )
 
-        # Multi-turn session: system prompt is shared, conversation accumulates
-        system_prompt = self._build_system_prompt(existing_terms)
+        # Static system prompt — cacheable across all batches
+        system_prompt = self._build_system_prompt()
         logger.debug("System prompt (%d chars):\n%s", len(system_prompt), system_prompt)
-        messages: List[Dict[str, str]] = [
-            {"role": "system", "content": system_prompt},
-        ]
 
         try:
             for i, batch in enumerate(batches, 1):
@@ -198,12 +195,15 @@ class VocabularyBuilder:
                     cancelled = True
                     break
 
-                # Prepare once before retry loop
-                user_prompt = self._build_user_prompt(batch)
+                # Each batch is independent — system + user only
+                user_prompt = self._build_user_prompt(batch, existing_terms=existing_terms)
                 logger.debug(
                     "Batch %d/%d user prompt (%d chars):\n%s",
                     i, len(batches), len(user_prompt), user_prompt,
                 )
+                messages: List[Dict[str, str]] = [
+                    {"role": "system", "content": system_prompt},
+                ]
                 on_chunk = callbacks.on_stream_chunk if callbacks else None
 
                 # Try extraction with one retry on failure
@@ -257,17 +257,6 @@ class VocabularyBuilder:
                     cancelled = True
                     break
 
-                # Append this turn to the session for KV cache continuity
-                # (skip empty responses to avoid polluting session history)
-                if response_text:
-                    messages.append({"role": "user", "content": user_prompt})
-                    messages.append({"role": "assistant", "content": response_text})
-                    logger.debug(
-                        "Session now has %d messages (total chars: %d)",
-                        len(messages),
-                        sum(len(m["content"]) for m in messages),
-                    )
-
                 # Batch succeeded — accumulate results
                 for key in total_usage:
                     total_usage[key] += batch_usage.get(key, 0)
@@ -302,6 +291,8 @@ class VocabularyBuilder:
 
                 # Persist progress after each successful batch
                 merged_entries = self._merge_entries(merged_entries, extracted)
+                # Update existing_terms for next batch's dedup hint
+                existing_terms = [e.get("term", "") for e in merged_entries if e.get("term")]
                 batch_last_ts = batch[-1].get("timestamp", datetime.now(timezone.utc).isoformat())
                 vocabulary = {
                     "last_processed_timestamp": batch_last_ts,
@@ -366,9 +357,9 @@ class VocabularyBuilder:
             for i in range(0, len(records), batch_size)
         ]
 
-    def _build_system_prompt(self, existing_terms: List[str]) -> str:
-        """Build the system prompt (shared across all batches for KV cache)."""
-        prompt = (
+    def _build_system_prompt(self) -> str:
+        """Build the system prompt (static, cacheable across batches)."""
+        return (
             "你是一个词汇提取助手。从语音识别(ASR)纠错记录中提取ASR容易误识别的专有名词。\n\n"
             "每条纠错记录中，[旧文本→新文本] 标注了ASR识别错误被纠正的部分，"
             "方括号外的文本未发生变化。\n\n"
@@ -403,15 +394,6 @@ class VocabularyBuilder:
             "只输出表头和数据行，不要输出其他内容。\n"
             "如果当前批次中没有值得提取的词汇，只输出表头行即可。\n"
         )
-
-        if existing_terms:
-            terms_list = ", ".join(existing_terms)
-            prompt += (
-                "\n以下词条已存在于词库中，无需重复提取：\n"
-                f"{terms_list}\n"
-            )
-
-        return prompt
 
     # Token pattern: ASCII words as whole units, each non-ASCII char individually,
     # whitespace runs, or any other single character.
@@ -457,11 +439,16 @@ class VocabularyBuilder:
         return "".join(parts)
 
     @staticmethod
-    def _build_user_prompt(batch: List[Dict[str, Any]]) -> str:
+    def _build_user_prompt(
+        batch: List[Dict[str, Any]],
+        existing_terms: Optional[List[str]] = None,
+    ) -> str:
         """Build the user prompt with inline-diff correction records.
 
         Records with no replacements (only insertions/deletions or no
         changes) are skipped — they carry no ASR misrecognition info.
+        If *existing_terms* is provided, a dedup hint is appended so
+        the LLM avoids re-extracting known entries.
         """
         lines = []
         for r in batch:
@@ -471,7 +458,17 @@ class VocabularyBuilder:
             if "[" not in diff:
                 continue
             lines.append(diff)
-        return "\n".join(lines)
+
+        prompt = "\n".join(lines)
+
+        if existing_terms:
+            terms_list = ", ".join(existing_terms)
+            prompt += (
+                f"\n\n以下词条已存在于词库中，无需重复提取：\n"
+                f"{terms_list}"
+            )
+
+        return prompt
 
     @staticmethod
     def _extract_usage(usage_obj: Any) -> Dict[str, int]:
@@ -510,11 +507,12 @@ class VocabularyBuilder:
     ) -> tuple[List[Dict[str, Any]], Dict[str, int], str]:
         """Call LLM to extract vocabulary entries from a batch of records.
 
-        Uses the accumulated messages list (multi-turn session) to leverage
-        KV cache on the shared prefix (system prompt + prior turns).
+        Each batch is sent independently (system prompt + user message)
+        so context stays small and LLM attention is focused on the
+        extraction rules.
 
         Args:
-            messages: Accumulated session messages (system + prior turns).
+            messages: Messages list (typically just the system prompt).
             user_prompt: The user prompt for this batch.
             client: AsyncOpenAI client to use for API calls.
             on_stream_chunk: If provided, use streaming mode and call this
