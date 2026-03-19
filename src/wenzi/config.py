@@ -293,7 +293,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "vocabulary": {
             "enabled": False,
             "top_k": 5,
-            "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2",
             "build_timeout": 600,
             "auto_build": True,
             "build_provider": "",

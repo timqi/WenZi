@@ -165,7 +165,7 @@ This mirrors the CI pipeline in `.github/workflows/test.yml`.
 2. Review and update `WenZi.spec` — this step is critical to avoid runtime errors in the packaged app:
    - **`hiddenimports`**: sync with all current wenzi modules (scan `src/wenzi/` for new `.py` files) and any lazily/conditionally imported third-party packages
    - **`datas`**: ensure non-Python resource files referenced via `os.path.dirname(__file__)` are included (e.g. `src/wenzi/audio/sounds` → `wenzi/audio/sounds`). PyInstaller does NOT auto-bundle data files from source directories
-   - **`collect_all`**: use for third-party packages with native extensions or bundled data (e.g. `mlx`, `sherpa_onnx`, `librosa`, `fastembed`). Without this, native `.so/.dylib` or data files will be missing at runtime
+   - **`collect_all`**: use for third-party packages with native extensions or bundled data (e.g. `mlx`, `sherpa_onnx`, `librosa`). Without this, native `.so/.dylib` or data files will be missing at runtime
    - **Removed modules**: delete entries for modules that no longer exist in the codebase
 3. Update version in `pyproject.toml` (single source of truth — all other files read from it dynamically)
 4. Run `uv lock` to sync `uv.lock` with the new version — this is **required** because `uv.lock` records the package version and won't update until `uv lock` is explicitly run

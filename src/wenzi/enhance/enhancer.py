@@ -258,8 +258,6 @@ class TextEnhancer:
             kwargs: Dict[str, Any] = {}
             if data_dir:
                 kwargs["data_dir"] = data_dir
-            if cache_dir:
-                kwargs["cache_dir"] = cache_dir
             self._vocab_index = VocabularyIndex(vocab_cfg, **kwargs)
 
         # Conversation history
@@ -388,8 +386,6 @@ class TextEnhancer:
             kwargs: Dict[str, Any] = {}
             if self._data_dir:
                 kwargs["data_dir"] = self._data_dir
-            if self._cache_dir:
-                kwargs["cache_dir"] = self._cache_dir
             self._vocab_index = VocabularyIndex(vocab_cfg, **kwargs)
         logger.info("Vocabulary changed to: %s", value)
 
