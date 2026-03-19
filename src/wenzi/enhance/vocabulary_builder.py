@@ -370,11 +370,8 @@ class VocabularyBuilder:
         """Build the system prompt (shared across all batches for KV cache)."""
         prompt = (
             "你是一个词汇提取助手。从语音识别(ASR)纠错记录中提取ASR容易误识别的专有名词。\n\n"
-            "每条纠错记录以 inline diff 格式给出，方括号标注了实际变化的部分：\n"
-            "- [旧文本→新文本] 表示替换\n"
-            "- [→新文本] 表示插入\n"
-            "- [旧文本→] 表示删除\n"
-            "- 方括号外的文本未发生变化\n\n"
+            "每条纠错记录中，[旧文本→新文本] 标注了ASR识别错误被纠正的部分，"
+            "方括号外的文本未发生变化。\n\n"
             "## 提取规则（严格遵守）\n\n"
             "1. **必须有 variants**：只提取在方括号左侧（旧文本）中出现了误识别形式的词汇。"
             "variants 必须是方括号左侧实际出现的错误写法，不要自己编造同音字。"
@@ -432,8 +429,10 @@ class VocabularyBuilder:
     def _diff_texts(asr: str, final: str) -> str:
         """Produce an inline diff between ASR text and corrected text.
 
-        Unchanged parts are emitted as-is.  Changed parts are wrapped in
-        ``[old→new]``, ``[old→]`` (deletion), or ``[→new]`` (insertion).
+        Only replacements are bracketed as ``[old→new]``.  Insertions
+        and deletions are applied silently (new text included / old text
+        omitted) since they carry no ASR-misrecognition information
+        useful for vocabulary extraction.
         """
         if asr == final:
             return asr
@@ -446,20 +445,30 @@ class VocabularyBuilder:
         for op, i1, i2, j1, j2 in matcher.get_opcodes():
             if op == "equal":
                 parts.append("".join(asr_tokens[i1:i2]))
-            else:
+            elif op == "replace":
                 old = "".join(asr_tokens[i1:i2])
                 new = "".join(final_tokens[j1:j2])
                 parts.append(f"[{old}→{new}]")
+            elif op == "insert":
+                parts.append("".join(final_tokens[j1:j2]))
+            # delete: omit old text silently
         return "".join(parts)
 
     @staticmethod
     def _build_user_prompt(batch: List[Dict[str, Any]]) -> str:
-        """Build the user prompt with inline-diff correction records."""
+        """Build the user prompt with inline-diff correction records.
+
+        Records with no replacements (only insertions/deletions or no
+        changes) are skipped — they carry no ASR misrecognition info.
+        """
         lines = []
         for r in batch:
             asr = r.get("asr_text", "").replace("\n", "\u23ce")
             final = r.get("final_text", "").replace("\n", "\u23ce")
-            lines.append(VocabularyBuilder._diff_texts(asr, final))
+            diff = VocabularyBuilder._diff_texts(asr, final)
+            if "[" not in diff:
+                continue
+            lines.append(diff)
         return "\n".join(lines)
 
     @staticmethod

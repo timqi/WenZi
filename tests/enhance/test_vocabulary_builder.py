@@ -1071,14 +1071,26 @@ class TestBuildPrompts:
         assert "编程语言" in prompt
         assert "脚本" in prompt
 
-    def test_user_prompt_identical_texts(self):
-        """Identical ASR and final text should appear as-is without diff markers."""
+    def test_user_prompt_skips_identical_texts(self):
+        """Records with no changes are skipped entirely."""
         batch = [
             {"asr_text": "没有变化", "final_text": "没有变化"},
         ]
         prompt = VocabularyBuilder._build_user_prompt(batch)
-        assert prompt == "没有变化"
-        assert "[" not in prompt
+        assert prompt == ""
+
+    def test_user_prompt_skips_insert_delete_only(self):
+        """Records with only insertions/deletions (no replacements) are skipped."""
+        batch = [
+            {"asr_text": "测试功能", "final_text": "测试一下功能"},  # insert only
+            {"asr_text": "删除这个的字", "final_text": "删除这个字"},  # delete only
+            {"asr_text": "派森编程语言", "final_text": "Python编程语言"},  # has replacement
+        ]
+        prompt = VocabularyBuilder._build_user_prompt(batch)
+        # Only the record with a replacement should appear
+        assert "[派森→Python]" in prompt
+        lines = [l for l in prompt.split("\n") if l.strip()]
+        assert len(lines) == 1
 
     def test_user_prompt_replaces_newlines(self):
         """Newlines in text should be replaced with ⏎ before diffing."""
@@ -1460,18 +1472,26 @@ class TestDiffTexts:
         assert "和" in result
         assert "来了" in result
 
-    def test_deletion(self):
+    def test_deletion_silent(self):
+        """Deletions are applied silently — deleted text is omitted."""
         result = VocabularyBuilder._diff_texts("多余的文字好", "好")
-        assert "→]" in result
+        assert "[" not in result
+        assert result == "好"
 
-    def test_insertion(self):
+    def test_insertion_silent(self):
+        """Insertions are applied silently — new text appears without brackets."""
         result = VocabularyBuilder._diff_texts("好", "非常好")
-        assert "[→" in result
+        assert "[" not in result
+        assert "非常好" in result
 
     def test_empty_strings(self):
         assert VocabularyBuilder._diff_texts("", "") == ""
-        assert "[→" in VocabularyBuilder._diff_texts("", "新文本")
-        assert "→]" in VocabularyBuilder._diff_texts("旧文本", "")
+        # Pure insertion: no brackets
+        result = VocabularyBuilder._diff_texts("", "新文本")
+        assert "[" not in result
+        assert "新文本" in result
+        # Pure deletion: empty result
+        assert VocabularyBuilder._diff_texts("旧文本", "") == ""
 
     def test_full_sentence_replacement(self):
         """Multi-word replacement should still produce readable diff."""
