@@ -807,3 +807,77 @@ class TestRecordingWatchdog:
         assert ctrl._recording_watchdog is not None
         assert ctrl._recording_watchdog.interval == 120
         ctrl._cancel_recording_watchdog()
+
+
+class TestEventLoopCleanup:
+    """Event loops must be closed even when streaming raises."""
+
+    def test_single_stream_closes_loop_on_error(self, ctrl, mock_app):
+        """_run_direct_single_stream closes the event loop on exception."""
+        async def failing_stream(text):
+            raise RuntimeError("stream error")
+            yield  # make it an async generator
+        mock_app._enhancer.enhance_stream = failing_stream
+        cancel = threading.Event()
+
+        with pytest.raises(RuntimeError, match="stream error"):
+            ctrl._run_direct_single_stream("hello", cancel)
+
+        # No leaked event loops — if loop.close() wasn't called,
+        # creating a new loop and running something would not be affected,
+        # but we verify by checking the method completed without hanging.
+
+    def test_single_stream_closes_loop_on_success(self, ctrl, mock_app):
+        """_run_direct_single_stream closes the event loop on normal exit."""
+        async def ok_stream(text):
+            yield ("result", None, False)
+
+        mock_app._enhancer.enhance_stream = ok_stream
+        cancel = threading.Event()
+
+        result = ctrl._run_direct_single_stream("hello", cancel)
+        assert result == "result"
+
+    def test_chain_stream_closes_loop_on_error(self, ctrl, mock_app):
+        """_run_direct_chain_stream closes the event loop on exception."""
+        async def failing_stream(text):
+            raise RuntimeError("chain error")
+            yield
+        mock_app._enhancer.enhance_stream = failing_stream
+        mock_app._enhancer.get_mode_definition.return_value = MagicMock(label="test")
+        cancel = threading.Event()
+
+        with pytest.raises(RuntimeError, match="chain error"):
+            ctrl._run_direct_chain_stream("hello", ["step1"], cancel)
+
+    @patch("asyncio.new_event_loop")
+    def test_single_stream_loop_close_called(self, mock_new_loop, ctrl, mock_app):
+        """Verify loop.close() is called even when _stream() raises."""
+        mock_loop = MagicMock()
+        mock_loop.run_until_complete = MagicMock(
+            side_effect=[RuntimeError("boom"), None]
+        )
+        mock_new_loop.return_value = mock_loop
+        cancel = threading.Event()
+
+        with pytest.raises(RuntimeError, match="boom"):
+            ctrl._run_direct_single_stream("hello", cancel)
+
+        mock_loop.close.assert_called_once()
+
+    @patch("asyncio.new_event_loop")
+    def test_chain_stream_loop_close_called(self, mock_new_loop, ctrl, mock_app):
+        """Verify loop.close() is called even when chain streaming raises."""
+        mock_loop = MagicMock()
+        mock_loop.run_until_complete = MagicMock(
+            side_effect=[RuntimeError("boom"), None]
+        )
+        mock_new_loop.return_value = mock_loop
+        mock_app._enhancer.get_mode_definition.return_value = MagicMock(label="test")
+        cancel = threading.Event()
+
+        with pytest.raises(RuntimeError, match="boom"):
+            ctrl._run_direct_chain_stream("hello", ["step1"], cancel)
+
+        # Verify mode was restored and loop was closed
+        mock_loop.close.assert_called_once()

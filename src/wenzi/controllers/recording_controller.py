@@ -870,9 +870,13 @@ class RecordingController:
             finally:
                 await gen.aclose()
 
-        loop.run_until_complete(_stream())
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.close()
+        try:
+            loop.run_until_complete(_stream())
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            finally:
+                loop.close()
 
         if usage:
             try:
@@ -900,86 +904,89 @@ class RecordingController:
         }
 
         try:
-            for step_idx, step_id in enumerate(chain_steps, 1):
-                if cancel_event.is_set():
-                    break
+            try:
+                for step_idx, step_id in enumerate(chain_steps, 1):
+                    if cancel_event.is_set():
+                        break
 
-                step_def = app._enhancer.get_mode_definition(step_id)
-                step_label = step_def.label if step_def else step_id
+                    step_def = app._enhancer.get_mode_definition(step_id)
+                    step_label = step_def.label if step_def else step_id
 
-                app._streaming_overlay.set_status(
-                    f"\u23f3 Step {step_idx}/{total_steps}: {step_label}"
-                )
+                    app._streaming_overlay.set_status(
+                        f"\u23f3 Step {step_idx}/{total_steps}: {step_label}"
+                    )
 
-                if step_idx > 1:
-                    app._streaming_overlay.clear_text()
+                    if step_idx > 1:
+                        app._streaming_overlay.clear_text()
 
-                app._enhancer.mode = step_id
-                collected: list[str] = []
-                step_usage = None
+                    app._enhancer.mode = step_id
+                    collected: list[str] = []
+                    step_usage = None
 
-                async def _stream_step(text_input: str) -> None:
-                    nonlocal step_usage
-                    gen = app._enhancer.enhance_stream(text_input)
-                    completion_tokens = 0
-                    thinking_tokens = 0
-                    had_thinking = False
+                    async def _stream_step(text_input: str) -> None:
+                        nonlocal step_usage
+                        gen = app._enhancer.enhance_stream(text_input)
+                        completion_tokens = 0
+                        thinking_tokens = 0
+                        had_thinking = False
+                        try:
+                            async for chunk, chunk_usage, is_thinking in gen:
+                                if cancel_event.is_set():
+                                    app._enhancer.cancel_stream()
+                                    return
+                                if is_thinking == "retry" and chunk:
+                                    had_thinking = True
+                                    app._streaming_overlay.append_thinking_text(chunk)
+                                    label = chunk.strip().strip("()\n")
+                                    app._streaming_overlay.set_status(
+                                        f"\u23f3 Step {step_idx}/{total_steps}: {label}"
+                                    )
+                                elif is_thinking and chunk:
+                                    had_thinking = True
+                                    thinking_tokens += len(chunk)
+                                    app._streaming_overlay.append_thinking_text(
+                                        chunk, thinking_tokens=thinking_tokens
+                                    )
+                                elif chunk:
+                                    if had_thinking:
+                                        had_thinking = False
+                                        # Don't clear previous steps' content
+                                    collected.append(chunk)
+                                    completion_tokens += len(chunk)
+                                    app._streaming_overlay.append_text(
+                                        chunk, completion_tokens=completion_tokens
+                                    )
+                                if chunk_usage is not None:
+                                    step_usage = chunk_usage
+                        finally:
+                            await gen.aclose()
+
+                    loop.run_until_complete(_stream_step(input_text))
+
+                    if cancel_event.is_set():
+                        break
+
+                    step_result = "".join(collected).strip()
+                    if step_result:
+                        input_text = step_result
+
+                    if step_usage:
+                        total_usage["prompt_tokens"] += step_usage.get("prompt_tokens", 0)
+                        total_usage["completion_tokens"] += step_usage.get("completion_tokens", 0)
+                        total_usage["total_tokens"] += step_usage.get("total_tokens", 0)
                     try:
-                        async for chunk, chunk_usage, is_thinking in gen:
-                            if cancel_event.is_set():
-                                app._enhancer.cancel_stream()
-                                return
-                            if is_thinking == "retry" and chunk:
-                                had_thinking = True
-                                app._streaming_overlay.append_thinking_text(chunk)
-                                label = chunk.strip().strip("()\n")
-                                app._streaming_overlay.set_status(
-                                    f"\u23f3 Step {step_idx}/{total_steps}: {label}"
-                                )
-                            elif is_thinking and chunk:
-                                had_thinking = True
-                                thinking_tokens += len(chunk)
-                                app._streaming_overlay.append_thinking_text(
-                                    chunk, thinking_tokens=thinking_tokens
-                                )
-                            elif chunk:
-                                if had_thinking:
-                                    had_thinking = False
-                                    # Don't clear previous steps' content
-                                collected.append(chunk)
-                                completion_tokens += len(chunk)
-                                app._streaming_overlay.append_text(
-                                    chunk, completion_tokens=completion_tokens
-                                )
-                            if chunk_usage is not None:
-                                step_usage = chunk_usage
-                    finally:
-                        await gen.aclose()
+                        app._usage_stats.record_token_usage(step_usage)
+                    except Exception as e:
+                        logger.error("Failed to record token usage: %s", e)
 
-                loop.run_until_complete(_stream_step(input_text))
+                if total_usage["total_tokens"] > 0:
+                    app._streaming_overlay.set_complete(total_usage)
 
-                if cancel_event.is_set():
-                    break
-
-                step_result = "".join(collected).strip()
-                if step_result:
-                    input_text = step_result
-
-                if step_usage:
-                    total_usage["prompt_tokens"] += step_usage.get("prompt_tokens", 0)
-                    total_usage["completion_tokens"] += step_usage.get("completion_tokens", 0)
-                    total_usage["total_tokens"] += step_usage.get("total_tokens", 0)
-                try:
-                    app._usage_stats.record_token_usage(step_usage)
-                except Exception as e:
-                    logger.error("Failed to record token usage: %s", e)
-
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.close()
-
-            if total_usage["total_tokens"] > 0:
-                app._streaming_overlay.set_complete(total_usage)
-
-            return input_text.strip() or asr_text
+                return input_text.strip() or asr_text
+            finally:
+                app._enhancer.mode = original_mode
         finally:
-            app._enhancer.mode = original_mode
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            finally:
+                loop.close()
