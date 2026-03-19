@@ -386,7 +386,9 @@ class VocabularyBuilder:
             "4. **合并同一词汇的不同形式**：单复数（Snippet/Snippets）、"
             "带前缀（.gitignore/gitignore）视为同一个词条，只提取一次。\n"
             "5. **避免 variant 歧义**：如果同一个ASR误识别文本在不同记录中对应不同词汇，"
-            "只为最可能的那个词汇添加此 variant。\n\n"
+            "只为最可能的那个词汇添加此 variant。\n"
+            "6. **只提取单个词**：不要提取多词短语（如 \"git push\"、\"Final Result\"）。"
+            "每个词条应该是单个词或不可分割的专有名词。\n\n"
             "## 输出格式\n\n"
             "以管道符分隔的文本，第一行为表头，之后每行一个词条：\n"
             "term|category|variants|context\n"
@@ -720,9 +722,15 @@ class VocabularyBuilder:
                 logger.debug("Skipping entry without variants: %s", term)
                 continue
 
-            # Filter common English words — LLMs already know these
+            # Filter common words — LLMs already know these
             if english and term_lower in english:
-                logger.debug("Skipping common English word: %s", term)
+                logger.debug("Skipping common word: %s", term)
+                continue
+
+            # Filter multi-word terms — ASR errors are word-level,
+            # useful proper nouns should be standalone entries
+            if " " in term:
+                logger.debug("Skipping multi-word term: %s", term)
                 continue
 
             valid.append({

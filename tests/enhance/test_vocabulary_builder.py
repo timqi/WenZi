@@ -455,6 +455,21 @@ class TestParseLLMResponse:
         assert len(result) == 1
         assert result[0]["term"] == "萍萍"
 
+    def test_parse_filters_multi_word_terms(self):
+        """Multi-word terms (containing spaces) are filtered out."""
+        builder = VocabularyBuilder(_make_config())
+        content = (
+            "term|category|variants|context\n"
+            "git push|tech|GatePush|Git操作\n"
+            "Final Result|tech|find result|最终结果\n"
+            "GitHub Pages|tech|hub配置|网页托管\n"
+            "Kubernetes|tech|库伯尼特斯|容器编排"
+        )
+        result = builder._parse_llm_response(content)
+        # All multi-word terms filtered, only single-word kept
+        assert len(result) == 1
+        assert result[0]["term"] == "Kubernetes"
+
     def test_parse_multiple_variants(self):
         builder = VocabularyBuilder(_make_config())
         content = "term|category|variants|context\nKubernetes|tech|库伯尼特斯,酷伯,K8S|容器编排"
