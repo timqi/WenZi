@@ -32,6 +32,7 @@ a = Analysis(
     binaries=mlx_binaries + mlx_whisper_binaries + fastembed_binaries + sherpa_binaries + librosa_binaries,
     datas=mlx_datas + mlx_whisper_datas + fastembed_datas + sherpa_datas + librosa_datas + [
         (os.path.join(_spec_dir, 'src/wenzi/audio/sounds'), 'wenzi/audio/sounds'),
+        (os.path.join(_spec_dir, 'src/wenzi/enhance/data'), 'wenzi/enhance/data'),
     ],
     hiddenimports=mlx_hiddenimports + mlx_whisper_hiddenimports + fastembed_hiddenimports + sherpa_hiddenimports + librosa_hiddenimports + [
         # wenzi core
@@ -65,6 +66,7 @@ a = Analysis(
         'wenzi.enhance.enhancer',
         'wenzi.enhance.vocabulary',
         'wenzi.enhance.vocabulary_builder',
+        'wenzi.enhance.repetition',
         'wenzi.enhance.auto_vocab_builder',
         'wenzi.enhance.conversation_history',
         'wenzi.enhance.preview_history',
