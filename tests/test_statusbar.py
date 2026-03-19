@@ -8,10 +8,12 @@ import pytest
 
 from wenzi.statusbar import (
     Response,
+    SeparatorMenuItem,
     StatusBarApp,
     StatusMenuItem,
     quit_application,
     send_notification,
+    separator,
 )
 
 
@@ -124,6 +126,35 @@ class TestStatusMenuItem:
         assert "Item1" in parent
         assert "Item2" in parent
         assert len(parent) == 3  # Item1, separator, Item2
+
+    def test_parse_menu_separator_sentinel(self):
+        """The `separator` sentinel object should create a separator."""
+        parent = StatusMenuItem("Root")
+        parent.update([StatusMenuItem("A"), separator, StatusMenuItem("B")])
+        assert "A" in parent
+        assert "B" in parent
+        assert len(parent) == 3
+        # The middle item should be a SeparatorMenuItem
+        values = list(parent._items.values())
+        assert isinstance(values[1], SeparatorMenuItem)
+
+    def test_parse_menu_string_element(self):
+        """Plain strings should become StatusMenuItems, not separators."""
+        parent = StatusMenuItem("Root")
+        parent.update(["Hello", "World"])
+        assert "Hello" in parent
+        assert "World" in parent
+        assert len(parent) == 2
+        assert isinstance(parent["Hello"], StatusMenuItem)
+
+    def test_parse_menu_submenu_tuple(self):
+        """A (str, list) tuple should create a submenu."""
+        parent = StatusMenuItem("Root")
+        parent.update([("Parent", [StatusMenuItem("Child")])])
+        assert "Parent" in parent
+        assert isinstance(parent["Parent"], StatusMenuItem)
+        # Child should be nested under Parent
+        assert "Child" in parent["Parent"]
 
     def test_keys_del_rebuild_menu(self):
         """Simulate the hotkey menu rebuild pattern from app.py."""

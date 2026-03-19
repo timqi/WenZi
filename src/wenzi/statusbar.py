@@ -220,7 +220,7 @@ class StatusMenuItem:
         for ele in iterable:
             if isinstance(ele, StatusMenuItem):
                 self.add(ele)
-            elif isinstance(ele, (type(None), type(separator))):
+            elif ele is None or ele is separator:
                 self.add(None)
             elif isinstance(ele, (list, tuple)) and len(ele) == 2:
                 menuitem, submenu = ele
