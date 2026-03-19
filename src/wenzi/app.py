@@ -543,7 +543,11 @@ class WenZiApp(StatusBarApp):
         if not vocab_cfg.get("enabled", False):
             return None
         from wenzi.enhance.vocabulary import load_hotwords
-        return load_hotwords(data_dir=self._data_dir) or None
+        words = load_hotwords(data_dir=self._data_dir) or None
+        if words:
+            logger.info("Loaded %d hotwords for ASR injection", len(words))
+            logger.debug("Hotwords: %s", ", ".join(words))
+        return words
 
     def _set_status(self, text: str) -> None:
         """Update menu bar icon/title and status menu item (thread-safe)."""

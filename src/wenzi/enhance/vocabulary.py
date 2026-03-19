@@ -333,7 +333,7 @@ def load_hotwords(
         e for e in entries if e.get("frequency", 1) >= min_frequency
     ]
     filtered.sort(key=lambda e: e.get("frequency", 1), reverse=True)
-    return [e["term"] for e in filtered[:max_count]]
+    return [e["term"] for e in filtered[:max_count] if "term" in e]
 
 
 def get_vocab_entry_count(data_dir: str = DEFAULT_DATA_DIR) -> int:

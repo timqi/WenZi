@@ -202,8 +202,11 @@ class TestSherpaHotwords:
         t = SherpaOnnxTranscriber()
         assert t._hotwords is None
 
-    def test_zipformer_with_hotwords(self, _mock_sherpa, tmp_path):
+    def test_zipformer_with_hotwords(self, _mock_sherpa, tmp_path, monkeypatch):
         from wenzi.transcription.sherpa import SherpaOnnxTranscriber
+
+        fake_path = tmp_path / "sherpa_hotwords.txt"
+        monkeypatch.setattr(SherpaOnnxTranscriber, "_hotwords_path", staticmethod(lambda: fake_path))
 
         t = SherpaOnnxTranscriber(model="zipformer-zh", hotwords=["Python", "测试"])
 
@@ -224,9 +227,6 @@ class TestSherpaHotwords:
         hotwords_content = Path(call_kwargs["hotwords_file"]).read_text(encoding="utf-8")
         assert "Python :1.5" in hotwords_content
         assert "测试 :1.5" in hotwords_content
-
-        # Cleanup the hotwords file
-        Path(call_kwargs["hotwords_file"]).unlink(missing_ok=True)
 
     def test_zipformer_without_hotwords(self, _mock_sherpa, tmp_path):
         from wenzi.transcription.sherpa import SherpaOnnxTranscriber
@@ -258,15 +258,16 @@ class TestSherpaHotwords:
         call_kwargs = _mock_sherpa.OnlineRecognizer.from_paraformer.call_args[1]
         assert "hotwords_file" not in call_kwargs
 
-    def test_cleanup_removes_hotwords_file(self):
+    def test_cleanup_removes_hotwords_file(self, monkeypatch, tmp_path):
         from wenzi.transcription.sherpa import SherpaOnnxTranscriber
 
+        fake_path = tmp_path / "sherpa_hotwords.txt"
+        monkeypatch.setattr(SherpaOnnxTranscriber, "_hotwords_path", staticmethod(lambda: fake_path))
+
         t = SherpaOnnxTranscriber(hotwords=["Python"])
-        hotwords_path = t._hotwords_path()
-        hotwords_path.parent.mkdir(parents=True, exist_ok=True)
-        hotwords_path.write_text("Python :1.5\n", encoding="utf-8")
-        assert hotwords_path.exists()
+        fake_path.write_text("Python :1.5\n", encoding="utf-8")
+        assert fake_path.exists()
 
         t.cleanup()
 
-        assert not hotwords_path.exists()
+        assert not fake_path.exists()

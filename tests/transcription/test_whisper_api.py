@@ -351,3 +351,16 @@ class TestHotwords:
 
         _, kwargs = mock_client.audio.transcriptions.create.call_args
         assert "prompt" not in kwargs
+
+    def test_build_hotwords_prompt_truncates(self):
+        long_words = [f"word{i:03d}xxxx" for i in range(50)]  # each ~11 chars
+        prompt = WhisperAPITranscriber._build_hotwords_prompt(long_words)
+        assert len(prompt) <= 200
+
+    def test_build_hotwords_prompt_keeps_all_if_short(self):
+        words = ["Python", "Kubernetes", "Docker"]
+        prompt = WhisperAPITranscriber._build_hotwords_prompt(words)
+        assert prompt == "Python, Kubernetes, Docker"
+
+    def test_build_hotwords_prompt_empty(self):
+        assert WhisperAPITranscriber._build_hotwords_prompt([]) == ""
