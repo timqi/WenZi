@@ -11,6 +11,26 @@ from typing import List
 # whitespace runs, or any other single character.
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9]+|[^\x00-\x7f]|\s+|.")
 
+# East Asian character ranges: CJK Unified Ideographs, Extension A,
+# Compatibility Ideographs, Hiragana, Katakana, and Korean Hangul.
+_CJK_RE = (
+    r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff"
+    r"\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]"
+)
+_CJK_BEFORE_LATIN = re.compile(rf"({_CJK_RE})([a-zA-Z0-9])")
+_LATIN_BEFORE_CJK = re.compile(rf"([a-zA-Z0-9])({_CJK_RE})")
+
+
+def _normalize_cjk_spacing(text: str) -> str:
+    """Insert a space at CJK–Latin/digit boundaries where none exists.
+
+    This ensures consistent token alignment in :func:`inline_diff` when one
+    side has spaces between CJK and Latin characters and the other does not.
+    """
+    text = _CJK_BEFORE_LATIN.sub(r"\1 \2", text)
+    text = _LATIN_BEFORE_CJK.sub(r"\1 \2", text)
+    return text
+
 
 def tokenize_for_diff(text: str) -> List[str]:
     """Split text into diff-friendly tokens.
@@ -123,12 +143,23 @@ def inline_diff(asr: str, final: str) -> str:
     ``[,→，]``) are also applied silently — they are ASR/input-method
     artifacts, not meaningful corrections.  Boundary punctuation on
     replacement content is stripped outside the brackets.
+
+    Both inputs are CJK–Latin boundary-normalized before diffing so that
+    spacing differences at script boundaries do not misalign tokens.
+    The returned text therefore uses normalized spacing (e.g. ``"点set"``
+    becomes ``"点 set"``).
     """
     if asr == final:
         return asr
 
-    asr_tokens = tokenize_for_diff(asr)
-    final_tokens = tokenize_for_diff(final)
+    # Normalize CJK–Latin boundary spacing so that SequenceMatcher aligns
+    # English tokens correctly even when only one side has spaces (e.g. ASR
+    # produces "点set up" while the corrected text has "点 Set Up").
+    asr_norm = _normalize_cjk_spacing(asr)
+    final_norm = _normalize_cjk_spacing(final)
+
+    asr_tokens = tokenize_for_diff(asr_norm)
+    final_tokens = tokenize_for_diff(final_norm)
     matcher = difflib.SequenceMatcher(None, asr_tokens, final_tokens)
     opcodes = _merge_adjacent_opcodes(
         matcher.get_opcodes(), asr_tokens, final_tokens,

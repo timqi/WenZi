@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from wenzi.enhance.text_diff import (
     _is_punctuation_only,
+    _normalize_cjk_spacing,
     _strip_boundary_punctuation,
     inline_diff,
     tokenize_for_diff,
@@ -139,6 +140,65 @@ class TestInlineDiff:
         result = inline_diff("写code fast", "写代码")
         # Ensure "code" and "fast" appear in the same replacement or are handled
         assert "[" in result or "代码" in result
+
+
+class TestNormalizeCjkSpacing:
+    def test_cjk_before_latin(self):
+        assert _normalize_cjk_spacing("点set") == "点 set"
+
+    def test_latin_before_cjk(self):
+        assert _normalize_cjk_spacing("set的") == "set 的"
+
+    def test_both_sides(self):
+        assert _normalize_cjk_spacing("点set的") == "点 set 的"
+
+    def test_already_spaced(self):
+        assert _normalize_cjk_spacing("点 set 的") == "点 set 的"
+
+    def test_digit_boundary(self):
+        assert _normalize_cjk_spacing("有3个") == "有 3 个"
+
+    def test_pure_cjk_unchanged(self):
+        assert _normalize_cjk_spacing("纯中文") == "纯中文"
+
+    def test_pure_latin_unchanged(self):
+        assert _normalize_cjk_spacing("pure english") == "pure english"
+
+    def test_empty(self):
+        assert _normalize_cjk_spacing("") == ""
+
+
+class TestInlineDiffCjkSpacing:
+    """Tests for CJK-Latin boundary spacing normalization in inline_diff."""
+
+    def test_asr_no_space_final_has_space(self):
+        """ASR lacks CJK-Latin spaces, final has them — tokens align correctly."""
+        result = inline_diff(
+            "当用户点set up later的时候然后用户再次去按fn",
+            "当用户点 Set Up Later 的时候，然后用户再次去按 Fn",
+        )
+        assert "[set→Set]" in result
+        assert "[up→Up]" in result
+        assert "[later→Later]" in result
+        assert "[fn→Fn]" in result
+        # Must NOT produce misaligned diffs
+        assert "[set up→Set]" not in result
+        assert "[later→Up Later]" not in result
+
+    def test_both_no_space(self):
+        """Neither side has CJK-Latin spaces — normalization adds them for alignment."""
+        result = inline_diff("点setup的", "点Setup的")
+        assert "[setup→Setup]" in result
+
+    def test_asr_has_space_final_no_space(self):
+        """ASR has CJK-Latin spaces, final does not."""
+        result = inline_diff("点 set up 的", "点Setup的")
+        assert "[set up→Setup]" in result
+
+    def test_digit_boundary_alignment(self):
+        """Digit-CJK boundary spacing should not cause misalignment."""
+        result = inline_diff("有3个苹果", "有 3 个苹果")
+        assert "[" not in result  # only spacing change, no semantic diff
 
 
 class TestStripBoundaryPunctuation:
