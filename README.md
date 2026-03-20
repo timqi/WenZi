@@ -5,8 +5,7 @@
 A macOS menubar speech-to-text app with a built-in keyboard-driven launcher. Hold a hotkey to record, release to transcribe and type the result into the active app — or use the Alfred/Raycast-style launcher to search apps, files, clipboard history, and more.
 
 <p align="center">
-  <img src="site/images/light_preview_zh.png" width="420" alt="WenZi Preview Panel (Light)">
-  <img src="site/images/dark_preview_zh.png" width="420" alt="WenZi Preview Panel (Dark)">
+  <img src="site/images/light_preview_zh.png" width="700" alt="WenZi Preview Panel">
 </p>
 
 ## Features
