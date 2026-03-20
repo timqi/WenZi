@@ -162,8 +162,7 @@ def capture_input_context(level: str = "basic") -> Optional[InputContext]:
 
 def _collect_ax_fields(pid: int, bundle_id: Optional[str]) -> tuple:
     """Collect window title and AX-dependent fields. Called in a thread with timeout."""
-    window_title = _get_window_title(pid)
-    focused_role, focused_desc = _get_ax_focused_element(pid)
+    window_title, focused_role, focused_desc = _get_ax_info(pid)
     browser_domain = None
     if bundle_id in _BROWSER_BUNDLE_IDS:
         browser_domain = _get_browser_domain(pid, window_title)
@@ -187,38 +186,14 @@ def _get_frontmost_app_info() -> tuple:
         return (None, None, None)
 
 
-def _get_window_title(pid: int) -> Optional[str]:
-    """Get the key window title via CGWindowListCopyWindowInfo."""
-    try:
-        from Quartz import (
-            CGWindowListCopyWindowInfo,
-            kCGNullWindowID,
-            kCGWindowListExcludeDesktopElements,
-            kCGWindowListOptionOnScreenOnly,
-        )
-        options = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements
-        window_list = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
-        if not window_list:
-            return None
-        for win in window_list:
-            if win.get("kCGWindowOwnerPID") == pid and win.get("kCGWindowLayer", 99) == 0:
-                name = win.get("kCGWindowName")
-                if name:
-                    return str(name)
-        return None
-    except Exception as e:
-        logger.debug("Failed to get window title: %s", e)
-        return None
+def _get_ax_info(pid: Optional[int]) -> tuple:
+    """Get window title, focused element role, and description via AXUIElement API.
 
-
-def _get_ax_focused_element(pid: Optional[int]) -> tuple:
-    """Get focused element role and description via AXUIElement API.
-
-    Returns (role, description) tuple. Both may be None if Accessibility
-    permission is not granted or the element cannot be determined.
+    Returns (window_title, role, description) tuple. Any field may be None
+    if Accessibility permission is not granted or the value cannot be determined.
     """
     if pid is None:
-        return (None, None)
+        return (None, None, None)
     try:
         from ApplicationServices import (
             AXUIElementCreateApplication,
@@ -227,27 +202,33 @@ def _get_ax_focused_element(pid: Optional[int]) -> tuple:
         from ApplicationServices import kAXErrorSuccess
         app_ref = AXUIElementCreateApplication(pid)
 
-        err, focused = AXUIElementCopyAttributeValue(app_ref, "AXFocusedUIElement", None)
-        if err != kAXErrorSuccess or focused is None:
-            return (None, None)
-
-        role = None
-        err, val = AXUIElementCopyAttributeValue(focused, "AXRole", None)
-        if err == kAXErrorSuccess and val:
-            role = str(val)
-
-        desc = None
-        # Try AXDescription first, then AXPlaceholderValue
-        for attr in ("AXDescription", "AXPlaceholderValue"):
-            err, val = AXUIElementCopyAttributeValue(focused, attr, None)
+        # Window title from AXFocusedWindow.AXTitle
+        window_title = None
+        err, win = AXUIElementCopyAttributeValue(app_ref, "AXFocusedWindow", None)
+        if err == kAXErrorSuccess and win:
+            err, val = AXUIElementCopyAttributeValue(win, "AXTitle", None)
             if err == kAXErrorSuccess and val:
-                desc = str(val)
-                break
+                window_title = str(val)
 
-        return (role, desc)
+        # Focused element role and description
+        role = None
+        desc = None
+        err, focused = AXUIElementCopyAttributeValue(app_ref, "AXFocusedUIElement", None)
+        if err == kAXErrorSuccess and focused:
+            err, val = AXUIElementCopyAttributeValue(focused, "AXRole", None)
+            if err == kAXErrorSuccess and val:
+                role = str(val)
+
+            for attr in ("AXDescription", "AXPlaceholderValue"):
+                err, val = AXUIElementCopyAttributeValue(focused, attr, None)
+                if err == kAXErrorSuccess and val:
+                    desc = str(val)
+                    break
+
+        return (window_title, role, desc)
     except Exception as e:
-        logger.debug("Failed to get AX focused element: %s", e)
-        return (None, None)
+        logger.debug("Failed to get AX info: %s", e)
+        return (None, None, None)
 
 
 def _get_browser_domain(
