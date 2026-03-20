@@ -77,12 +77,61 @@ class RecordingController:
         )
         self.on_hotkey_release()
 
+    _voice_init_lock = threading.Lock()
+
+    def _try_enable_voice_input(self) -> None:
+        """Attempt to initialize voice input when user presses the hotkey.
+
+        Called when _voice_input_available is False. Tries to initialize
+        the transcriber (in case user enabled Dictation since startup).
+        On success, marks voice input as available. On failure, shows a
+        three-option setup dialog (Open Settings / Cancel / Don't Ask Again).
+
+        Uses a lock to prevent concurrent initialization from rapid
+        hotkey presses.
+        """
+        if not self._voice_init_lock.acquire(blocking=False):
+            return  # another attempt already in progress
+        app = self._app
+
+        def _attempt():
+            try:
+                from wenzi.transcription.apple import check_siri_available
+
+                ok, _ = check_siri_available()
+                if not ok:
+                    self._show_dictation_setup(app)
+                    return
+
+                app._transcriber.initialize()
+                app._voice_input_available = True
+                app._set_status("WZ")
+                logger.info("Voice input enabled after deferred initialization")
+            except Exception:
+                logger.debug("Deferred voice init failed, prompting user")
+                self._show_dictation_setup(app)
+            finally:
+                self._voice_init_lock.release()
+
+        threading.Thread(target=_attempt, daemon=True).start()
+
+    @staticmethod
+    def _show_dictation_setup(app) -> None:
+        """Show the three-option Dictation setup dialog and handle the choice."""
+        from wenzi.transcription.apple import prompt_siri_setup
+
+        choice = prompt_siri_setup()
+        app._handle_dictation_setup_choice(choice)
+
     def on_hotkey_press(self, key_name: str = "") -> None:
         """Called when hotkey is pressed down - start recording."""
         app = self._app
         if app._config_degraded:
             from PyObjCTools import AppHelper
             AppHelper.callAfter(app._show_config_error_alert)
+            return
+        if not app._voice_input_available:
+            self._try_enable_voice_input()
             return
         if app._busy:
             return

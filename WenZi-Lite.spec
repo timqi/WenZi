@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for WenZi.app (闻字)"""
+"""PyInstaller spec for WenZi-Lite.app (闻字 Lite — Apple Speech + Remote API only)"""
 
 import os
 import sys
@@ -9,8 +9,6 @@ if sys.version_info >= (3, 11):
 else:
     import tomli as tomllib
 
-from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
-
 # Read version from pyproject.toml (single source of truth)
 _spec_dir = os.path.dirname(os.path.abspath(SPEC))
 with open(os.path.join(_spec_dir, 'pyproject.toml'), 'rb') as _f:
@@ -19,21 +17,15 @@ _version = _pyproject['project']['version']
 
 block_cipher = None
 
-# Collect native extensions (.so, .dylib, .metallib) and data files
-mlx_datas, mlx_binaries, mlx_hiddenimports = collect_all('mlx')
-mlx_whisper_datas, mlx_whisper_binaries, mlx_whisper_hiddenimports = collect_all('mlx_whisper')
-sherpa_datas, sherpa_binaries, sherpa_hiddenimports = collect_all('sherpa_onnx')
-librosa_datas, librosa_binaries, librosa_hiddenimports = collect_all('librosa')
-
 a = Analysis(
     ['src/wenzi/__main__.py'],
     pathex=['src'],
-    binaries=mlx_binaries + mlx_whisper_binaries + sherpa_binaries + librosa_binaries,
-    datas=mlx_datas + mlx_whisper_datas + sherpa_datas + librosa_datas + [
+    binaries=[],
+    datas=[
         (os.path.join(_spec_dir, 'src/wenzi/audio/sounds'), 'wenzi/audio/sounds'),
         (os.path.join(_spec_dir, 'src/wenzi/enhance/data'), 'wenzi/enhance/data'),
     ],
-    hiddenimports=mlx_hiddenimports + mlx_whisper_hiddenimports + sherpa_hiddenimports + librosa_hiddenimports + [
+    hiddenimports=[
         # wenzi core
         'wenzi',
         'wenzi._build_info',
@@ -51,16 +43,12 @@ a = Analysis(
         'wenzi.audio.recorder',
         'wenzi.audio.recording_indicator',
         'wenzi.audio.sound_manager',
-        # wenzi.transcription
+        # wenzi.transcription (Lite: apple + whisper_api only)
         'wenzi.transcription',
         'wenzi.transcription.base',
-        'wenzi.transcription.funasr',
-        'wenzi.transcription.mlx',
         'wenzi.transcription.apple',
-        'wenzi.transcription.sherpa',
         'wenzi.transcription.whisper_api',
         'wenzi.transcription.model_registry',
-        'wenzi.transcription.punctuation',
         # wenzi.enhance
         'wenzi.enhance',
         'wenzi.enhance.enhancer',
@@ -136,28 +124,13 @@ a = Analysis(
         'wenzi.scripting.ui.quicklook_panel',
         'wenzi.scripting.ui.quick_edit_panel',
         'wenzi.scripting.ui.snippet_editor_panel',
-        # third-party
+        # third-party (Lite only — no local ASR packages)
         'sounddevice',
         'soundfile',
         'numpy',
-        'librosa',
-        'funasr_onnx',
-        'funasr_onnx.paraformer_bin',
-        'funasr_onnx.vad_bin',
-        'funasr_onnx.punc_bin',
-        'funasr_onnx.utils.utils',
-        'funasr_onnx.utils.frontend',
-        'jieba',
         'pynput',
         'pynput.keyboard',
         'pynput.keyboard._darwin',
-        'onnxruntime',
-        'sentencepiece',
-        'tiktoken',
-        'huggingface_hub',
-        'sherpa_onnx',
-        'modelscope.utils.file_utils',
-        'modelscope.hub.snapshot_download',
         'openai',
         'simpleeval',
         'pint',
@@ -177,7 +150,20 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'mlx',
+        'mlx_whisper',
+        'sherpa_onnx',
+        'sherpa_onnx_core',
+        'librosa',
+        'funasr_onnx',
+        'jieba',
+        'onnxruntime',
+        'sentencepiece',
+        'tiktoken',
+        'huggingface_hub',
+        'modelscope',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -191,7 +177,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='WenZi',
+    name='WenZi-Lite',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -209,18 +195,18 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name='WenZi',
+    name='WenZi-Lite',
 )
 
 app = BUNDLE(
     coll,
-    name='WenZi.app',
+    name='WenZi-Lite.app',
     icon=os.path.join(_spec_dir, 'resources', 'icon.icns'),
     bundle_identifier='io.github.airead.wenzi',
     codesign_identity=os.environ.get('CODESIGN_IDENTITY', ''),
     info_plist={
-        'CFBundleName': 'WenZi',
-        'CFBundleDisplayName': 'WenZi',
+        'CFBundleName': 'WenZi Lite',
+        'CFBundleDisplayName': 'WenZi Lite',
         'CFBundleVersion': _version,
         'CFBundleShortVersionString': _version,
         'LSUIElement': True,
