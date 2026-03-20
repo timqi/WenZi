@@ -38,17 +38,22 @@
     <img src="../images/icon.png" alt="WenZi" class="hero-icon" />
     <h1>语音转文字，<span>即时输入</span></h1>
     <p class="tagline">
-      macOS 菜单栏应用 — 按住快捷键录音，松开即转写并自动输入到当前应用。
-      离线优先、多引擎、AI 增强。
+      macOS 菜单栏应用 — 按住快捷键录音，松开即转写并自动输入。
+      内置键盘驱动启动器，搜索应用、文件和剪贴板。
+      离线优先、多引擎、AI 增强、隐私至上。
     </p>
     <div class="hero-buttons">
       <a id="download-btn" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-primary">
         &#11015; 下载
       </a>
+      <a id="download-lite-btn" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-secondary">
+        &#11015; 下载 Lite 版
+      </a>
       <a href="https://github.com/Airead/WenZi" class="btn btn-secondary" target="_blank">
         &#9733; GitHub
       </a>
     </div>
+    <p class="lite-hint">Lite 版 — 更小体积，Apple Speech + 远程 ASR，无需下载大型本地模型</p>
     <span id="version-badge" class="version-badge">最新版本</span>
   </div>
 </section>
@@ -59,6 +64,12 @@
     <h2 class="section-title fade-in">功能特性</h2>
     <p class="section-subtitle fade-in">macOS 上最全面的语音输入工具</p>
     <div class="features-grid">
+
+      <div class="feature-card fade-in">
+        <div class="feature-icon">&#128274;</div>
+        <h3>隐私至上</h3>
+        <p>零遥测、零分析、零数据收集。搭配自部署 LLM（如 Ollama），所有数据 — 语音、文本、词库 — 完全留在本机，绝不外流。</p>
+      </div>
 
       <div class="feature-card fade-in">
         <div class="feature-icon">&#127911;</div>
@@ -88,12 +99,6 @@
         <div class="feature-icon">&#128187;</div>
         <h3>脚本与自动化</h3>
         <p>Python 插件系统，支持 Leader 键、快捷键、事件监听、持久化存储和 Shell 命令，实现 macOS 自动化。</p>
-      </div>
-
-      <div class="feature-card fade-in">
-        <div class="feature-icon">&#9889;</div>
-        <h3>轻量原生</h3>
-        <p>仅在菜单栏运行，不占 Dock 位置。全面支持深色模式。历史浏览器支持标签筛选和交互式使用统计图表。</p>
       </div>
 
     </div>
@@ -164,7 +169,7 @@
             <td>快</td>
             <td>高</td>
             <td><span class="badge-no">不支持</span></td>
-            <td>~500 MB</td>
+            <td>~945 MB</td>
           </tr>
           <tr>
             <td><strong>MLX-Whisper</strong></td>
@@ -199,65 +204,62 @@
 <!-- ========== Installation ========== -->
 <section id="installation">
   <div class="container">
-    <h2 class="section-title fade-in">安装方式</h2>
-    <p class="section-subtitle fade-in">三种方式，任选其一</p>
-    <div class="install-grid">
+    <h2 class="section-title fade-in">安装</h2>
+    <p class="section-subtitle fade-in">下载、拖入、启动 — 几秒即可就绪</p>
 
-      <div class="install-card install-featured fade-in">
-        <div class="install-featured-inner">
-          <div class="install-featured-left">
-            <span class="install-badge">推荐</span>
-            <h3>下载安装</h3>
-            <p class="install-desc">最简单的方式。无需 Python、无需构建工具 — 下载、拖入、启动，即刻使用。</p>
-            <a id="download-btn-install" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-primary">
-              &#11015; 下载最新版本
-            </a>
-          </div>
-          <div class="install-featured-right">
-            <div class="install-steps">
-              <div class="install-step"><span class="install-step-num">1</span> 从 <a href="https://github.com/Airead/WenZi/releases/latest">Releases</a> 下载 <code>WenZi.app</code></div>
-              <div class="install-step"><span class="install-step-num">2</span> 拖入 <code>/Applications</code></div>
-              <div class="install-step"><span class="install-step-num">3</span> 双击启动</div>
-              <div class="install-step"><span class="install-step-num">4</span> 授予<strong>麦克风</strong>和<strong>辅助功能</strong>权限</div>
-            </div>
-            <p class="install-note">首次启动：macOS 会阻止未签名应用。前往<strong>系统设置 &rarr; 隐私与安全性</strong>，点击<strong>仍要打开</strong>即可。</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="install-card fade-in">
-        <div class="install-header">
-          <span class="install-icon">&#128296;</span>
-          <div>
-            <h3>从源码构建</h3>
-            <p class="install-label">需要 Python 3.13+ 和 uv</p>
-          </div>
-        </div>
-        <div class="install-body">
-          <pre class="code-block">git clone https://github.com/Airead/WenZi
-cd WenZi
-uv sync
-./scripts/build.sh</pre>
-        </div>
-      </div>
-
-      <div class="install-card fade-in">
-        <div class="install-header">
-          <span class="install-icon">&#128187;</span>
-          <div>
-            <h3>从源码运行</h3>
-            <p class="install-label">用于开发和调试</p>
-          </div>
-        </div>
-        <div class="install-body">
-          <pre class="code-block">git clone https://github.com/Airead/WenZi
-cd WenZi
-uv sync
-uv run python -m wenzi</pre>
-        </div>
-      </div>
-
+    <div class="edition-table-wrapper fade-in">
+      <table class="edition-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Standard</th>
+            <th>Lite</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>本地识别</td>
+            <td class="edition-advantage">全部 5 种引擎</td>
+            <td>Apple Speech（系统内置）</td>
+          </tr>
+          <tr>
+            <td>远程识别</td>
+            <td>Whisper API</td>
+            <td>Whisper API</td>
+          </tr>
+          <tr>
+            <td>AI 增强</td>
+            <td>完整</td>
+            <td>完整</td>
+          </tr>
+          <tr>
+            <td>启动器</td>
+            <td>完整</td>
+            <td>完整</td>
+          </tr>
+          <tr>
+            <td>脚本系统</td>
+            <td>完整</td>
+            <td>完整</td>
+          </tr>
+          <tr>
+            <td>安装包大小</td>
+            <td>~945 MB</td>
+            <td class="edition-advantage">~64 MB</td>
+          </tr>
+          <tr class="edition-download-row">
+            <td></td>
+            <td>
+              <a id="download-btn-install" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-primary edition-btn">&#11015; 下载</a>
+            </td>
+            <td>
+              <a id="download-lite-btn-install" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-secondary edition-btn">&#11015; 下载</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
+
   </div>
 </section>
 

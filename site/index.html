@@ -39,16 +39,21 @@
     <h1>Speech to Text, <span>Instantly</span></h1>
     <p class="tagline">
       A macOS menubar app — hold a hotkey to record, release to transcribe and type.
-      Offline-first, multi-engine, AI-enhanced.
+      Includes a keyboard-driven launcher for apps, files, and clipboard.
+      Offline-first, multi-engine, AI-enhanced, privacy-first.
     </p>
     <div class="hero-buttons">
       <a id="download-btn" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-primary">
         &#11015; Download
       </a>
+      <a id="download-lite-btn" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-secondary">
+        &#11015; Download Lite
+      </a>
       <a href="https://github.com/Airead/WenZi" class="btn btn-secondary" target="_blank">
         &#9733; GitHub
       </a>
     </div>
+    <p class="lite-hint">Lite — smaller build with Apple Speech + remote ASR, no large local models</p>
     <span id="version-badge" class="version-badge">Latest release</span>
   </div>
 </section>
@@ -59,6 +64,12 @@
     <h2 class="section-title fade-in">Features</h2>
     <p class="section-subtitle fade-in">Everything you need for voice input on macOS</p>
     <div class="features-grid">
+
+      <div class="feature-card fade-in">
+        <div class="feature-icon">&#128274;</div>
+        <h3>Privacy First</h3>
+        <p>Zero telemetry, zero analytics, zero data collection. Pair with a self-hosted LLM (e.g. Ollama) and all your data — voice, text, vocabulary — stays entirely on your machine.</p>
+      </div>
 
       <div class="feature-card fade-in">
         <div class="feature-icon">&#127911;</div>
@@ -88,12 +99,6 @@
         <div class="feature-icon">&#128187;</div>
         <h3>Scripting &amp; Automation</h3>
         <p>Python plugin system with leader keys, hotkeys, event listeners, persistent storage, and shell commands for macOS automation.</p>
-      </div>
-
-      <div class="feature-card fade-in">
-        <div class="feature-icon">&#9889;</div>
-        <h3>Lightweight &amp; Native</h3>
-        <p>Menubar-only app, hidden from Dock. Dark mode across all panels. History browser with tag filters and interactive usage charts.</p>
       </div>
 
     </div>
@@ -164,7 +169,7 @@
             <td>Fast</td>
             <td>High</td>
             <td><span class="badge-no">No</span></td>
-            <td>~500 MB</td>
+            <td>~945 MB</td>
           </tr>
           <tr>
             <td><strong>MLX-Whisper</strong></td>
@@ -200,64 +205,61 @@
 <section id="installation">
   <div class="container">
     <h2 class="section-title fade-in">Installation</h2>
-    <p class="section-subtitle fade-in">Three ways to get started</p>
-    <div class="install-grid">
+    <p class="section-subtitle fade-in">Download, drag, and go — ready in seconds</p>
 
-      <div class="install-card install-featured fade-in">
-        <div class="install-featured-inner">
-          <div class="install-featured-left">
-            <span class="install-badge">Recommended</span>
-            <h3>Download Release</h3>
-            <p class="install-desc">The easiest way to get started. No Python, no build tools — just download, drag, and go.</p>
-            <a id="download-btn-install" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-primary">
-              &#11015; Download Latest Release
-            </a>
-          </div>
-          <div class="install-featured-right">
-            <div class="install-steps">
-              <div class="install-step"><span class="install-step-num">1</span> Download <code>WenZi.app</code> from <a href="https://github.com/Airead/WenZi/releases/latest">Releases</a></div>
-              <div class="install-step"><span class="install-step-num">2</span> Drag to <code>/Applications</code></div>
-              <div class="install-step"><span class="install-step-num">3</span> Double-click to launch</div>
-              <div class="install-step"><span class="install-step-num">4</span> Grant <strong>Microphone</strong> &amp; <strong>Accessibility</strong> permissions</div>
-            </div>
-            <p class="install-note">First launch: macOS blocks unsigned apps. Go to <strong>System Settings &rarr; Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="install-card fade-in">
-        <div class="install-header">
-          <span class="install-icon">&#128296;</span>
-          <div>
-            <h3>Build from Source</h3>
-            <p class="install-label">Requires Python 3.13+ and uv</p>
-          </div>
-        </div>
-        <div class="install-body">
-          <pre class="code-block">git clone https://github.com/Airead/WenZi
-cd WenZi
-uv sync
-./scripts/build.sh</pre>
-        </div>
-      </div>
-
-      <div class="install-card fade-in">
-        <div class="install-header">
-          <span class="install-icon">&#128187;</span>
-          <div>
-            <h3>Run from Source</h3>
-            <p class="install-label">For development and debugging</p>
-          </div>
-        </div>
-        <div class="install-body">
-          <pre class="code-block">git clone https://github.com/Airead/WenZi
-cd WenZi
-uv sync
-uv run python -m wenzi</pre>
-        </div>
-      </div>
-
+    <div class="edition-table-wrapper fade-in">
+      <table class="edition-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Standard</th>
+            <th>Lite</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Local ASR</td>
+            <td class="edition-advantage">All 5 backends</td>
+            <td>Apple Speech (built-in)</td>
+          </tr>
+          <tr>
+            <td>Remote ASR</td>
+            <td>Whisper API</td>
+            <td>Whisper API</td>
+          </tr>
+          <tr>
+            <td>AI Enhancement</td>
+            <td>Full</td>
+            <td>Full</td>
+          </tr>
+          <tr>
+            <td>Launcher</td>
+            <td>Full</td>
+            <td>Full</td>
+          </tr>
+          <tr>
+            <td>Scripting</td>
+            <td>Full</td>
+            <td>Full</td>
+          </tr>
+          <tr>
+            <td>App Size</td>
+            <td>~945 MB</td>
+            <td class="edition-advantage">~64 MB</td>
+          </tr>
+          <tr class="edition-download-row">
+            <td></td>
+            <td>
+              <a id="download-btn-install" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-primary edition-btn">&#11015; Download</a>
+            </td>
+            <td>
+              <a id="download-lite-btn-install" href="https://github.com/Airead/WenZi/releases/latest" class="btn btn-secondary edition-btn">&#11015; Download</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
+
   </div>
 </section>
 
