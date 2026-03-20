@@ -747,15 +747,11 @@ class TextEnhancer:
         ch = self._conversation_history
         mc = self._get_mode_cache()
 
-        # Invalidate cache if context level changed — reset all fields
-        # to force a full rebuild (including last_log_count to avoid
-        # the fast-path returning stale/empty results).
+        # Invalidate cache if context level changed — replace with a fresh
+        # instance to force a full rebuild (resets last_log_count etc.).
         if mc.last_context_level != self._input_context_level:
-            mc.entry_lines = []
-            mc.total_chars = 0
-            mc.last_ts = ""
-            mc.last_log_count = 0
-            mc.last_context_level = self._input_context_level
+            mc = _ModeHistoryCache(last_context_level=self._input_context_level)
+            self._history_caches[self._mode] = mc
 
         # Fast path: no new log() calls since last build — return cached.
         # last_log_count is per-mode so that one mode's update does not

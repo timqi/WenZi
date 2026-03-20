@@ -90,17 +90,6 @@ class InputContext:
             lines.append(f"Domain:   {self.browser_domain}")
         return "\n".join(lines) if lines else "(no context captured)"
 
-    def format_for_history_tag(self, level: str) -> Optional[str]:
-        """Format a short tag for conversation history entries.
-
-        Returns None if level is "off" or no useful info.
-        Always returns only app_name regardless of level (basic or detailed),
-        to keep history entries concise.
-        """
-        if level == "off" or not self.app_name:
-            return None
-        return self.app_name
-
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dict, omitting None values."""
         return {

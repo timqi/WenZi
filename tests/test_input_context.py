@@ -69,36 +69,6 @@ class TestInputContext:
         assert "main.py" in result
         assert "AXTextArea" in result
 
-    def test_format_for_history_tag_off(self):
-        from wenzi.input_context import InputContext
-        ctx = InputContext(app_name="Terminal")
-        assert ctx.format_for_history_tag("off") is None
-
-    def test_format_for_history_tag_basic(self):
-        from wenzi.input_context import InputContext
-        ctx = InputContext(app_name="Terminal", bundle_id="com.apple.Terminal")
-        result = ctx.format_for_history_tag("basic")
-        assert result == "Terminal"
-
-    def test_format_for_history_tag_detailed_only_app_name(self):
-        from wenzi.input_context import InputContext
-        ctx = InputContext(
-            app_name="Chrome",
-            browser_domain="github.com",
-            window_title="GitHub - Some Page",
-        )
-        result = ctx.format_for_history_tag("detailed")
-        assert result == "Chrome"
-
-    def test_format_for_history_tag_detailed_no_extras(self):
-        from wenzi.input_context import InputContext
-        ctx = InputContext(
-            app_name="VS Code",
-            window_title="main.py - MyProject",
-        )
-        result = ctx.format_for_history_tag("detailed")
-        assert result == "VS Code"
-
     def test_to_dict_omits_none(self):
         from wenzi.input_context import InputContext
         ctx = InputContext(app_name="Terminal", bundle_id="com.apple.Terminal")
