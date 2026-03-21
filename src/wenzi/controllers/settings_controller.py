@@ -36,25 +36,25 @@ class SettingsController:
         self._app = app
 
     def _save_and_reload(self) -> None:
-        """Save config and reload the Settings panel if it is visible.
-
-        Safe to call from any thread — the UI reload is dispatched to the
-        main thread automatically.
-        """
+        """Save config and refresh the Settings panel if visible."""
         from PyObjCTools import AppHelper
 
         app = self._app
         save_config(app._config, app._config_path)
         if app._settings_panel.is_visible:
-            AppHelper.callAfter(self.on_open_settings, None)
+            AppHelper.callAfter(self._refresh_panel)
 
-    def on_open_settings(self, _) -> None:
-        """Open the Settings panel with current state and callbacks."""
+    def _refresh_panel(self) -> None:
+        """Push updated state to the settings panel (incremental refresh)."""
+        state = self._collect_state()
+        self._app._settings_panel.update_state(state)
+
+    def _collect_state(self) -> dict:
+        """Build the current state dict for the Settings panel."""
         from wenzi.enhance.vocabulary import get_vocab_entry_count
 
         app = self._app
 
-        # Collect current state
         hotkeys = app._config.get("hotkeys", {"fn": True})
 
         # STT presets — only show backends that are available
@@ -99,7 +99,7 @@ class SettingsController:
         last_tab = ui_cfg.get("settings_last_tab", "general")
 
         fb_cfg = app._config.get("feedback", {})
-        state = {
+        return {
             "last_tab": last_tab,
             "hotkeys": hotkeys,
             "restart_key": fb_cfg.get("restart_key", "cmd"),
@@ -136,8 +136,14 @@ class SettingsController:
             "scripting_enabled": app._config.get("scripting", {}).get(
                 "enabled", False
             ),
+            "language": app._config.get("language", "auto"),
             "launcher": self._build_launcher_state(),
         }
+
+    def on_open_settings(self, _) -> None:
+        """Open the Settings panel with current state and callbacks."""
+        app = self._app
+        state = self._collect_state()
 
         callbacks = {
             "on_hotkey_toggle": self.hotkey_toggle,
