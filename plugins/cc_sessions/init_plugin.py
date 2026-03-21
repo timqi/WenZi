@@ -157,6 +157,7 @@ def register(wz) -> None:
             "enter": "View",
             "cmd_enter": "Copy resume command",
         },
+        show_preview=True,
     )
     def search(query: str) -> list:
         sessions = scanner.scan_all()
