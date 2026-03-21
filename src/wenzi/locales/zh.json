@@ -263,5 +263,16 @@
   "apple_stt.dictation_required.title": "需要启用听写",
   "apple_stt.dictation_required.message": "闻字使用 Apple 语音识别进行语音输入，需要启用听写功能。\n\n您可以现在在系统设置 > 键盘 > 听写中启用，或者继续使用闻字的其他功能（如启动器）。",
   "apple_stt.btn.setup_later": "稍后设置",
-  "apple_stt.btn.dont_ask": "不再询问"
+  "apple_stt.btn.dont_ask": "不再询问",
+
+  "config.modifier_key.space": "空格",
+  "config.modifier_key.cmd": "Command",
+  "config.modifier_key.cmd_r": "Command（右）",
+  "config.modifier_key.ctrl": "Control",
+  "config.modifier_key.ctrl_r": "Control（右）",
+  "config.modifier_key.alt": "Option",
+  "config.modifier_key.alt_r": "Option（右）",
+  "config.modifier_key.shift": "Shift",
+  "config.modifier_key.shift_r": "Shift（右）",
+  "config.modifier_key.esc": "Esc"
 }

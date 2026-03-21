@@ -423,8 +423,8 @@ class SettingsPanel:
         doc_view.addSubview_(record_btn)
 
         # Restart / Cancel key dropdowns
-        from wenzi.config import MODIFIER_KEY_CHOICES
-        _key_choices = MODIFIER_KEY_CHOICES
+        from wenzi.config import get_modifier_key_choices
+        _key_choices = get_modifier_key_choices()
         label_w = 80
         popup_w = 140
 
