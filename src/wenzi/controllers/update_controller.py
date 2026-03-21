@@ -182,14 +182,13 @@ class UpdateController:
         # Show brief confirmation and apply
         from wenzi.ui_helpers import restore_accessory, topmost_alert
 
+        from wenzi.i18n import t
+
         result = topmost_alert(
-            title=f"Update to v{staged_version}",
-            message=(
-                "A previously downloaded update is ready to install. "
-                "WenZi will restart with the new version."
-            ),
-            ok="Restart Now",
-            cancel="Later",
+            title=t("alert.update.staged_title", version=staged_version),
+            message=t("alert.update.staged_message"),
+            ok=t("alert.update.restart_now"),
+            cancel=t("common.later"),
         )
         restore_accessory()
 
@@ -311,6 +310,7 @@ class UpdateController:
 
     def _try_auto_update(self, dmg_url: str) -> None:
         """Attempt in-app auto-update with user confirmation."""
+        from wenzi.i18n import t
         from wenzi.ui_helpers import restore_accessory, topmost_alert
         from wenzi.updater import AppUpdater
 
@@ -318,11 +318,9 @@ class UpdateController:
 
         if not AppUpdater.is_writable(app_path):
             topmost_alert(
-                title="Cannot Auto-Update",
-                message=(
-                    f"{AppUpdater._app_name()}.app is in a read-only location ({app_path.parent}).\n\n"
-                    "Please download the update manually from the browser."
-                ),
+                title=t("alert.update.cannot_title"),
+                message=t("alert.update.cannot_message",
+                           app=AppUpdater._app_name(), path=str(app_path.parent)),
             )
             restore_accessory()
             self._open_release_in_browser()
@@ -331,13 +329,10 @@ class UpdateController:
         # Confirm with user
         version = self._latest_version or "new version"
         result = topmost_alert(
-            title=f"Update to {version}?",
-            message=(
-                "The update will be downloaded and installed automatically. "
-                "WenZi will restart after installation."
-            ),
-            ok="Install Update",
-            cancel="Cancel",
+            title=t("alert.update.title", version=version),
+            message=t("alert.update.message"),
+            ok=t("alert.update.install"),
+            cancel=t("common.cancel"),
         )
         restore_accessory()
 
@@ -381,6 +376,7 @@ class UpdateController:
 
     def _show_update_error(self, msg: str) -> None:
         """Show error alert with browser fallback (main thread)."""
+        from wenzi.i18n import t
         from wenzi.ui_helpers import restore_accessory, topmost_alert
 
         self._updater = None
@@ -393,10 +389,10 @@ class UpdateController:
             self._update_menu_item.set_callback(self._on_update_click)
 
         result = topmost_alert(
-            title="Update Failed",
-            message=f"{msg}\n\nWould you like to download the update manually?",
-            ok="Open in Browser",
-            cancel="Cancel",
+            title=t("alert.update.failed.title"),
+            message=t("alert.update.failed.message", error=msg),
+            ok=t("alert.update.open_browser"),
+            cancel=t("common.cancel"),
         )
         restore_accessory()
 
@@ -418,15 +414,16 @@ class UpdateController:
 
     def _on_restart_to_update(self, _: Any) -> None:
         """Confirm restart, swap app, and quit (main thread)."""
+        from wenzi.i18n import t
         from wenzi.ui_helpers import restore_accessory, topmost_alert
         from wenzi.updater import AppUpdater
 
         version = self._latest_version or "new version"
         result = topmost_alert(
-            title=f"Restart to update {version}?",
-            message="WenZi will quit and relaunch with the new version.",
-            ok="Restart Now",
-            cancel="Later",
+            title=t("alert.update.restart_title", version=version),
+            message=t("alert.update.restart_message"),
+            ok=t("alert.update.restart_now"),
+            cancel=t("common.later"),
         )
         restore_accessory()
 
@@ -435,11 +432,8 @@ class UpdateController:
 
         if not AppUpdater.perform_swap_and_relaunch():
             topmost_alert(
-                title="Update Failed",
-                message=(
-                    "Could not apply the update. "
-                    "Please download and install manually."
-                ),
+                title=t("alert.update.failed.title"),
+                message=t("alert.update.swap_failed_message"),
             )
             restore_accessory()
             self._open_release_in_browser()

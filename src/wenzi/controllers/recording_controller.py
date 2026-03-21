@@ -639,14 +639,11 @@ class RecordingController:
                     logger.error("Transcription failed: %s", e)
                     AppHelper.callAfter(app._streaming_overlay.close)
                     app._set_status("Error")
+                    from wenzi.i18n import t
                     from wenzi.ui_helpers import topmost_alert, restore_accessory
                     topmost_alert(
-                        title="Transcription Failed",
-                        message=(
-                            f"Error: {str(e)[:200]}\n\n"
-                            "Please check the log or try switching to "
-                            "a different model."
-                        ),
+                        title=t("alert.transcription.failed.title"),
+                        message=t("alert.transcription.failed.message", error=str(e)[:200]),
                     )
                     restore_accessory()
                 finally:

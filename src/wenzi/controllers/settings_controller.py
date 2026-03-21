@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 from wenzi.config import save_config
 from wenzi.enhance.enhancer import MODE_OFF
+from wenzi.i18n import t
 from wenzi.transcription.model_registry import (
     PRESET_BY_ID,
     PRESETS,
@@ -334,8 +335,8 @@ class SettingsController:
             return
         if app._busy:
             topmost_alert(
-                "Cannot switch model",
-                "Please wait for current operation to finish.",
+                t("alert.settings.cannot_switch"),
+                t("alert.settings.cannot_switch.message"),
             )
             restore_accessory()
             return
@@ -427,8 +428,8 @@ class SettingsController:
                 app._set_status("WZ")
                 logger.info("Switched to model: %s (from settings)", preset.display_name)
                 try:
-                    send_notification("WenZi", "Model switched",
-                                      f"Now using: {preset.display_name}")
+                    send_notification(t("app.name"), t("notification.model.switched"),
+                                      t("notification.model.switched.subtitle", name=preset.display_name))
                 except Exception:
                     logger.debug("Notification unavailable, skipping")
 
@@ -442,16 +443,11 @@ class SettingsController:
                 can_clear = preset.backend not in ("apple", "whisper-api")
                 if can_clear:
                     result = topmost_alert(
-                        title="Model Switch Failed",
-                        message=(
-                            f"Failed to load model: {preset.display_name}\n\n"
-                            f"Error: {str(e)[:200]}\n\n"
-                            "This may be caused by corrupted cache files. "
-                            "Click 'Clear Cache & Retry' to delete cached "
-                            "files and try again."
-                        ),
-                        ok="Clear Cache & Retry",
-                        cancel="Close",
+                        title=t("alert.model.switch_failed.title"),
+                        message=t("alert.model.switch_failed.cache_message",
+                                  name=preset.display_name, error=str(e)[:200]),
+                        ok=t("alert.model.cache_retry"),
+                        cancel=t("common.close"),
                     )
                     restore_accessory()
                     if result == 1:
@@ -461,11 +457,9 @@ class SettingsController:
                         return
                 else:
                     topmost_alert(
-                        title="Model Switch Failed",
-                        message=(
-                            f"Failed to load model: {preset.display_name}\n\n"
-                            f"Error: {str(e)[:200]}"
-                        ),
+                        title=t("alert.model.switch_failed.title"),
+                        message=t("alert.model.switch_failed.message",
+                                  name=preset.display_name, error=str(e)[:200]),
                     )
                     restore_accessory()
 
@@ -534,12 +528,8 @@ class SettingsController:
             logger.error("Retry after cache clear failed: %s", e2)
             app._set_status("Error")
             topmost_alert(
-                title="Model Switch Failed",
-                message=(
-                    f"Retry failed.\n\n"
-                    f"Error: {str(e2)[:200]}\n\n"
-                    "Please check your network connection and try again."
-                ),
+                title=t("alert.model.switch_failed.title"),
+                message=t("alert.model.switch_failed.retry_message", error=str(e2)[:200]),
             )
             restore_accessory()
             app._model_controller._try_restore_previous_model(old_preset_id)
@@ -566,8 +556,8 @@ class SettingsController:
             return
         if app._busy:
             topmost_alert(
-                "Cannot switch model",
-                "Please wait for current operation to finish.",
+                t("alert.settings.cannot_switch"),
+                t("alert.settings.cannot_switch.message"),
             )
             restore_accessory()
             return
@@ -895,10 +885,10 @@ class SettingsController:
         self._app._settings_panel.close()
 
         result = topmost_alert(
-            title="Restart Required",
+            title=t("alert.settings.restart_required.title"),
             message=message,
-            ok="Restart Now",
-            cancel="Later",
+            ok=t("alert.update.restart_now"),
+            cancel=t("common.later"),
         )
         restore_accessory()
         if result:
@@ -1088,9 +1078,8 @@ class SettingsController:
                 logger.debug("Could not trigger app rescan", exc_info=True)
 
         topmost_alert(
-            title="Icon Cache Cleared",
-            message="App and browser icon caches have been cleared. "
-            "Icons will be re-extracted on next search.",
+            title=t("alert.settings.icon_cache_cleared.title"),
+            message=t("alert.settings.icon_cache_cleared.message"),
         )
         restore_accessory()
         logger.info("Icon cache refresh completed")

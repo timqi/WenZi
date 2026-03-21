@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 from wenzi.config import save_config
 from wenzi.enhance.enhancer import MODE_OFF
+from wenzi.i18n import t
 from wenzi.enhance.preview_history import PreviewHistoryStore, PreviewRecord
 from wenzi.input import (
     copy_selection_to_clipboard,
@@ -728,16 +729,15 @@ class PreviewController:
         # Now validate the clipboard content
         if not has_clipboard_text():
             AppHelper.callAfter(self._clipboard_enhance_show_error,
-                                "Clipboard Content Not Supported",
-                                "The clipboard does not contain text. "
-                                "Please copy some text first.")
+                                t("alert.clipboard.not_supported.title"),
+                                t("alert.clipboard.not_supported.message"))
             return
 
         clipboard_text = get_clipboard_text()
         if not clipboard_text or not clipboard_text.strip():
             AppHelper.callAfter(self._clipboard_enhance_show_error,
-                                "Clipboard Empty",
-                                "No text found in clipboard.")
+                                t("alert.clipboard.empty.title"),
+                                t("alert.clipboard.empty.message"))
             return
 
         clipboard_text = clipboard_text.strip()
@@ -745,10 +745,9 @@ class PreviewController:
         if len(clipboard_text) > self._CLIPBOARD_MAX_CHARS:
             AppHelper.callAfter(
                 self._clipboard_enhance_show_error,
-                "Text Too Long",
-                f"The clipboard contains {len(clipboard_text)} characters "
-                f"(limit: {self._CLIPBOARD_MAX_CHARS}).\n\n"
-                "Please copy a shorter text and try again.",
+                t("alert.clipboard.too_long.title"),
+                t("alert.clipboard.too_long.message",
+                  length=len(clipboard_text), limit=self._CLIPBOARD_MAX_CHARS),
             )
             return
 
