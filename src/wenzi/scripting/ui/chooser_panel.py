@@ -1145,8 +1145,20 @@ class ChooserPanel:
             return
         self._webview.evaluateJavaScript_completionHandler_(js_code, None)
 
+    def _inject_i18n(self) -> None:
+        """Inject i18n translations into the webview JS context."""
+        from wenzi.i18n import get_translations_for_prefix
+
+        translations = get_translations_for_prefix("chooser.")
+        script = f"window._i18n = {json.dumps(translations, ensure_ascii=False)};_initI18nLabels();"
+        if self._webview is not None:
+            self._webview.evaluateJavaScript_completionHandler_(script, None)
+
     def _on_page_loaded(self) -> None:
         """Called when WKWebView finishes loading the HTML."""
+        # Inject i18n translations before flushing pending JS
+        self._inject_i18n()
+
         pending = self._pending_js[:]
         self._pending_js.clear()
         self._page_loaded = True
