@@ -329,6 +329,9 @@ class TestPluginMetadata:
         with patch("wenzi.__version__", "0.1.7"):
             engine._load_plugins()
 
+        # Plugin was not imported (setup() would raise RuntimeError)
+        assert "future_plug" not in sys.modules
+
         # Metadata is still stored (for Settings panel to show reason)
         metas = engine.get_plugin_metas()
         assert "future_plug" in metas
