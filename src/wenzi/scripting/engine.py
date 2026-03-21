@@ -787,7 +787,15 @@ class ScriptEngine:
                 mod = importlib.import_module(entry)
                 if hasattr(mod, "setup") and callable(mod.setup):
                     mod.setup(self._wz)
-                    logger.info("Plugin loaded: %s (%s)", meta.name, entry)
+                    parts = [f"Plugin loaded: {meta.name}"]
+                    if meta.version:
+                        parts.append(f"v{meta.version}")
+                    parts.append(f"({entry})")
+                    if meta.description:
+                        parts.append(f"— {meta.description}")
+                    if meta.author:
+                        parts.append(f"[by {meta.author}]")
+                    logger.info(" ".join(parts))
                 else:
                     logger.warning(
                         "Plugin %s has no setup() function, skipped", entry
