@@ -181,8 +181,14 @@ class SettingsWebPanel:
         NSApp.setActivationPolicy_(1)  # Accessory (statusbar-only)
 
     def update_state(self, state: dict) -> None:
-        """Push updated state to the webview (stub for Task 4)."""
-        pass
+        """Push new state to JS for incremental DOM update."""
+        if self._webview is None or not self.is_visible:
+            return
+        prepared = self._prepare_state(state)
+        payload = json.dumps(prepared, ensure_ascii=False)
+        self._webview.evaluateJavaScript_completionHandler_(
+            f"_updateState({payload})", None
+        )
 
     # ------------------------------------------------------------------
     # Callbacks from JavaScript

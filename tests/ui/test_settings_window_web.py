@@ -277,3 +277,30 @@ class TestPrepareState:
         state["last_tab"] = "models"
         prepared = panel._prepare_state(state)
         assert prepared["last_tab"] == "speech"
+
+
+class TestUpdateState:
+    def test_update_state_calls_evaluate_js(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        panel = SettingsWebPanel()
+        panel.show(_make_state(), _make_callbacks())
+        panel.update_state({"sound_enabled": False})
+        panel._webview.evaluateJavaScript_completionHandler_.assert_called()
+        js_call = panel._webview.evaluateJavaScript_completionHandler_.call_args[0][0]
+        assert "_updateState(" in js_call
+        assert '"sound_enabled": false' in js_call
+
+    def test_update_state_noop_when_not_visible(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        panel = SettingsWebPanel()
+        panel.update_state({"sound_enabled": False})
+
+    def test_update_state_runs_prepare_state(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        panel = SettingsWebPanel()
+        panel.show(_make_state(), _make_callbacks())
+        panel.update_state({
+            "stt_presets": [("apple-speech", "Apple Speech", True)],
+        })
+        js_call = panel._webview.evaluateJavaScript_completionHandler_.call_args[0][0]
+        assert '"id": "apple-speech"' in js_call
