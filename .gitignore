@@ -32,6 +32,10 @@ htmlcov/
 # Claude Code
 .claude/worktrees/
 
+# Superpowers (brainstorm mockups, specs, plans)
+.superpowers/
+docs/superpowers/
+
 # IDE
 .idea/
 .vscode/
