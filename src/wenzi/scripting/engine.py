@@ -361,9 +361,9 @@ class ScriptEngine:
                 SystemSettingsSource,
             )
 
-            ss_source = SystemSettingsSource()
-            if self._system_settings_open_cb is not None:
-                ss_source.set_on_open(self._system_settings_open_cb)
+            ss_source = SystemSettingsSource(
+                on_open=self._system_settings_open_cb,
+            )
             self._system_settings_source = ss_source
             for cs in ss_source.as_chooser_source(prefix=prefix or "ss"):
                 self._wz.chooser.register_source(cs)
@@ -562,9 +562,9 @@ class ScriptEngine:
                     SystemSettingsSource,
                 )
 
-                ss_source = SystemSettingsSource()
-                if self._system_settings_open_cb is not None:
-                    ss_source.set_on_open(self._system_settings_open_cb)
+                ss_source = SystemSettingsSource(
+                    on_open=self._system_settings_open_cb,
+                )
                 self._system_settings_source = ss_source
                 prefix = prefixes.get("system_settings", "ss")
                 for cs in ss_source.as_chooser_source(prefix=prefix):

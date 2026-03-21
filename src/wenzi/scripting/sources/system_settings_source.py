@@ -254,8 +254,6 @@ def get_static_entries() -> list[SettingsEntry]:
 # Icon helpers
 # ---------------------------------------------------------------------------
 
-_ICON_SIZE = 32
-
 
 def _get_icon_png(appex_path: str) -> Optional[bytes]:
     """Return 32x32 PNG bytes for an .appex icon via NSWorkspace, or None."""
@@ -335,6 +333,20 @@ class SystemSettingsSource:
 
         self._entries = get_static_entries()
 
+        # Pre-compute sorted panel list for empty-query fast path
+        self._panel_entries = sorted(
+            (e for e in self._entries if not e.parent_title),
+            key=lambda e: e.title.lower(),
+        )
+
+        # Pre-warm icon cache in background
+        appex_names = {e.appex_name for e in self._entries if e.appex_name}
+        threading.Thread(
+            target=self._prewarm_icons,
+            args=(appex_names,),
+            daemon=True,
+        ).start()
+
         logger.info(
             "SystemSettingsSource loaded: %d entries", len(self._entries),
         )
@@ -343,30 +355,43 @@ class SystemSettingsSource:
         """Set the callback invoked when a system setting is opened."""
         self._on_open = callback
 
+    def _prewarm_icons(self, appex_names: set[str]) -> None:
+        """Pre-warm icon cache for all known appex names (runs in background)."""
+        for name in appex_names:
+            self._get_icon(name)
+
     def _get_icon(self, appex_name: str) -> str:
         """Return a file:// URL for the appex icon, with disk caching."""
         if not appex_name:
             return ""
 
         with self._icon_lock:
-            if appex_name in self._icon_cache:
-                return self._icon_cache[appex_name]
+            cached = self._icon_cache.get(appex_name)
+            if cached is not None:
+                return cached
+            # Mark as in-progress to prevent duplicate work
+            self._icon_cache[appex_name] = ""
 
         key = _cache_key(appex_name)
         png_path = os.path.join(self._icon_cache_dir, f"ss_{key}.png")
 
-        # Check disk cache
-        if os.path.isfile(png_path):
-            file_url = f"file://{png_path}"
-            with self._icon_lock:
-                self._icon_cache[appex_name] = file_url
-            return file_url
+        # Try disk cache
+        try:
+            if os.path.getsize(png_path) > 0:
+                file_url = f"file://{png_path}"
+                with self._icon_lock:
+                    self._icon_cache[appex_name] = file_url
+                return file_url
+        except OSError:
+            pass
 
-        # Generate from NSWorkspace
+        # Generate from NSWorkspace (only if appex exists on disk)
         appex_path = os.path.join(
             self._extensions_dir, f"{appex_name}.appex"
         )
-        png_data = _get_icon_png(appex_path) if os.path.isdir(appex_path) else None
+        png_data = (
+            _get_icon_png(appex_path) if os.path.isdir(appex_path) else None
+        )
 
         if png_data:
             try:
@@ -388,9 +413,7 @@ class SystemSettingsSource:
         """Search all entries. Empty query returns top-level panels."""
         q = query.strip()
         if not q:
-            panels = [e for e in self._entries if not e.parent_title]
-            panels.sort(key=lambda e: e.title.lower())
-            return [self._to_item(e) for e in panels]
+            return [self._to_item(e) for e in self._panel_entries]
 
         scored: list[tuple[int, SettingsEntry]] = []
         fuzzy_match = self._fuzzy_match
