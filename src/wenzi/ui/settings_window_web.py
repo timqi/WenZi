@@ -12,6 +12,8 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+_LOG_LEVELS = ("debug", "info", "warning", "error")
+
 # ---------------------------------------------------------------------------
 # Bridge JavaScript injected at document start
 # ---------------------------------------------------------------------------
@@ -816,9 +818,7 @@ function switchTab(tabId) {
 
 function _esc(s) {
   if (s === null || s === undefined) return '';
-  var div = document.createElement('div');
-  div.appendChild(document.createTextNode(String(s)));
-  return div.innerHTML;
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 }
 
 /* ------------------------------------------------------------------ */
@@ -1014,6 +1014,7 @@ function renderLlmTab() {
     var items = groups[provider];
     html += '<div class="provider-header">';
     html += '  <span class="provider-name">' + _esc(provider) + '</span>';
+    html += '  <button class="btn-small danger" style="margin-left:auto;" onclick="event.stopPropagation(); postCallback(\\x27on_llm_remove_provider\\x27, \\x27' + _esc(provider) + '\\x27)">' + _esc(_t('llm_tab.remove', 'Remove...')) + '</button>';
     html += '</div>';
     for (var k = 0; k < items.length; k++) {
       var item = items[k];
@@ -1164,6 +1165,7 @@ function renderLauncherSources() {
       html += '  </div>';
       html += '</div>';
     }
+    html += '</div>';  // close registered sources setting-group
   }
 
   container.innerHTML = html;
@@ -1538,6 +1540,13 @@ class SettingsWebPanel:
 
     def close(self) -> None:
         """Close the panel and release resources."""
+        if self._webview is not None:
+            # Break WKUserContentController → MessageHandler retain cycle
+            try:
+                cfg = self._webview.configuration()
+                cfg.userContentController().removeScriptMessageHandlerForName_("wz")
+            except Exception:
+                pass
         if self._panel is not None:
             self._panel.setDelegate_(None)
             self._close_delegate = None
@@ -1555,7 +1564,7 @@ class SettingsWebPanel:
         """Push new state to JS for incremental DOM update."""
         if self._webview is None or not self.is_visible:
             return
-        prepared = self._prepare_state(state)
+        prepared = self._prepare_state(state, include_i18n=False)
         payload = json.dumps(prepared, ensure_ascii=False)
         self._webview.evaluateJavaScript_completionHandler_(
             f"_updateState({payload})", None
@@ -1575,47 +1584,39 @@ class SettingsWebPanel:
             f"_updateSttSelection({payload})", None
         )
 
-    def update_config_dir(self, path: str) -> None:
-        """Update the config directory display."""
+    def _set_element_text(self, element_id: str, value: str) -> None:
+        """Set textContent of a DOM element by ID."""
         if self._webview is None or not self.is_visible:
             return
-        escaped = json.dumps(path, ensure_ascii=False)
+        escaped = json.dumps(value or "", ensure_ascii=False)
         self._webview.evaluateJavaScript_completionHandler_(
-            f"document.getElementById('config-dir-display').textContent = {escaped};",
+            f"document.getElementById({json.dumps(element_id)}).textContent = {escaped};",
             None,
         )
 
+    def update_config_dir(self, path: str) -> None:
+        """Update the config directory display."""
+        self._set_element_text("config-dir-display", path)
+
     def update_launcher_hotkey(self, hotkey: str) -> None:
         """Update the launcher hotkey display."""
-        if self._webview is None or not self.is_visible:
-            return
-        escaped = json.dumps(hotkey or "None", ensure_ascii=False)
-        self._webview.evaluateJavaScript_completionHandler_(
-            f"document.getElementById('ctl-launcher-hotkey').textContent = {escaped};",
-            None,
-        )
+        self._set_element_text("ctl-launcher-hotkey", hotkey)
 
     def update_source_hotkey(self, source_key: str, hotkey: str) -> None:
         """Update a launcher source hotkey display."""
         if self._webview is None or not self.is_visible:
             return
-        escaped = json.dumps(hotkey or "None", ensure_ascii=False)
+        escaped = json.dumps(hotkey or "", ensure_ascii=False)
         key_escaped = json.dumps(source_key, ensure_ascii=False)
         js = (
-            f"var el = document.querySelector('[data-source-hotkey=' + {key_escaped} + ']');"
+            f'var el = document.querySelector(\'[data-source-hotkey="\' + {key_escaped} + \'"]\');'
             f"if (el) el.textContent = {escaped};"
         )
         self._webview.evaluateJavaScript_completionHandler_(js, None)
 
     def update_new_snippet_hotkey(self, hotkey: str) -> None:
         """Update the new snippet hotkey display."""
-        if self._webview is None or not self.is_visible:
-            return
-        escaped = json.dumps(hotkey or "None", ensure_ascii=False)
-        self._webview.evaluateJavaScript_completionHandler_(
-            f"document.getElementById('ctl-new-snippet-hotkey').textContent = {escaped};",
-            None,
-        )
+        self._set_element_text("ctl-new-snippet-hotkey", hotkey)
 
     # ------------------------------------------------------------------
     # Callbacks from JavaScript
@@ -1631,8 +1632,9 @@ class SettingsWebPanel:
 
         if msg_type == "console":
             level = body.get("level", "info")
+            level = level if level in _LOG_LEVELS else "info"
             message = body.get("message", "")
-            getattr(logger, level, logger.info)("[WebView] %s", message)
+            getattr(logger, level)("[WebView] %s", message)
             return
 
         if msg_type == "callback":
@@ -1655,38 +1657,38 @@ class SettingsWebPanel:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _prepare_state(state: dict) -> dict:
+    def _prepare_state(state: dict, *, include_i18n: bool = True) -> dict:
         """Convert tuple-based state values to JSON-friendly dicts."""
         s = dict(state)
-        if "stt_presets" in s:
+        if "stt_presets" in s and s["stt_presets"] and isinstance(s["stt_presets"][0], (tuple, list)):
             s["stt_presets"] = [
-                {"id": t[0], "name": t[1], "available": t[2]}
-                for t in s["stt_presets"]
+                {"id": row[0], "name": row[1], "available": row[2]}
+                for row in s["stt_presets"]
             ]
-        if "stt_remote_models" in s:
+        if "stt_remote_models" in s and s["stt_remote_models"] and isinstance(s["stt_remote_models"][0], (tuple, list)):
             s["stt_remote_models"] = [
-                {"provider": t[0], "model": t[1], "display": t[2]}
-                for t in s["stt_remote_models"]
+                {"provider": row[0], "model": row[1], "display": row[2]}
+                for row in s["stt_remote_models"]
             ]
-        if "llm_models" in s:
+        if "llm_models" in s and s["llm_models"] and isinstance(s["llm_models"][0], (tuple, list)):
             s["llm_models"] = [
                 {
-                    "provider": t[0],
-                    "model": t[1],
-                    "display": t[2],
-                    "has_api_key": t[3] if len(t) > 3 else False,
+                    "provider": row[0],
+                    "model": row[1],
+                    "display": row[2],
+                    "has_api_key": row[3] if len(row) > 3 else False,
                 }
-                for t in s["llm_models"]
+                for row in s["llm_models"]
             ]
         if "current_llm" in s and isinstance(s["current_llm"], (tuple, list)):
             s["current_llm"] = {
                 "provider": s["current_llm"][0],
                 "model": s["current_llm"][1],
             }
-        if "enhance_modes" in s:
+        if "enhance_modes" in s and s["enhance_modes"] and isinstance(s["enhance_modes"][0], (tuple, list)):
             s["enhance_modes"] = [
-                {"id": t[0], "name": t[1], "order": t[2]}
-                for t in s["enhance_modes"]
+                {"id": row[0], "name": row[1], "order": row[2]}
+                for row in s["enhance_modes"]
             ]
         if s.get("last_tab") == "models":
             s["last_tab"] = "speech"
@@ -1714,7 +1716,7 @@ class SettingsWebPanel:
             elif vbm is None:
                 s["vocab_build_model"] = ""
         # Inject i18n translations
-        if "i18n" not in s:
+        if include_i18n and "i18n" not in s:
             try:
                 from wenzi.i18n import get_translations_for_prefix
                 s["i18n"] = get_translations_for_prefix("settings.")
@@ -1754,8 +1756,8 @@ class SettingsWebPanel:
         NSApp.setActivationPolicy_(0)  # Regular (foreground)
 
         if self._panel is not None:
-            # Reuse existing panel — just reload content
-            self._load_html(state)
+            # Only reached when panel is already visible (close() sets _panel to None)
+            self.update_state(state)
             return
 
         # Create NSPanel

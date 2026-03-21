@@ -31,12 +31,15 @@ def _mock_appkit(mock_appkit_modules, monkeypatch):
 
 
 def _make_state():
-    """Create a minimal settings state dict for testing."""
+    """Create a realistic settings state dict matching SettingsController output."""
     return {
         "language": "auto",
         "hotkeys": {"fn": True, "right_command": False},
+        "restart_key": "cmd",
+        "cancel_key": "space",
         "sound_enabled": True,
         "visual_indicator": True,
+        "show_device_name": False,
         "preview": True,
         "current_preset_id": "funasr-paraformer",
         "current_remote_asr": None,
@@ -46,7 +49,7 @@ def _make_state():
         ],
         "stt_remote_models": [],
         "llm_models": [
-            ("ollama", "qwen2.5:7b", "ollama / qwen2.5:7b"),
+            ("ollama", "qwen2.5:7b", "ollama / qwen2.5:7b", False),
         ],
         "current_llm": ("ollama", "qwen2.5:7b"),
         "enhance_modes": [
@@ -59,6 +62,7 @@ def _make_state():
         "vocab_enabled": True,
         "vocab_count": 42,
         "auto_build": True,
+        "vocab_build_model": ("ollama", "qwen2.5:7b"),
         "history_enabled": False,
         "history_max_entries": 100,
         "history_refresh_threshold": 50,
@@ -67,15 +71,31 @@ def _make_state():
         "scripting_enabled": False,
         "launcher": {
             "enabled": True,
-            "hotkey": {"key": "space", "modifiers": ["option"]},
-            "sources": {},
+            "hotkey": "option+space",
+            "usage_learning": True,
+            "switch_english": True,
+            "new_snippet_hotkey": "",
+            "sources": [
+                {
+                    "config_key": "app_search",
+                    "label_key": "applications",
+                    "enabled": True,
+                    "prefix_key": None,
+                    "prefix": "",
+                    "hotkey": "",
+                },
+            ],
+            "registered_sources": [],
         },
         "last_tab": "general",
     }
 
 
 def _make_callbacks():
-    """Create a dict of mock callbacks matching SettingsController."""
+    """Create a dict of mock callbacks matching SettingsController.
+
+    Keep in sync with callbacks dict in SettingsController.on_open_settings().
+    """
     names = [
         "on_hotkey_toggle", "on_hotkey_mode_select", "on_hotkey_delete",
         "on_record_hotkey", "on_restart_key_select", "on_cancel_key_select",
@@ -409,3 +429,144 @@ class TestUpdateMethods:
         panel.update_launcher_hotkey("x")
         panel.update_source_hotkey("x", "y")
         panel.update_new_snippet_hotkey("x")
+
+
+class TestConsoleMessage:
+    """Tests for console message forwarding from JS."""
+
+    def _make_panel(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        panel = SettingsWebPanel()
+        panel.show(_make_state(), _make_callbacks())
+        return panel
+
+    def test_console_info_logged(self):
+        panel = self._make_panel()
+        # Should not raise — console messages are logged, not dispatched
+        panel._handle_js_message({"type": "console", "level": "info", "message": "hello"})
+
+    def test_console_warning_logged(self):
+        panel = self._make_panel()
+        panel._handle_js_message({"type": "console", "level": "warning", "message": "warn"})
+
+    def test_console_error_logged(self):
+        panel = self._make_panel()
+        panel._handle_js_message({"type": "console", "level": "error", "message": "err"})
+
+    def test_console_unknown_level_falls_back(self):
+        panel = self._make_panel()
+        # Unknown level should fall back to info, not raise
+        panel._handle_js_message({"type": "console", "level": "bogus", "message": "x"})
+
+
+class TestBuildPanelReuse:
+    """Tests for panel reuse when show() is called with existing panel."""
+
+    def test_show_reuses_existing_panel(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        panel = SettingsWebPanel()
+        panel.show(_make_state(), _make_callbacks())
+        first_panel = panel._panel
+        first_webview = panel._webview
+        # Show again — should reuse panel, not create a new one
+        panel.show(_make_state(), _make_callbacks())
+        assert panel._panel is first_panel
+        assert panel._webview is first_webview
+
+    def test_show_reuse_pushes_update_state(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        panel = SettingsWebPanel()
+        panel.show(_make_state(), _make_callbacks())
+        # Reset call tracking
+        panel._webview.evaluateJavaScript_completionHandler_.reset_mock()
+        # Show again with updated state
+        new_state = _make_state()
+        new_state["sound_enabled"] = False
+        panel.show(new_state, _make_callbacks())
+        # Should have called evaluateJavaScript (via update_state)
+        panel._webview.evaluateJavaScript_completionHandler_.assert_called()
+        js_call = panel._webview.evaluateJavaScript_completionHandler_.call_args[0][0]
+        assert "_updateState(" in js_call
+
+
+class TestPrepareStateEdgeCases:
+    """Tests for edge cases in _prepare_state."""
+
+    def test_llm_models_4_element_tuple_with_api_key(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        state = {"llm_models": [("openai", "gpt-4o", "openai / gpt-4o", True)]}
+        prepared = SettingsWebPanel._prepare_state(state)
+        assert prepared["llm_models"] == [
+            {"provider": "openai", "model": "gpt-4o", "display": "openai / gpt-4o", "has_api_key": True},
+        ]
+
+    def test_llm_models_3_element_tuple_defaults_api_key_false(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        state = {"llm_models": [("ollama", "qwen", "ollama / qwen")]}
+        prepared = SettingsWebPanel._prepare_state(state)
+        assert prepared["llm_models"][0]["has_api_key"] is False
+
+    def test_current_llm_none_preserved(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        state = {"current_llm": None}
+        prepared = SettingsWebPanel._prepare_state(state)
+        assert prepared["current_llm"] is None
+
+    def test_vocab_build_model_string_passthrough(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        state = {"vocab_build_model": "ollama/qwen2.5:7b"}
+        prepared = SettingsWebPanel._prepare_state(state)
+        assert prepared["vocab_build_model"] == "ollama/qwen2.5:7b"
+
+    def test_launcher_state_passed_through(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        launcher = {
+            "enabled": True,
+            "hotkey": "option+space",
+            "usage_learning": True,
+            "switch_english": False,
+            "new_snippet_hotkey": "cmd+shift+n",
+            "sources": [{"config_key": "app_search", "enabled": True}],
+            "registered_sources": [{"name": "test", "prefix": "t"}],
+        }
+        state = {"launcher": launcher}
+        prepared = SettingsWebPanel._prepare_state(state)
+        assert prepared["launcher"]["hotkey"] == "option+space"
+        assert prepared["launcher"]["switch_english"] is False
+        assert len(prepared["launcher"]["sources"]) == 1
+        assert len(prepared["launcher"]["registered_sources"]) == 1
+
+    def test_empty_hotkeys_produces_empty_dict(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        state = {"hotkeys": {}}
+        prepared = SettingsWebPanel._prepare_state(state)
+        assert prepared["hotkeys"] == {}
+
+
+class TestLoadHtml:
+    """Tests for _load_html template rendering."""
+
+    def test_load_html_injects_config(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        panel = SettingsWebPanel()
+        panel.show(_make_state(), _make_callbacks())
+        # _load_html is called during _build_panel; check that loadHTMLString was called
+        panel._webview.loadHTMLString_baseURL_.assert_called_once()
+        html_content = panel._webview.loadHTMLString_baseURL_.call_args[0][0]
+        # CONFIG placeholder must be replaced (no literal __CONFIG__ left)
+        assert "__CONFIG__" not in html_content
+        # Should contain valid JSON keys from the state
+        assert '"sound_enabled"' in html_content
+        assert '"stt_presets"' in html_content
+
+    def test_load_html_contains_tab_structure(self):
+        from wenzi.ui.settings_window_web import SettingsWebPanel
+        panel = SettingsWebPanel()
+        panel.show(_make_state(), _make_callbacks())
+        html_content = panel._webview.loadHTMLString_baseURL_.call_args[0][0]
+        # Verify tab HTML structure
+        assert 'id="tab-general"' in html_content
+        assert 'id="tab-speech"' in html_content
+        assert 'id="tab-llm"' in html_content
+        assert 'id="tab-ai"' in html_content
+        assert 'id="tab-launcher"' in html_content

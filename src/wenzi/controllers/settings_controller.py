@@ -28,6 +28,15 @@ from wenzi.ui_helpers import restore_accessory, topmost_alert
 
 logger = logging.getLogger(__name__)
 
+# Launcher data source definitions: (config_key, i18n_label_key, prefix_key)
+_LAUNCHER_SOURCE_DEFS = [
+    ("app_search", "applications", None),
+    ("clipboard_history", "clipboard_history", "clipboard"),
+    ("file_search", "file_search", "files"),
+    ("snippets", "snippets", "snippets"),
+    ("bookmarks", "bookmarks", "bookmarks"),
+]
+
 
 class SettingsController:
     """Handles all Settings panel callbacks."""
@@ -78,6 +87,7 @@ class SettingsController:
         if app._enhancer:
             for pname, models in app._enhancer.providers_with_models.items():
                 pcfg = ai_providers_cfg.get(pname, {})
+                # All models from a provider share the same API key config
                 has_api_key = bool(pcfg.get("api_key"))
                 for mname in models:
                     llm_models.append(
@@ -632,13 +642,18 @@ class SettingsController:
 
         threading.Thread(target=_do_switch, daemon=True).start()
 
-    def stt_remove_provider(self) -> None:
+    def stt_remove_provider(self, provider: str = "") -> None:
         """Handle STT remove provider from Settings panel."""
         app = self._app
+        if provider:
+            item = app._asr_remove_provider_items.get(provider)
+            if item:
+                app._model_controller.on_asr_remove_provider(item)
+                return
+        # Fallback: remove first provider if no name given
         asr_cfg = app._config.get("asr", {})
         providers = asr_cfg.get("providers", {})
         if providers:
-            # Remove the first provider's menu item to trigger existing flow
             first_name = next(iter(providers))
             item = app._asr_remove_provider_items.get(first_name)
             if item:
@@ -667,9 +682,15 @@ class SettingsController:
         self._save_and_reload()
         logger.info("LLM model set to: %s / %s (from settings)", provider, model)
 
-    def llm_remove_provider(self) -> None:
+    def llm_remove_provider(self, provider: str = "") -> None:
         """Handle LLM remove provider from Settings panel."""
         app = self._app
+        if provider:
+            item = app._llm_remove_provider_items.get(provider)
+            if item:
+                app._model_controller.on_enhance_remove_provider(item)
+                return
+        # Fallback: remove first provider if no name given
         if app._enhancer:
             providers = app._enhancer.providers_with_models
             if providers:
@@ -742,7 +763,7 @@ class SettingsController:
         app._config["ai_enhance"]["input_context"] = level
         if app._enhancer:
             app._enhancer.input_context_level = level
-        save_config(app._config, app._config_path)
+        self._save_and_reload()
         logger.info("Input context level set to: %s (from settings)", level)
 
     def vocab_toggle(self, enabled: bool) -> None:
@@ -776,10 +797,8 @@ class SettingsController:
         """Handle vocab build model selection from Settings panel.
 
         Args:
-            value: Combined "provider/model" string from the webview select,
-                   or two separate args (provider, model) from native panel.
+            value: Combined "provider/model" string from the webview select.
         """
-        # Support both "provider/model" single arg and (provider, model) two args
         if "/" in value:
             provider, model = value.split("/", 1)
         else:
@@ -852,7 +871,7 @@ class SettingsController:
         """Persist the last active settings tab."""
         app = self._app
         app._config.setdefault("ui", {})["settings_last_tab"] = tab_id
-        self._save_and_reload()
+        save_config(app._config, app._config_path)
 
     def config_dir_browse(self) -> None:
         """Open a directory picker to choose a custom config directory."""
@@ -947,17 +966,8 @@ class SettingsController:
         })
         source_hotkeys = chooser_cfg.get("source_hotkeys", {})
 
-        # Build structured sources list for the webview
-        # Each source: config_key, label key (for i18n), prefix_key
-        source_defs = [
-            ("app_search", "applications", None),
-            ("clipboard_history", "clipboard_history", "clipboard"),
-            ("file_search", "file_search", "files"),
-            ("snippets", "snippets", "snippets"),
-            ("bookmarks", "bookmarks", "bookmarks"),
-        ]
         sources = []
-        for config_key, label_key, prefix_key in source_defs:
+        for config_key, label_key, prefix_key in _LAUNCHER_SOURCE_DEFS:
             sources.append({
                 "config_key": config_key,
                 "label_key": label_key,
