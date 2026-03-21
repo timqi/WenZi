@@ -1186,12 +1186,9 @@ class HistoryBrowserPanel:
 
     def _inject_i18n(self) -> None:
         """Inject i18n translations into the webview JS context."""
-        from wenzi.i18n import get_translations_for_prefix
+        from wenzi.i18n import inject_i18n_into_webview
 
-        translations = get_translations_for_prefix("history_web.")
-        script = f"window._i18n = {json.dumps(translations, ensure_ascii=False)};_initI18nLabels();"
-        if self._webview is not None:
-            self._webview.evaluateJavaScript_completionHandler_(script, None)
+        inject_i18n_into_webview(self._webview, "history_web.")
 
     # ------------------------------------------------------------------
     # Panel construction

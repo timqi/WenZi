@@ -187,6 +187,7 @@ class SettingsController:
             "on_launcher_source_hotkey_clear": self.launcher_source_hotkey_clear,
             "on_new_snippet_hotkey_record": self.new_snippet_hotkey_record,
             "on_new_snippet_hotkey_clear": self.new_snippet_hotkey_clear,
+            "on_language_change": self.language_change,
             "_reopen": lambda: self.on_open_settings(None),
         }
 
@@ -279,6 +280,17 @@ class SettingsController:
         if app._hotkey_listener:
             app._hotkey_listener.set_cancel_key(key_name)
         logger.info("Cancel key set to: %s (from settings)", key_name)
+
+    def language_change(self, lang_value: str) -> None:
+        """Handle language change from settings UI."""
+        app = self._app
+        app._config["language"] = lang_value
+        save_config(app._config, app._config_path)
+        topmost_alert(
+            title=t("settings.general_tab.language_restart_title"),
+            message=t("settings.general_tab.language_restart_message"),
+        )
+        restore_accessory()
 
     def scripting_toggle(self, enabled: bool) -> None:
         """Handle scripting toggle from Settings panel."""

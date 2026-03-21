@@ -452,38 +452,27 @@ def get_daily_range(
 
 def _build_i18n_payload() -> Dict[str, str]:
     """Build a dict of translated strings for the stats HTML template."""
-    return {
-        "card_total_transcriptions": t("stats.card.total_transcriptions"),
-        "card_total_tokens": t("stats.card.total_tokens"),
-        "card_accept_rate": t("stats.card.accept_rate"),
-        "card_recording_time": t("stats.card.recording_time"),
-        "today": t("stats.today"),
-        "accept": t("stats.accept"),
-        "modified": t("stats.modified"),
-        "chart_daily": t("stats.chart.daily_transcriptions"),
-        "chart_actions": t("stats.chart.user_actions"),
-        "chart_tokens": t("stats.chart.token_usage"),
-        "chart_modes": t("stats.chart.enhance_modes"),
-        "no_action_data": t("stats.empty.no_action_data"),
-        "no_token_data": t("stats.empty.no_token_data"),
-        "no_enhance_data": t("stats.empty.no_enhance_data"),
-    }
+    from wenzi.i18n import get_translations_for_prefix
+
+    raw = get_translations_for_prefix("stats.")
+    return {k.replace(".", "_"): v for k, v in raw.items()}
 
 
 def build_html(payload: Dict[str, Any]) -> str:
     """Build the final HTML by injecting the JSON payload into the template."""
     payload_json = json.dumps(payload, ensure_ascii=False)
-    i18n_json = json.dumps(_build_i18n_payload(), ensure_ascii=False)
+    i18n = _build_i18n_payload()
+    i18n_json = json.dumps(i18n, ensure_ascii=False)
     html = _HTML_TEMPLATE.replace("__STATS_DATA__", payload_json)
     html = html.replace("__I18N_DATA__", i18n_json)
-    # Replace static HTML placeholders
-    html = html.replace("__TAB_7D__", t("stats.period.7d"))
-    html = html.replace("__TAB_14D__", t("stats.period.14d"))
-    html = html.replace("__TAB_30D__", t("stats.period.30d"))
-    html = html.replace("__CHART_DAILY__", t("stats.chart.daily_transcriptions"))
-    html = html.replace("__CHART_ACTIONS__", t("stats.chart.user_actions"))
-    html = html.replace("__CHART_TOKENS__", t("stats.chart.token_usage"))
-    html = html.replace("__CHART_MODES__", t("stats.chart.enhance_modes"))
+    # Replace static HTML placeholders using the same i18n dict
+    html = html.replace("__TAB_7D__", i18n.get("period_7d", ""))
+    html = html.replace("__TAB_14D__", i18n.get("period_14d", ""))
+    html = html.replace("__TAB_30D__", i18n.get("period_30d", ""))
+    html = html.replace("__CHART_DAILY__", i18n.get("chart_daily_transcriptions", ""))
+    html = html.replace("__CHART_ACTIONS__", i18n.get("chart_user_actions", ""))
+    html = html.replace("__CHART_TOKENS__", i18n.get("chart_token_usage", ""))
+    html = html.replace("__CHART_MODES__", i18n.get("chart_enhance_modes", ""))
     return html
 
 

@@ -129,6 +129,25 @@ def get_locale() -> str:
     return _current_locale
 
 
+def inject_i18n_into_webview(
+    webview: Any, prefix: str, call_init: bool = True
+) -> None:
+    """Inject translations into a WKWebView as window._i18n.
+
+    If call_init is True, also calls _initI18nLabels() in JS.
+    """
+    import json as _json
+
+    translations = get_translations_for_prefix(prefix)
+    init_call = "_initI18nLabels();" if call_init else ""
+    script = (
+        f"window._i18n = {_json.dumps(translations, ensure_ascii=False)};"
+        f"{init_call}"
+    )
+    if webview is not None:
+        webview.evaluateJavaScript_completionHandler_(script, None)
+
+
 def get_translations_for_prefix(prefix: str) -> Dict[str, str]:
     """Return translations matching prefix, with prefix stripped from keys.
 
