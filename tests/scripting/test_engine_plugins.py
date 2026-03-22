@@ -377,3 +377,80 @@ class TestPluginMetadata:
                 del sys.modules[name]
         if str(plugins_dir) in sys.path:
             sys.path.remove(str(plugins_dir))
+
+
+class TestDisabledPluginsMigration:
+    def test_disabled_by_bundle_id(self, tmp_path):
+        """Plugin can be disabled by bundle ID."""
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = plugins_dir / "my_plugin"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "__init__.py").write_text("def setup(wz): pass")
+        (plugin_dir / "plugin.toml").write_text(
+            '[plugin]\nid = "com.test.my-plugin"\nname = "My Plugin"\n'
+        )
+        config = {"disabled_plugins": ["com.test.my-plugin"]}
+        from wenzi.scripting.engine import ScriptEngine
+
+        engine = ScriptEngine(
+            config=config,
+            plugins_dir=str(plugins_dir),
+            script_dir=str(tmp_path / "scripts"),
+        )
+        engine._load_plugins()
+        metas = engine.get_plugin_metas()
+        assert "my_plugin" in metas
+        assert "my_plugin" not in sys.modules
+
+        # Cleanup
+        if str(plugins_dir) in sys.path:
+            sys.path.remove(str(plugins_dir))
+
+    def test_disabled_by_dir_name_still_works(self, tmp_path):
+        """Backward compat: directory name still works for disabling."""
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = plugins_dir / "legacy_plugin"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "__init__.py").write_text("def setup(wz): pass")
+        (plugin_dir / "plugin.toml").write_text(
+            '[plugin]\nid = "com.test.legacy"\nname = "Legacy"\n'
+        )
+        config = {"disabled_plugins": ["legacy_plugin"]}
+        from wenzi.scripting.engine import ScriptEngine
+
+        engine = ScriptEngine(
+            config=config,
+            plugins_dir=str(plugins_dir),
+            script_dir=str(tmp_path / "scripts"),
+        )
+        engine._load_plugins()
+        assert "legacy_plugin" not in sys.modules
+
+        # Cleanup
+        if str(plugins_dir) in sys.path:
+            sys.path.remove(str(plugins_dir))
+
+    def test_auto_migrate_dir_name_to_bundle_id(self, tmp_path):
+        """When disabled by dir name and plugin has id, migrate to bundle ID."""
+        plugins_dir = tmp_path / "plugins"
+        plugin_dir = plugins_dir / "my_plugin"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "__init__.py").write_text("def setup(wz): pass")
+        (plugin_dir / "plugin.toml").write_text(
+            '[plugin]\nid = "com.test.my-plugin"\nname = "My Plugin"\n'
+        )
+        config = {"disabled_plugins": ["my_plugin"]}
+        from wenzi.scripting.engine import ScriptEngine
+
+        engine = ScriptEngine(
+            config=config,
+            plugins_dir=str(plugins_dir),
+            script_dir=str(tmp_path / "scripts"),
+        )
+        engine._load_plugins()
+        assert "com.test.my-plugin" in config["disabled_plugins"]
+        assert "my_plugin" not in config["disabled_plugins"]
+
+        # Cleanup
+        if str(plugins_dir) in sys.path:
+            sys.path.remove(str(plugins_dir))

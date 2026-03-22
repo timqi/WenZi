@@ -759,7 +759,7 @@ class ScriptEngine:
         disabled = set(self._config.get("disabled_plugins", []))
 
         for entry in sorted(os.listdir(self._plugins_dir)):
-            if entry in disabled or entry.startswith((".", "_")):
+            if entry.startswith((".", "_")):
                 continue
             plugin_path = os.path.join(self._plugins_dir, entry)
             if not os.path.isdir(plugin_path):
@@ -770,6 +770,24 @@ class ScriptEngine:
             # Read metadata (always, even if plugin will be skipped)
             meta = load_plugin_meta(plugin_path)
             self._plugin_metas[entry] = meta
+
+            # Check disabled by directory name OR bundle ID
+            is_disabled = entry in disabled or (meta.id and meta.id in disabled)
+
+            # Auto-migrate: if matched by dir name but plugin has bundle ID,
+            # replace the dir name entry with the bundle ID in config
+            if is_disabled and meta.id and entry in disabled and meta.id not in disabled:
+                disabled_list = self._config.get("disabled_plugins", [])
+                if entry in disabled_list:
+                    idx = disabled_list.index(entry)
+                    disabled_list[idx] = meta.id
+                    logger.info(
+                        "Migrated disabled_plugins entry: %s -> %s", entry, meta.id
+                    )
+
+            if is_disabled:
+                logger.info("Plugin %s is disabled, skipping", entry)
+                continue
 
             # Check version compatibility
             if meta.min_wenzi_version and not self._version_compatible(
