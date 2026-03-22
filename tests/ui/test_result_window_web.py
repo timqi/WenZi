@@ -699,28 +699,27 @@ class TestClose:
 class TestHtmlTemplate:
     """Test HTML template generation."""
 
-    def test_config_placeholder_replaced(self):
-        from wenzi.ui.result_window_web import _HTML_TEMPLATE
+    def _template(self):
+        from wenzi.ui.templates import load_template
 
-        assert "__CONFIG__" in _HTML_TEMPLATE
+        return load_template("result_window_web.html")
+
+    def test_config_placeholder_present(self):
+        assert "__CONFIG__" in self._template()
 
     def test_html_has_dark_mode_support(self):
-        from wenzi.ui.result_window_web import _HTML_TEMPLATE
-
-        assert "prefers-color-scheme: dark" in _HTML_TEMPLATE
+        assert "prefers-color-scheme: dark" in self._template()
 
     def test_html_has_key_ui_elements(self):
-        from wenzi.ui.result_window_web import _HTML_TEMPLATE
-
+        html = self._template()
         for element_id in ("asr-text", "enhance-text", "final-text",
                            "mode-segment", "confirm-btn", "cancel-btn"):
-            assert element_id in _HTML_TEMPLATE
+            assert element_id in html
 
     def test_html_has_keyboard_shortcuts(self):
-        from wenzi.ui.result_window_web import _HTML_TEMPLATE
-
-        assert "Escape" in _HTML_TEMPLATE
-        assert "metaKey" in _HTML_TEMPLATE
+        html = self._template()
+        assert "Escape" in html
+        assert "metaKey" in html
 
 
 class TestEnhanceLabelText:

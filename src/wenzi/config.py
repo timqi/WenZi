@@ -52,6 +52,11 @@ DEFAULT_SCRIPTS_DIR = os.path.join(DEFAULT_CONFIG_DIR, "scripts")
 DEFAULT_PLUGINS_DIR = os.path.join(DEFAULT_CONFIG_DIR, "plugins")
 DEFAULT_SNIPPETS_DIR = os.path.join(DEFAULT_CONFIG_DIR, "snippets")
 
+# Plugin registry
+BUILTIN_REGISTRY_URL = (
+    "https://raw.githubusercontent.com/Airead/WenZi/refs/heads/main/plugins/registry.toml"
+)
+
 # Data files (user-generated, not recoverable if deleted)
 DEFAULT_CLIPBOARD_HISTORY_PATH = os.path.join(DEFAULT_DATA_DIR, "clipboard_history.json")
 DEFAULT_CLIPBOARD_IMAGES_DIR = os.path.join(DEFAULT_DATA_DIR, "clipboard_images")
@@ -377,6 +382,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "new_snippet_hotkey": "",
             "switch_to_english": True,
         },
+    },
+    "plugins": {
+        "extra_registries": [],
     },
 }
 

@@ -15,6 +15,13 @@ class TestPluginMeta:
         assert meta.url == ""
         assert meta.icon == ""
         assert meta.min_wenzi_version == ""
+        assert meta.id == ""
+        assert meta.files == []
+
+    def test_id_and_files_defaults(self):
+        meta = PluginMeta(name="test")
+        assert meta.id == ""
+        assert meta.files == []
 
 
 class TestLoadPluginMeta:
@@ -90,3 +97,39 @@ class TestLoadPluginMeta:
         meta = load_plugin_meta(str(plugin_dir))
         assert meta.name == "Typed"
         assert meta.version == "123"
+
+    def test_full_toml_with_id_and_files(self, tmp_path):
+        """id and files fields are read from plugin.toml."""
+        plugin_dir = tmp_path / "my_plugin"
+        plugin_dir.mkdir()
+        (plugin_dir / "plugin.toml").write_text(
+            '[plugin]\n'
+            'id = "com.example.my-plugin"\n'
+            'name = "My Plugin"\n'
+            'version = "1.0.0"\n'
+            'files = ["__init__.py", "main.py", "util.py"]\n'
+        )
+        meta = load_plugin_meta(str(plugin_dir))
+        assert meta.id == "com.example.my-plugin"
+        assert meta.files == ["__init__.py", "main.py", "util.py"]
+
+    def test_missing_id_fallback(self, tmp_path):
+        """Missing id field defaults to empty string."""
+        plugin_dir = tmp_path / "no_id"
+        plugin_dir.mkdir()
+        (plugin_dir / "plugin.toml").write_text(
+            '[plugin]\nname = "No ID"\n'
+        )
+        meta = load_plugin_meta(str(plugin_dir))
+        assert meta.id == ""
+        assert meta.files == []
+
+    def test_files_non_list_coerced(self, tmp_path):
+        """Non-list files value is wrapped in a list."""
+        plugin_dir = tmp_path / "bad_files"
+        plugin_dir.mkdir()
+        (plugin_dir / "plugin.toml").write_text(
+            '[plugin]\nname = "Bad"\nfiles = "__init__.py"\n'
+        )
+        meta = load_plugin_meta(str(plugin_dir))
+        assert meta.files == ["__init__.py"]
