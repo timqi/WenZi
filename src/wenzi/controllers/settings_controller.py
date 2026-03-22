@@ -1344,7 +1344,7 @@ class SettingsController:
             try:
                 self._plugin_installer.install(url)
                 self._needs_reload = True
-                AppHelper.callAfter(self._on_plugins_tab_open)
+                AppHelper.callAfter(self._refresh_plugin_state)
                 AppHelper.callAfter(panel.update_state, {"show_reload_banner": True})
             except Exception as e:
                 AppHelper.callAfter(
@@ -1363,7 +1363,7 @@ class SettingsController:
             try:
                 self._plugin_installer.update(plugin_id)
                 self._needs_reload = True
-                AppHelper.callAfter(self._on_plugins_tab_open)
+                AppHelper.callAfter(self._refresh_plugin_state)
                 AppHelper.callAfter(panel.update_state, {"show_reload_banner": True})
             except Exception as e:
                 AppHelper.callAfter(
@@ -1377,7 +1377,7 @@ class SettingsController:
         try:
             self._plugin_installer.uninstall(plugin_id)
             self._needs_reload = True
-            self._on_plugins_tab_open()
+            self._refresh_plugin_state()
             self._app._settings_panel.update_state({"show_reload_banner": True})
         except Exception as e:
             self._app._settings_panel.update_state(
@@ -1389,11 +1389,14 @@ class SettingsController:
         disabled = list(self._app._config.get("disabled_plugins", []))
         if enabled and plugin_id in disabled:
             disabled.remove(plugin_id)
+            self._app._config["disabled_plugins"] = disabled
+            self._save_and_reload()
         elif not enabled and plugin_id not in disabled:
             disabled.append(plugin_id)
-        self._app._config["disabled_plugins"] = disabled
-        self._save_and_reload()
+            self._app._config["disabled_plugins"] = disabled
+            self._save_and_reload()
         self._needs_reload = True
+        self._refresh_plugin_state()
         self._app._settings_panel.update_state({"show_reload_banner": True})
 
     def _on_plugin_reload(self) -> None:
@@ -1404,7 +1407,35 @@ class SettingsController:
             engine.reload()
         self._needs_reload = False
         app._settings_panel.update_state({"show_reload_banner": False})
-        self._on_plugins_tab_open()
+        self._refresh_plugin_state()
+
+    def _refresh_plugin_state(self) -> None:
+        """Recompute plugin statuses from cached registry data + fresh local scan.
+
+        Unlike ``_on_plugins_tab_open``, this does NOT re-fetch registries from
+        the network — it only re-scans the local plugins directory to update
+        installation statuses.
+        """
+        if not self._last_plugin_infos:
+            self._on_plugins_tab_open()
+            return
+        local_index = self._plugin_registry._build_local_index()
+        for info in self._last_plugin_infos:
+            status, installed_ver = self._plugin_registry._compute_status(
+                info.meta.id,
+                info.meta.version,
+                info.meta.min_wenzi_version,
+                self._current_wenzi_version(),
+                local_index,
+            )
+            info.status = status
+            info.installed_version = installed_ver
+        plugins_data = self._plugin_infos_to_state(self._last_plugin_infos)
+        self._app._settings_panel.update_state({"plugins": plugins_data})
+
+    def _current_wenzi_version(self) -> str:
+        import wenzi
+        return getattr(wenzi, "__version__", "dev")
 
     def _on_registry_add(self, url: str) -> None:
         """Add an extra plugin registry URL."""
@@ -1441,7 +1472,7 @@ class SettingsController:
         result = []
         for info in infos:
             pid = info.meta.id
-            is_enabled = pid not in disabled and info.meta.name not in disabled
+            is_enabled = pid not in disabled
             result.append(
                 {
                     "id": pid,

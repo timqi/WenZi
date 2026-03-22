@@ -101,11 +101,14 @@ class PluginInstaller:
 
     @staticmethod
     def _download_files(base_url: str, files: list[str], target_dir: str) -> None:
+        abs_target = os.path.abspath(target_dir)
         for fname in files:
+            file_path = os.path.normpath(os.path.join(target_dir, fname))
+            if not os.path.abspath(file_path).startswith(abs_target + os.sep):
+                raise ValueError(f"Path traversal in files list: {fname!r}")
             file_data = read_source(f"{base_url}/{fname}")
-            file_path = os.path.join(target_dir, fname)
             parent = os.path.dirname(file_path)
-            if parent and parent != target_dir:
+            if parent != abs_target:
                 os.makedirs(parent, exist_ok=True)
             with open(file_path, "wb") as f:
                 f.write(file_data)
