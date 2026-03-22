@@ -521,9 +521,13 @@ input[type="range"] {
   transform: translateX(100%);
 }
 .llm-view-container.show-form .llm-list-view {
+  position: absolute;
+  top: 0;
+  left: 0;
   transform: translateX(-100%);
 }
 .llm-view-container.show-form .llm-form-view {
+  position: static;
   transform: translateX(0);
 }
 
@@ -557,8 +561,9 @@ input[type="range"] {
   font-weight: 500;
 }
 .provider-form-label .required { color: #ff3b30; }
-.provider-form-input,
-.provider-form-textarea {
+input.provider-form-input,
+textarea.provider-form-textarea {
+  display: block;
   width: 100%;
   padding: 8px 10px;
   border: 1px solid #d2d2d7;
@@ -570,13 +575,13 @@ input[type="range"] {
   outline: none;
   transition: border-color 0.15s;
 }
-.provider-form-input:focus,
-.provider-form-textarea:focus {
+input.provider-form-input:focus,
+textarea.provider-form-textarea:focus {
   border-color: #007aff;
   background: #fff;
 }
-.provider-form-input.error,
-.provider-form-textarea.error {
+input.provider-form-input.error,
+textarea.provider-form-textarea.error {
   border-color: #ff3b30;
 }
 .provider-form-error {
@@ -615,39 +620,34 @@ input[type="range"] {
   background: #86868b;
 }
 
-.provider-delete-link {
-  text-align: center;
-  margin-top: 14px;
-  color: #ff3b30;
-  font-size: 13px;
-  cursor: pointer;
+.pf-actions {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 16px;
 }
-.provider-delete-confirm {
-  background: #fff5f5;
-  border: 1px solid #ff3b30;
+.pf-actions .btn-verify-save {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
+}
+.btn-delete-provider {
+  padding: 10px 16px;
+  border: none;
   border-radius: 8px;
-  padding: 12px;
-  text-align: center;
-  margin-top: 14px;
-}
-.provider-delete-confirm .confirm-msg { margin-bottom: 10px; }
-.provider-delete-confirm .confirm-btns { display: flex; gap: 8px; justify-content: center; }
-.provider-delete-confirm .btn-confirm-remove {
   background: #ff3b30;
   color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 6px 20px;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
 }
-.provider-delete-confirm .btn-confirm-cancel {
+.btn-verify-save.btn-remove {
+  background: #ff3b30;
+}
+.btn-delete-provider.btn-cancel {
   background: #e5e5ea;
-  border: none;
-  border-radius: 6px;
-  padding: 6px 20px;
-  font-size: 12px;
-  cursor: pointer;
+  color: #1d1d1f;
 }
 
 .provider-success-banner {
@@ -663,7 +663,7 @@ input[type="range"] {
 
 
 /* API key visibility toggle */
-.api-key-wrapper { position: relative; }
+.api-key-wrapper { position: relative; width: 100%; }
 .api-key-toggle {
   position: absolute;
   right: 8px;
@@ -677,21 +677,20 @@ input[type="range"] {
 
 /* Dark mode overrides */
 @media (prefers-color-scheme: dark) {
-  .provider-form-input,
-  .provider-form-textarea {
+  input.provider-form-input,
+  textarea.provider-form-textarea {
     background: #2c2c2e;
     border-color: #48484a;
     color: #f5f5f7;
   }
-  .provider-form-input:focus,
-  .provider-form-textarea:focus {
+  input.provider-form-input:focus,
+  textarea.provider-form-textarea:focus {
     border-color: #007aff;
     background: #1c1c1e;
   }
   .provider-form-nav { border-color: #48484a; }
-  .provider-delete-confirm { background: #3a1c1c; border-color: #ff453a; }
   .provider-success-banner { background: #1a3a1c; border-color: #30d158; }
-  .provider-delete-confirm .btn-confirm-cancel { background: #48484a; color: #f5f5f7; }
+  .btn-delete-provider.btn-cancel { background: #48484a; color: #f5f5f7; }
 }
 </style>
 </head>
@@ -1413,6 +1412,12 @@ function renderLlmTab() {
     groups[m.provider].push(m);
   }
 
+  // Sort providers alphabetically, models within each provider too
+  groupOrder.sort(function(a, b) { return a.localeCompare(b); });
+  for (var s = 0; s < groupOrder.length; s++) {
+    groups[groupOrder[s]].sort(function(a, b) { return a.model.localeCompare(b.model); });
+  }
+
   // Render provider groups with radio-selectable models (same style as STT tab)
   for (var g = 0; g < groupOrder.length; g++) {
     var provider = groupOrder[g];
@@ -1466,6 +1471,18 @@ function renderLlmTab() {
     }
   });
 })();
+
+function _renderActionsBar(mode, providerName) {
+  var h = '<button class="btn-verify-save" id="pf-submit" data-action="provider-submit" data-mode="' + mode + '" data-provider="' + _esc(providerName || '') + '">'
+    + _esc(_t('llm_tab.verify_save', 'Verify & Save'))
+    + '</button>';
+  if (mode === 'edit') {
+    h += '<button class="btn-delete-provider" data-action="provider-delete-start">'
+      + _esc(_t('llm_tab.delete_provider', 'Delete'))
+      + '</button>';
+  }
+  return h;
+}
 
 function _showProviderForm(mode, providerName) {
   var container = document.getElementById('llm-form-view');
@@ -1529,17 +1546,9 @@ function _showProviderForm(mode, providerName) {
   html += '  <div class="provider-form-error" id="pf-extra-body-err"></div>';
   html += '</div>';
 
-  html += '<button class="btn-verify-save" id="pf-submit" data-action="provider-submit" data-mode="' + mode + '" data-provider="' + _esc(providerName || '') + '">';
-  html += _esc(_t('llm_tab.verify_save', 'Verify & Save'));
-  html += '</button>';
-
-  if (mode === 'edit') {
-    html += '<div id="pf-delete-area">';
-    html += '  <div class="provider-delete-link" data-action="provider-delete-start">';
-    html += _esc(_t('llm_tab.delete_provider', 'Delete Provider'));
-    html += '  </div>';
-    html += '</div>';
-  }
+  html += '<div class="pf-actions" id="pf-actions">';
+  html += _renderActionsBar(mode, providerName);
+  html += '</div>';
 
   html += '<div id="pf-result"></div>';
 
@@ -1575,15 +1584,13 @@ function _hideProviderForm() {
       return;
     }
     if (e.target.closest('[data-action="provider-delete-start"]')) {
-      var area = document.getElementById('pf-delete-area');
+      var actions = document.getElementById('pf-actions');
       var prov = formView.dataset.formProvider;
-      if (area && prov) {
-        area.innerHTML = '<div class="provider-delete-confirm">'
-          + '<div class="confirm-msg">Remove <strong>' + _esc(prov) + '</strong> and all its models?</div>'
-          + '<div class="confirm-btns">'
-          + '<button class="btn-confirm-remove" data-action="provider-delete-confirm">Remove</button>'
-          + '<button class="btn-confirm-cancel" data-action="provider-delete-cancel">Cancel</button>'
-          + '</div></div>';
+      if (actions && prov) {
+        actions.innerHTML = '<button class="btn-verify-save btn-remove" data-action="provider-delete-confirm">'
+          + 'Remove <strong>' + _esc(prov) + '</strong>'
+          + '</button>'
+          + '<button class="btn-delete-provider btn-cancel" data-action="provider-delete-cancel">Cancel</button>';
       }
       return;
     }
@@ -1594,10 +1601,9 @@ function _hideProviderForm() {
       return;
     }
     if (e.target.closest('[data-action="provider-delete-cancel"]')) {
-      var area = document.getElementById('pf-delete-area');
-      if (area) {
-        area.innerHTML = '<div class="provider-delete-link" data-action="provider-delete-start">'
-          + _esc(_t('llm_tab.delete_provider', 'Delete Provider')) + '</div>';
+      var actions = document.getElementById('pf-actions');
+      if (actions) {
+        actions.innerHTML = _renderActionsBar(formView.dataset.formMode, formView.dataset.formProvider);
       }
       return;
     }
@@ -1611,10 +1617,9 @@ function _submitProviderForm() {
     var el = document.getElementById(errFields[i]);
     if (el) { el.textContent = ''; el.classList.remove('visible'); }
   }
-  var inputs = document.querySelectorAll('.provider-form-input, .provider-form-textarea');
-  for (var i = 0; i < inputs.length; i++) inputs[i].classList.remove('error');
-
   var formView = document.getElementById('llm-form-view');
+  var inputs = formView.querySelectorAll('.provider-form-input, .provider-form-textarea');
+  for (var i = 0; i < inputs.length; i++) inputs[i].classList.remove('error');
   var mode = formView.dataset.formMode;
   var name = (document.getElementById('pf-name').value || '').trim();
   var baseUrl = (document.getElementById('pf-base-url').value || '').trim();
@@ -1695,7 +1700,8 @@ function _providerSaveResult(result) {
   var resultArea = document.getElementById('pf-result');
 
   if (result.ok) {
-    if (btn) btn.style.display = 'none';
+    var actions = document.getElementById('pf-actions');
+    if (actions) actions.style.display = 'none';
     if (resultArea) {
       resultArea.innerHTML = '<div class="provider-success-banner">'
         + '<div class="check">&#10003;</div>'
