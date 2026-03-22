@@ -269,3 +269,78 @@ def test_get_llm_vocab_includes_variants(tmp_path):
     vocab = tracker.get_llm_vocab(llm_model="gpt-4o", app_bundle_id="", min_count=5)
     entry = next(v for v in vocab if v["corrected_word"] == "Kubernetes")
     assert "cloud" in entry["variants"]
+
+
+# ---------------------------------------------------------------------------
+# Task 6: backfill_from_history()
+# ---------------------------------------------------------------------------
+
+import json
+
+
+def _write_jsonl(path, records):
+    with open(path, "w") as f:
+        for r in records:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+
+def test_backfill_processes_proofread_records(tmp_path):
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+    _write_jsonl(history_dir / "conversation_history.jsonl", [{
+        "timestamp": "2026-03-01T10:00:00+00:00",
+        "asr_text": "我在用cloud做开发",
+        "enhanced_text": "我在用claude做开发",
+        "final_text": "我在用claude做开发",
+        "enhance_mode": "proofread",
+        "stt_model": "FunASR",
+        "llm_model": "gpt-4o",
+        "user_corrected": False,
+        "audio_duration": 2.0,
+        "preview_enabled": True,
+    }])
+    from wenzi.enhance.conversation_history import ConversationHistory
+    ch = ConversationHistory(data_dir=str(history_dir))
+    tracker = CorrectionTracker(db_path=str(tmp_path / "t.db"))
+    count = tracker.backfill_from_history(ch)
+    assert count == 1
+    conn = sqlite3.connect(str(tmp_path / "t.db"))
+    assert conn.execute("SELECT COUNT(*) FROM correction_sessions").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM correction_pairs").fetchone()[0] > 0
+    conn.close()
+
+
+def test_backfill_skips_non_proofread(tmp_path):
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+    _write_jsonl(history_dir / "conversation_history.jsonl", [{
+        "timestamp": "2026-03-01T10:00:00+00:00",
+        "asr_text": "hello", "enhanced_text": "Hello World",
+        "final_text": "Hello World", "enhance_mode": "translate_en",
+        "stt_model": "FunASR", "llm_model": "gpt-4o",
+        "user_corrected": False, "preview_enabled": True,
+    }])
+    from wenzi.enhance.conversation_history import ConversationHistory
+    ch = ConversationHistory(data_dir=str(history_dir))
+    tracker = CorrectionTracker(db_path=str(tmp_path / "t.db"))
+    assert tracker.backfill_from_history(ch) == 0
+
+
+def test_backfill_deduplicates_by_timestamp(tmp_path):
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+    _write_jsonl(history_dir / "conversation_history.jsonl", [{
+        "timestamp": "2026-03-01T10:00:00+00:00",
+        "asr_text": "我在用cloud做开发",
+        "enhanced_text": "我在用claude做开发",
+        "final_text": "我在用claude做开发",
+        "enhance_mode": "proofread",
+        "stt_model": "FunASR", "llm_model": "gpt-4o",
+        "user_corrected": False, "preview_enabled": True,
+    }])
+    from wenzi.enhance.conversation_history import ConversationHistory
+    ch = ConversationHistory(data_dir=str(history_dir))
+    tracker = CorrectionTracker(db_path=str(tmp_path / "t.db"))
+    tracker.backfill_from_history(ch)
+    count2 = tracker.backfill_from_history(ch)
+    assert count2 == 0

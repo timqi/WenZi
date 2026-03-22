@@ -230,6 +230,50 @@ class CorrectionTracker:
              timestamp, timestamp, excluded_flag),
         )
 
+    def backfill_from_history(self, conversation_history) -> int:
+        """Import correction sessions from conversation history that are not yet tracked.
+
+        Iterates all records in conversation_history, skips non-proofread entries,
+        entries where asr_text equals final_text, and entries already present by
+        timestamp. Returns the count of sessions imported.
+        """
+        all_records = conversation_history.get_all()
+
+        conn = self._get_conn()
+        try:
+            existing_ts = {row[0] for row in conn.execute("SELECT timestamp FROM correction_sessions").fetchall()}
+        finally:
+            conn.close()
+
+        imported = 0
+        for record in all_records:
+            ts = record.get("timestamp", "")
+            if ts in existing_ts:
+                continue
+            if record.get("enhance_mode") != "proofread":
+                continue
+            asr_text = record.get("asr_text", "")
+            final_text = record.get("final_text", "")
+            if not asr_text or not final_text or asr_text == final_text:
+                continue
+            input_ctx = record.get("input_context") or {}
+            app_bundle_id = input_ctx.get("bundle_id", "") if isinstance(input_ctx, dict) else ""
+
+            self.record(
+                asr_text=asr_text,
+                enhanced_text=record.get("enhanced_text", ""),
+                final_text=final_text,
+                asr_model=record.get("stt_model", ""),
+                llm_model=record.get("llm_model", ""),
+                app_bundle_id=app_bundle_id,
+                enhance_mode="proofread",
+                audio_duration=record.get("audio_duration"),
+                user_corrected=record.get("user_corrected", False),
+                timestamp=ts,
+            )
+            imported += 1
+        return imported
+
     def mark_excluded(self, pair_id: int, excluded: bool = True) -> None:
         """Manually set or clear the excluded flag for a correction pair."""
         conn = self._get_conn()
