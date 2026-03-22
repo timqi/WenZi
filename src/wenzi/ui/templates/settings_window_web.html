@@ -1449,17 +1449,17 @@ function renderPluginCard(p) {
   if (p.status === 'incompatible') {
     actions = '<button class="btn btn-secondary" disabled title="Requires WenZi >= ' + _esc(p.min_wenzi_version) + '">Install</button>';
   } else if (p.status === 'not_installed') {
-    actions = '<button class="btn btn-primary" data-id="' + _esc(p.id) + '" onclick="installPlugin(this.dataset.id, event)" title="Option+click to install a specific version">Install</button>';
+    actions = '<button class="btn btn-primary install-btn" data-id="' + _esc(p.id) + '" onclick="installPlugin(this.dataset.id, event)">Install</button>';
   } else if (p.status === 'update_available') {
     actions = '<button class="btn btn-primary" data-id="' + _esc(p.id) + '" onclick="updatePlugin(this.dataset.id)">Update (' + _esc(p.installed_version) + ' \u2192 ' + _esc(p.version) + ')</button>';
     actions += toggleHtml(p.id, p.enabled);
-    actions += '<button class="btn btn-danger" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id)">Uninstall</button>';
+    actions += '<button class="btn btn-danger" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id, event)" class="uninstall-btn">Uninstall</button>';
   } else if (p.status === 'installed') {
     actions += toggleHtml(p.id, p.enabled);
-    actions += '<button class="btn btn-danger" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id)">Uninstall</button>';
+    actions += '<button class="btn btn-danger" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id, event)" class="uninstall-btn">Uninstall</button>';
   } else if (p.status === 'pinned') {
     actions += toggleHtml(p.id, p.enabled);
-    actions += '<button class="btn btn-danger" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id)">Uninstall</button>';
+    actions += '<button class="btn btn-danger" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id, event)" class="uninstall-btn">Uninstall</button>';
   } else if (p.status === 'manually_placed') {
     actions += toggleHtml(p.id, p.enabled);
   }
@@ -1496,8 +1496,38 @@ function toggleHtml(pluginId, enabled) {
   return '<div class="' + cls + '" data-id="' + _esc(pluginId) + '" onclick="togglePlugin(this, this.dataset.id)"><div class="toggle-knob"></div></div>';
 }
 
+var _altKeyHeld = false;
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Alt' && !_altKeyHeld) {
+    _altKeyHeld = true;
+    document.querySelectorAll('.install-btn').forEach(function(btn) {
+      btn.textContent = 'Install\u2026';
+    });
+    document.querySelectorAll('.uninstall-btn').forEach(function(btn) {
+      btn.textContent = 'Install\u2026';
+      btn.classList.remove('btn-danger');
+      btn.classList.add('btn-primary');
+    });
+  }
+});
+
+document.addEventListener('keyup', function(e) {
+  if (e.key === 'Alt') {
+    _altKeyHeld = false;
+    document.querySelectorAll('.install-btn').forEach(function(btn) {
+      btn.textContent = 'Install';
+    });
+    document.querySelectorAll('.uninstall-btn').forEach(function(btn) {
+      btn.textContent = 'Uninstall';
+      btn.classList.remove('btn-primary');
+      btn.classList.add('btn-danger');
+    });
+  }
+});
+
 function installPlugin(id, event) {
-  if (event && event.altKey) {
+  if (_altKeyHeld) {
     showVersionPopover(id, event.target);
     return;
   }
@@ -1580,7 +1610,11 @@ function showModal(bodyHtml, buttons) {
 function closeModal() {
   document.getElementById('app-modal').classList.remove('visible');
 }
-function uninstallPlugin(id) {
+function uninstallPlugin(id, event) {
+  if (_altKeyHeld) {
+    showVersionPopover(id, event.target);
+    return;
+  }
   showModal(
     '<div class="modal-message">Uninstall this plugin? This will delete all plugin files.</div>',
     [
