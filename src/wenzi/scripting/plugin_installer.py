@@ -65,10 +65,12 @@ class PluginInstaller:
         files = self._parse_files(section)
         base_url = source_url.rsplit("/", 1)[0]
 
-        self._download_files(base_url, files, plugin_dir)
-        with open(os.path.join(plugin_dir, "plugin.toml"), "wb") as f:
-            f.write(raw)
-        self._write_install_toml(plugin_dir, source_url, version)
+        tempdir = self._download_to_temp(base_url, files, raw, source_url, version)
+        try:
+            self._atomic_replace(tempdir, plugin_dir)
+        except BaseException:
+            shutil.rmtree(tempdir, ignore_errors=True)
+            raise
         return plugin_dir
 
     def uninstall(self, plugin_id: str) -> None:

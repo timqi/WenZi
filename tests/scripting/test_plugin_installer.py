@@ -193,6 +193,43 @@ class TestInstall:
 
 
 class TestUpdate:
+    def test_update_failure_preserves_existing_plugin(self, plugins_dir, serve_dir, http_server):
+        """A failed update does not corrupt the existing plugin."""
+        # Install v1
+        (serve_dir / "beta").mkdir()
+        (serve_dir / "beta" / "__init__.py").write_bytes(b"# v1")
+        (serve_dir / "beta" / "plugin.toml").write_text(
+            '[plugin]\n'
+            'id = "com.example.beta"\n'
+            'name = "Beta"\n'
+            'version = "1.0.0"\n'
+            'files = ["__init__.py"]\n'
+        )
+        installer = PluginInstaller(plugins_dir)
+        install_dir = installer.install(f"{http_server}/beta/plugin.toml")
+
+        # Change source to v2 with a missing file
+        (serve_dir / "beta" / "plugin.toml").write_text(
+            '[plugin]\n'
+            'id = "com.example.beta"\n'
+            'name = "Beta"\n'
+            'version = "2.0.0"\n'
+            'files = ["__init__.py", "missing.py"]\n'
+        )
+
+        with pytest.raises(Exception):
+            installer.update("com.example.beta")
+
+        # v1 files must still be intact
+        content = open(os.path.join(install_dir, "__init__.py"), "rb").read()
+        assert content == b"# v1"
+        meta = load_plugin_meta(install_dir)
+        assert meta.version == "1.0.0"
+        # No leftover temp directories
+        assert not any(
+            e.startswith("_tmp_") for e in os.listdir(plugins_dir)
+        )
+
     def test_update_overwrites_files(self, plugins_dir, serve_dir, http_server):
         """Update downloads a newer version and overwrites existing files."""
         # Initial install
