@@ -472,3 +472,40 @@ class TestOpenDocLink:
     def test_catches_exception(self, mock_build, mock_wb, ctrl):
         mock_wb.open.side_effect = OSError("browser not found")
         ctrl.open_doc_link("user-guide.html#hotkeys")  # should not raise
+
+
+class TestCollectStateLlmProviders:
+    """Tests for llm_providers in _collect_state()."""
+
+    def test_collect_state_includes_llm_providers(self, ctrl, mock_app):
+        """_collect_state() includes provider config without API keys."""
+        mock_app._config["ai_enhance"] = {
+            "providers": {
+                "openai": {
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-secret",
+                    "models": ["gpt-4o", "gpt-4o-mini"],
+                },
+                "deepseek": {
+                    "base_url": "https://api.deepseek.com/v1",
+                    "api_key": "sk-ds-secret",
+                    "models": ["deepseek-chat"],
+                    "extra_body": {"temperature": 0.7},
+                },
+            }
+        }
+        state = ctrl._collect_state()
+        providers = state["llm_providers"]
+        assert "openai" in providers
+        assert providers["openai"]["base_url"] == "https://api.openai.com/v1"
+        assert providers["openai"]["models"] == ["gpt-4o", "gpt-4o-mini"]
+        assert providers["openai"]["extra_body"] == {}
+        assert "api_key" not in providers["openai"]
+        assert providers["deepseek"]["extra_body"] == {"temperature": 0.7}
+        assert "api_key" not in providers["deepseek"]
+
+    def test_collect_state_llm_providers_empty_when_no_config(self, ctrl, mock_app):
+        """llm_providers is empty dict when no providers configured."""
+        mock_app._config["ai_enhance"] = {}
+        state = ctrl._collect_state()
+        assert state["llm_providers"] == {}

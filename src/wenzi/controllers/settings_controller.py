@@ -106,6 +106,15 @@ class SettingsController:
                     )
             current_llm = (app._enhancer.provider_name, app._enhancer.model_name)
 
+        # Provider config for edit form (API keys excluded for security)
+        llm_providers = {}
+        for pname, pcfg in ai_providers_cfg.items():
+            llm_providers[pname] = {
+                "base_url": pcfg.get("base_url", ""),
+                "models": pcfg.get("models", []),
+                "extra_body": pcfg.get("extra_body", {}),
+            }
+
         # Enhance modes (excluding "off") with order for display
         enhance_modes = []
         if app._enhancer:
@@ -140,6 +149,7 @@ class SettingsController:
             "stt_remote_models": stt_remote,
             "llm_models": llm_models,
             "current_llm": current_llm,
+            "llm_providers": llm_providers,
             "model_timeout": app._config.get("ai_enhance", {}).get("connection_timeout", 10),
             "enhance_modes": enhance_modes,
             "current_enhance_mode": app._enhance_mode,
