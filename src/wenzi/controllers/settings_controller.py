@@ -57,6 +57,8 @@ class SettingsController:
         self._last_plugin_infos: list[PluginInfo] = []
         self._verify_in_progress = False
         self._verify_request_id = 0
+        self._stt_verify_in_progress = False
+        self._stt_verify_request_id = 0
 
     def _save_and_reload(self) -> None:
         """Save config and refresh the Settings panel if visible."""
@@ -93,6 +95,14 @@ class SettingsController:
         stt_remote = [
             (rm.provider, rm.model, rm.display_name) for rm in remote_models
         ]
+
+        # STT provider config for edit form (API keys excluded for security)
+        stt_providers = {}
+        for pname, pcfg in providers.items():
+            stt_providers[pname] = {
+                "base_url": pcfg.get("base_url", ""),
+                "models": pcfg.get("models", []),
+            }
 
         # LLM models
         llm_models = []
@@ -150,6 +160,7 @@ class SettingsController:
             "current_remote_asr": app._current_remote_asr,
             "stt_presets": stt_presets,
             "stt_remote_models": stt_remote,
+            "stt_providers": stt_providers,
             "llm_models": llm_models,
             "current_llm": current_llm,
             "llm_providers": llm_providers,
@@ -200,6 +211,8 @@ class SettingsController:
             "on_stt_remote_select": self.stt_remote_select,
             "on_stt_add_provider": lambda: app._model_controller.on_asr_add_provider(None),
             "on_stt_remove_provider": self.stt_remove_provider,
+            "on_stt_verify_save": self.stt_verify_save,
+            "on_stt_delete_provider": self.stt_delete_provider,
             "on_llm_select": self.llm_select,
             "on_llm_verify_save": self.llm_verify_save,
             "on_llm_delete_provider": self.llm_delete_provider,
@@ -692,6 +705,89 @@ class SettingsController:
             item = app._asr_remove_provider_items.get(first_name)
             if item:
                 app._model_controller.on_asr_remove_provider(item)
+
+    def stt_verify_save(self, data: dict) -> None:
+        """Handle verify & save from WebView STT provider form.
+
+        Spawns a background thread for the network call.
+        Posts result back to JS via evaluateJavaScript.
+        """
+        if self._stt_verify_in_progress:
+            return
+        self._stt_verify_in_progress = True
+        self._stt_verify_request_id += 1
+        request_id = self._stt_verify_request_id
+        app = self._app
+
+        def _do():
+            import json as _json
+            try:
+                result = app._model_controller.do_verify_and_save_stt_provider(
+                    name=data["name"],
+                    base_url=data["base_url"],
+                    api_key=data["api_key"],
+                    models=data["models"],
+                    mode=data.get("mode", "add"),
+                )
+            except Exception as e:
+                logger.error("STT verify/save failed: %s", e, exc_info=True)
+                result = {"ok": False, "error": str(e)}
+
+            def _callback():
+                if self._stt_verify_request_id != request_id:
+                    return
+                self._stt_verify_in_progress = False
+                panel = app._settings_panel
+                if panel and panel.is_visible:
+                    payload = _json.dumps(result, ensure_ascii=False)
+                    panel._webview.evaluateJavaScript_completionHandler_(
+                        f"_sttProviderSaveResult({payload})", None
+                    )
+                    if result.get("ok"):
+                        self._refresh_panel()
+
+            from PyObjCTools import AppHelper
+            AppHelper.callAfter(_callback)
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _do_stt_verify_save(self, data: dict) -> dict:
+        """Synchronous verify+save for testing. Returns result dict."""
+        app = self._app
+        return app._model_controller.do_verify_and_save_stt_provider(
+            name=data["name"],
+            base_url=data["base_url"],
+            api_key=data["api_key"],
+            models=data["models"],
+            mode=data.get("mode", "add"),
+        )
+
+    def stt_delete_provider(self, provider: str) -> None:
+        """Delete STT provider from WebView inline confirmation."""
+        app = self._app
+        try:
+            asr_cfg = app._config.get("asr", {})
+            providers_cfg = asr_cfg.get("providers", {})
+            providers_cfg.pop(provider, None)
+
+            # If the deleted provider was active, fall back to local model
+            if app._current_remote_asr and app._current_remote_asr[0] == provider:
+                app._current_remote_asr = None
+                app._current_preset_id = None
+                app._config["asr"]["default_provider"] = None
+                app._config["asr"]["default_model"] = None
+
+            for account in keychain_list(f"asr.providers.{provider}."):
+                keychain_delete(account)
+
+            app._menu_builder.build_model_menu()
+            app._menu_builder.update_model_checkmarks()
+
+            self._save_and_reload()
+            logger.info("Removed STT provider: %s (from settings)", provider)
+
+        except Exception as e:
+            logger.error("Remove STT provider failed: %s", e, exc_info=True)
 
     def llm_select(self, provider: str, model: str) -> None:
         """Handle LLM model selection from Settings panel."""

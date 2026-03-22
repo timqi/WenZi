@@ -271,6 +271,74 @@ models:
         except Exception as e:
             logger.debug("Could not remove ASR provider draft: %s", e)
 
+    def do_verify_and_save_stt_provider(
+        self,
+        name: str,
+        base_url: str,
+        api_key: str,
+        models: list,
+        mode: str,
+    ) -> dict:
+        """Verify and save an STT provider. Returns {ok: True} or {ok: False, error: str}.
+
+        Called from a background thread by settings_controller.
+        """
+        app = self._app
+
+        # Validate name format
+        name_err = validate_provider_name(name)
+        if name_err:
+            return {"ok": False, "error": name_err}
+
+        providers = app._config.get("asr", {}).get("providers", {})
+
+        # Check duplicate in add mode
+        if mode == "add" and name in providers:
+            return {"ok": False, "error": f"Provider '{name}' already exists"}
+
+        # In edit mode, resolve API key
+        actual_api_key = api_key
+        if mode == "edit" and not api_key:
+            existing = providers.get(name, {})
+            actual_api_key = existing.get("api_key", "")
+            if not actual_api_key:
+                from wenzi.keychain import keychain_get
+
+                actual_api_key = (
+                    keychain_get(f"asr.providers.{name}.api_key") or ""
+                )
+            if not actual_api_key:
+                return {
+                    "ok": False,
+                    "error": "No existing API key found and none provided",
+                }
+
+        # Verify connection
+        from wenzi.transcription.whisper_api import WhisperAPITranscriber
+
+        err = WhisperAPITranscriber.verify_provider(
+            base_url, actual_api_key, models[0]
+        )
+
+        if err:
+            return {"ok": False, "error": err}
+
+        # Save config
+        app._config.setdefault("asr", {})
+        providers_cfg = app._config["asr"].setdefault("providers", {})
+        providers_cfg[name] = {
+            "base_url": base_url,
+            "api_key": actual_api_key,
+            "models": models,
+        }
+        save_config_with_secrets(app._config, app._config_path)
+        self._remove_asr_provider_draft()
+
+        # Update menus
+        app._menu_builder.build_model_menu()
+
+        return {"ok": True}
+
     def do_verify_and_save_provider(
         self,
         name: str,

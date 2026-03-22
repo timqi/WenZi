@@ -565,3 +565,101 @@ class TestLlmDeleteProvider:
         mock_app._enhancer.remove_provider.assert_called_once_with("test-provider")
         assert "test-provider" not in mock_app._config["ai_enhance"]["providers"]
         mock_save.assert_called_once()
+
+
+class TestSttVerifySave:
+    """Tests for stt_verify_save() callback."""
+
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_verify_save_dispatches_to_model_controller(self, mock_save, ctrl, mock_app):
+        """Verify save calls model_controller.do_verify_and_save_stt_provider."""
+        mock_app._model_controller.do_verify_and_save_stt_provider.return_value = {"ok": True}
+
+        ctrl._do_stt_verify_save({
+            "name": "groq",
+            "base_url": "https://api.groq.com/openai/v1",
+            "api_key": "gsk-test",
+            "models": ["whisper-large-v3-turbo"],
+            "mode": "add",
+        })
+
+        mock_app._model_controller.do_verify_and_save_stt_provider.assert_called_once_with(
+            name="groq",
+            base_url="https://api.groq.com/openai/v1",
+            api_key="gsk-test",
+            models=["whisper-large-v3-turbo"],
+            mode="add",
+        )
+
+    def test_verify_concurrent_guard(self, ctrl, mock_app):
+        """Second call while verify in progress is ignored."""
+        ctrl._stt_verify_in_progress = True
+        ctrl.stt_verify_save({
+            "name": "groq", "base_url": "u", "api_key": "k",
+            "models": ["m"], "mode": "add",
+        })
+        mock_app._model_controller.do_verify_and_save_stt_provider.assert_not_called()
+
+
+class TestSttDeleteProvider:
+    """Tests for stt_delete_provider() via WebView."""
+
+    @patch("wenzi.controllers.settings_controller.keychain_list", return_value=[])
+    @patch("wenzi.controllers.settings_controller.keychain_delete")
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_delete_removes_provider_and_updates_config(self, mock_save, mock_kc_del, mock_kc_list, ctrl, mock_app):
+        mock_app._config["asr"] = {
+            "providers": {"groq": {"base_url": "u", "api_key": "k", "models": ["m"]}},
+            "default_provider": "groq",
+            "default_model": "m",
+        }
+        mock_app._current_remote_asr = None
+
+        ctrl.stt_delete_provider("groq")
+
+        assert "groq" not in mock_app._config["asr"]["providers"]
+        mock_save.assert_called_once()
+        mock_app._menu_builder.build_model_menu.assert_called_once()
+
+    @patch("wenzi.controllers.settings_controller.keychain_list", return_value=[])
+    @patch("wenzi.controllers.settings_controller.keychain_delete")
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_delete_active_provider_clears_remote(self, mock_save, mock_kc_del, mock_kc_list, ctrl, mock_app):
+        """Deleting the active STT provider should clear current_remote_asr."""
+        mock_app._config["asr"] = {
+            "providers": {"groq": {"base_url": "u", "api_key": "k", "models": ["m"]}},
+            "default_provider": "groq",
+            "default_model": "m",
+        }
+        mock_app._current_remote_asr = ("groq", "m")
+
+        ctrl.stt_delete_provider("groq")
+
+        assert mock_app._current_remote_asr is None
+        assert mock_app._current_preset_id is None
+        assert mock_app._config["asr"]["default_provider"] is None
+        assert mock_app._config["asr"]["default_model"] is None
+
+
+class TestCollectStateSttProviders:
+    """Tests for stt_providers in _collect_state()."""
+
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_stt_providers_in_state(self, mock_save, ctrl, mock_app):
+        """Verify stt_providers is included in state and excludes API keys."""
+        mock_app._config["asr"]["providers"] = {
+            "groq": {
+                "base_url": "https://api.groq.com/openai/v1",
+                "api_key": "gsk-secret",
+                "models": ["whisper-large-v3-turbo"],
+            }
+        }
+
+        state = ctrl._collect_state()
+
+        assert "stt_providers" in state
+        assert "groq" in state["stt_providers"]
+        provider = state["stt_providers"]["groq"]
+        assert provider["base_url"] == "https://api.groq.com/openai/v1"
+        assert provider["models"] == ["whisper-large-v3-turbo"]
+        assert "api_key" not in provider
