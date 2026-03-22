@@ -5,13 +5,14 @@ from __future__ import annotations
 import json as _json
 import logging
 import os
+import re
 import threading
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     from wenzi.app import WenZiApp
 
-from wenzi.config import save_config
+from wenzi.config import save_config, save_config_with_secrets
 from wenzi.i18n import t
 from wenzi.transcription.model_registry import (
     PRESET_BY_ID,
@@ -169,6 +170,23 @@ def parse_provider_text(text: str):
     return name, base_url, api_key, models, extra_body
 
 
+_PROVIDER_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def validate_provider_name(name: str) -> Optional[str]:
+    """Validate provider name format.
+
+    Returns None if valid, or an error message string if invalid.
+    Allowed characters: letters, digits, hyphens, underscores.
+    """
+    if not name or not name.strip():
+        return "name is required"
+    name = name.strip()
+    if not _PROVIDER_NAME_RE.match(name):
+        return "name may only contain letters, digits, hyphens, and underscores"
+    return None
+
+
 def migrate_asr_config(asr_cfg: Dict[str, Any]) -> None:
     """Migrate old flat base_url/api_key to provider format."""
     base_url = asr_cfg.pop("base_url", None)
@@ -214,16 +232,6 @@ models:
 
     _ASR_PROVIDER_DRAFT_FILENAME = ".asr_provider_draft"
 
-    _ADD_PROVIDER_TEMPLATE = """\
-name: my-provider
-base_url: https://api.openai.com/v1
-api_key: sk-xxx
-models:
-  gpt-4o
-  gpt-4o-mini"""
-
-    _PROVIDER_DRAFT_FILENAME = ".provider_draft"
-
     def __init__(self, app: WenZiApp) -> None:
         self._app = app
 
@@ -263,41 +271,172 @@ models:
         except Exception as e:
             logger.debug("Could not remove ASR provider draft: %s", e)
 
-    # ── LLM provider draft management ─────────────────────────────────
+    def do_verify_and_save_stt_provider(
+        self,
+        name: str,
+        base_url: str,
+        api_key: str,
+        models: list,
+        mode: str,
+    ) -> dict:
+        """Verify and save an STT provider. Returns {ok: True} or {ok: False, error: str}.
 
-    def _get_provider_draft_path(self) -> str:
-        return os.path.join(self._app._config_dir, self._PROVIDER_DRAFT_FILENAME)
+        Called from a background thread by settings_controller.
+        """
+        app = self._app
 
-    def _load_provider_draft(self) -> str:
-        draft_path = self._get_provider_draft_path()
+        # Validate name format
+        name_err = validate_provider_name(name)
+        if name_err:
+            return {"ok": False, "error": name_err}
+
+        providers = app._config.get("asr", {}).get("providers", {})
+
+        # Check duplicate in add mode
+        if mode == "add" and name in providers:
+            return {"ok": False, "error": f"Provider '{name}' already exists"}
+
+        # In edit mode, resolve API key
+        actual_api_key = api_key
+        if mode == "edit" and not api_key:
+            existing = providers.get(name, {})
+            actual_api_key = existing.get("api_key", "")
+            if not actual_api_key:
+                from wenzi.keychain import keychain_get
+
+                actual_api_key = (
+                    keychain_get(f"asr.providers.{name}.api_key") or ""
+                )
+            if not actual_api_key:
+                return {
+                    "ok": False,
+                    "error": "No existing API key found and none provided",
+                }
+
+        # Verify connection
+        from wenzi.transcription.whisper_api import WhisperAPITranscriber
+
+        err = WhisperAPITranscriber.verify_provider(
+            base_url, actual_api_key, models[0]
+        )
+
+        if err:
+            return {"ok": False, "error": err}
+
+        # Save config
+        app._config.setdefault("asr", {})
+        providers_cfg = app._config["asr"].setdefault("providers", {})
+        providers_cfg[name] = {
+            "base_url": base_url,
+            "api_key": actual_api_key,
+            "models": models,
+        }
+        save_config_with_secrets(app._config, app._config_path)
+
+        # Update menus
+        app._menu_builder.build_model_menu()
+
+        return {"ok": True}
+
+    def do_verify_and_save_provider(
+        self,
+        name: str,
+        base_url: str,
+        api_key: str,
+        models: list,
+        extra_body: dict,
+        mode: str,
+    ) -> dict:
+        """Verify and save a provider. Returns {ok: True} or {ok: False, error: str}.
+
+        This is a synchronous method that runs the async verify internally.
+        Called from a background thread by settings_controller.
+        """
+        import asyncio
+
+        app = self._app
+
+        if not app._enhancer:
+            return {"ok": False, "error": "LLM enhancer not initialized"}
+
+        # Validate name format
+        name_err = validate_provider_name(name)
+        if name_err:
+            return {"ok": False, "error": name_err}
+
+        # Check duplicate in add mode
+        if mode == "add" and name in app._enhancer.provider_names:
+            return {"ok": False, "error": f"Provider '{name}' already exists"}
+
+        # In edit mode, resolve API key
+        actual_api_key = api_key
+        if mode == "edit" and not api_key:
+            existing = (
+                app._config.get("ai_enhance", {}).get("providers", {}).get(name, {})
+            )
+            actual_api_key = existing.get("api_key", "")
+            if not actual_api_key:
+                from wenzi.keychain import keychain_get
+
+                actual_api_key = (
+                    keychain_get(f"ai_enhance.providers.{name}.api_key") or ""
+                )
+            if not actual_api_key:
+                return {
+                    "ok": False,
+                    "error": "No existing API key found and none provided",
+                }
+
+        # Verify connection
+        loop = asyncio.new_event_loop()
         try:
-            with open(draft_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if content.strip():
-                return content
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.debug("Could not read provider draft: %s", e)
-        return self._ADD_PROVIDER_TEMPLATE
+            err = loop.run_until_complete(
+                app._enhancer.verify_provider(
+                    base_url,
+                    actual_api_key,
+                    models[0],
+                    extra_body=extra_body or None,
+                )
+            )
+        finally:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()
 
-    def _save_provider_draft(self, text: str) -> None:
-        draft_path = self._get_provider_draft_path()
-        try:
-            os.makedirs(os.path.dirname(draft_path), exist_ok=True)
-            with open(draft_path, "w", encoding="utf-8") as f:
-                f.write(text)
-        except Exception as e:
-            logger.debug("Could not save provider draft: %s", e)
+        if err:
+            return {"ok": False, "error": err}
 
-    def _remove_provider_draft(self) -> None:
-        draft_path = self._get_provider_draft_path()
-        try:
-            os.remove(draft_path)
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.debug("Could not remove provider draft: %s", e)
+        # In edit mode, remove old provider first
+        if mode == "edit":
+            app._enhancer.remove_provider(name)
+
+        # Add provider
+        success = app._enhancer.add_provider(
+            name,
+            base_url,
+            actual_api_key,
+            models,
+            extra_body=extra_body or None,
+        )
+        if not success:
+            return {"ok": False, "error": "Failed to initialize provider client"}
+
+        # Save config
+        app._config.setdefault("ai_enhance", {})
+        providers_cfg = app._config["ai_enhance"].setdefault("providers", {})
+        pcfg_save: Dict[str, Any] = {
+            "base_url": base_url,
+            "api_key": actual_api_key,
+            "models": models,
+        }
+        if extra_body:
+            pcfg_save["extra_body"] = extra_body
+        providers_cfg[name] = pcfg_save
+        save_config_with_secrets(app._config, app._config_path)
+
+        # Update menus
+        app._menu_builder.build_llm_model_menu()
+
+        return {"ok": True}
 
     # ── Local model selection ─────────────────────────────────────────
 
@@ -881,170 +1020,13 @@ models:
     # ── LLM provider add/remove ───────────────────────────────────────
 
     def on_enhance_add_provider(self, _) -> None:
-        """Add a new AI provider via multi-step dialog."""
-        def _run():
-            try:
-                self._do_add_provider()
-            except Exception as e:
-                logger.error("Add provider failed: %s", e, exc_info=True)
-            finally:
-                from PyObjCTools import AppHelper
-                AppHelper.callAfter(restore_accessory)
-
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _do_add_provider(self) -> None:
-        """Internal implementation for adding a provider."""
+        """Open Settings panel to LLM tab for adding a provider."""
         app = self._app
-        if not app._enhancer:
-            activate_for_dialog()
-            topmost_alert(t("alert.provider.error"), t("alert.provider.llm_not_initialized"))
-            return
-
-        template = self._load_provider_draft()
-        while True:
-            resp = run_multiline_window(
-                title=t("alert.provider.add_llm.title"),
-                message=t("alert.provider.add_llm.message"),
-                default_text=template,
-                ok=t("alert.provider.verify"),
-                dimensions=(380, 180),
-            )
-            if resp is None:
-                self._save_provider_draft(template)
-                return
-
-            parsed = parse_provider_text(resp.text)
-            if isinstance(parsed, str):
-                activate_for_dialog()
-                topmost_alert(t("alert.provider.validation_error"), parsed)
-                template = resp.text
-                self._save_provider_draft(resp.text)
-                continue
-
-            name, base_url, api_key, models, extra_body = parsed
-
-            if name in app._enhancer.provider_names:
-                activate_for_dialog()
-                topmost_alert(t("alert.provider.error"), t("alert.provider.llm_already_exists", name=name))
-                template = resp.text
-                self._save_provider_draft(resp.text)
-                continue
-
-            activate_for_dialog()
-            topmost_alert(t("alert.provider.verify_title"), t("alert.provider.verify_message", url=base_url, model=models[0]))
-
-            import asyncio
-            loop = asyncio.new_event_loop()
-            try:
-                err = loop.run_until_complete(
-                    app._enhancer.verify_provider(
-                        base_url, api_key, models[0], extra_body=extra_body or None
-                    )
-                )
-            finally:
-                loop.run_until_complete(loop.shutdown_asyncgens())
-                loop.close()
-
-            if err:
-                activate_for_dialog()
-                result = topmost_alert(
-                    title=t("alert.provider.verify_failed.title"),
-                    message=t("alert.provider.verify_failed.message", error=err),
-                    ok=t("common.edit"),
-                    cancel=t("common.cancel"),
-                )
-                if result != 1:
-                    self._save_provider_draft(resp.text)
-                    return
-                template = resp.text
-                self._save_provider_draft(resp.text)
-                continue
-
-            activate_for_dialog()
-            result = topmost_alert(
-                title=t("alert.provider.verify_passed.title"),
-                message=t("alert.provider.verify_passed.message",
-                           name=name, url=base_url, models=", ".join(models)),
-                ok=t("common.save"),
-                cancel=t("common.cancel"),
-            )
-            if result != 1:
-                self._save_provider_draft(resp.text)
-                return
-
-            success = app._enhancer.add_provider(
-                name, base_url, api_key, models, extra_body=extra_body or None
-            )
-            if not success:
-                activate_for_dialog()
-                topmost_alert(
-                    t("alert.provider.error"),
-                    t("alert.provider.init_failed"),
-                )
-                return
-
-            app._config.setdefault("ai_enhance", {})
-            providers_cfg = app._config["ai_enhance"].setdefault("providers", {})
-            from wenzi.config import save_config_with_secrets
-            pcfg_save: Dict[str, Any] = {
-                "base_url": base_url,
-                "api_key": api_key,
-                "models": models,
-            }
-            if extra_body:
-                pcfg_save["extra_body"] = extra_body
-            providers_cfg[name] = pcfg_save
-            save_config_with_secrets(app._config, app._config_path)
-            self._remove_provider_draft()
-
-            app._menu_builder.build_llm_model_menu()
-
-            send_notification(
-                t("app.name"), t("notification.provider.added"), f"{name} ({', '.join(models)})"
-            )
-            logger.info("Added AI provider: %s", name)
-            return
+        if hasattr(app, '_settings_controller'):
+            app._settings_controller.on_open_settings(None)
 
     def on_enhance_remove_provider(self, sender) -> None:
-        """Remove an AI provider after confirmation."""
+        """Open Settings panel to LLM tab for provider management."""
         app = self._app
-        try:
-            pname = sender._provider_name
-            if not app._enhancer:
-                return
-
-            activate_for_dialog()
-
-            result = topmost_alert(
-                title=t("alert.provider.remove_llm.title"),
-                message=t("alert.provider.remove_llm.message", name=pname),
-                ok=t("common.remove"),
-                cancel=t("common.cancel"),
-            )
-            if result != 1:
-                return
-
-            app._enhancer.remove_provider(pname)
-
-            app._config.setdefault("ai_enhance", {})
-            providers_cfg = app._config["ai_enhance"].get("providers", {})
-            providers_cfg.pop(pname, None)
-
-            # Clean up Keychain entries for this provider
-            from wenzi.keychain import keychain_delete, keychain_list
-            for account in keychain_list(f"ai_enhance.providers.{pname}."):
-                keychain_delete(account)
-
-            app._config["ai_enhance"]["default_provider"] = app._enhancer.provider_name
-            app._config["ai_enhance"]["default_model"] = app._enhancer.model_name
-            save_config(app._config, app._config_path)
-
-            app._menu_builder.build_llm_model_menu()
-
-            send_notification(t("app.name"), t("notification.provider.removed"), pname)
-            logger.info("Removed AI provider: %s", pname)
-        except Exception as e:
-            logger.error("Remove provider failed: %s", e, exc_info=True)
-        finally:
-            restore_accessory()
+        if hasattr(app, '_settings_controller'):
+            app._settings_controller.on_open_settings(None)

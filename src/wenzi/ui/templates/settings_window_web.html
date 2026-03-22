@@ -504,6 +504,194 @@ input[type="range"] {
 .modal-message { font-size:14px; color:#1d1d1f; margin-bottom:16px; }
 .modal-actions { display:flex; gap:8px; justify-content:center; }
 .modal-traceback { text-align:left; font-family:monospace; font-size:11px; background:#f5f5f7; border-radius:6px; padding:10px; max-height:300px; overflow:auto; white-space:pre-wrap; word-break:break-all; color:#1d1d1f; margin-bottom:16px; }
+
+/* Provider slide views (shared by LLM and STT tabs) */
+.prov-view-container {
+  position: relative;
+  overflow: hidden;
+}
+.prov-list-view, .prov-form-view {
+  width: 100%;
+  transition: transform 0.3s ease;
+}
+.prov-form-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateX(100%);
+}
+.prov-view-container.show-form .prov-list-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateX(-100%);
+}
+.prov-view-container.show-form .prov-form-view {
+  position: static;
+  transform: translateX(0);
+}
+
+/* Provider form styles */
+.provider-form-nav {
+  display: flex;
+  align-items: center;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #d2d2d7;
+}
+.provider-form-back {
+  color: #007aff;
+  cursor: pointer;
+  font-size: 13px;
+  -webkit-user-select: none;
+}
+.provider-form-title {
+  flex: 1;
+  text-align: center;
+  font-weight: 600;
+  font-size: 15px;
+}
+.provider-form-group {
+  margin-bottom: 12px;
+}
+.provider-form-label {
+  font-size: 11px;
+  color: #6e6e73;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.provider-form-label .required { color: #ff3b30; }
+input.provider-form-input,
+textarea.provider-form-textarea {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d2d2d7;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #f5f5f7;
+  color: #1d1d1f;
+  outline: none;
+  transition: border-color 0.15s;
+}
+input.provider-form-input:focus,
+textarea.provider-form-textarea:focus {
+  border-color: #007aff;
+  background: #fff;
+}
+input.provider-form-input.error,
+textarea.provider-form-textarea.error {
+  border-color: #ff3b30;
+}
+.provider-form-error {
+  font-size: 11px;
+  color: #ff3b30;
+  margin-top: 3px;
+  display: none;
+}
+.provider-form-error.visible { display: block; }
+.provider-form-textarea { min-height: 60px; resize: vertical; }
+.provider-form-hint {
+  font-size: 11px;
+  color: #86868b;
+  margin-top: 2px;
+}
+
+.btn-verify-save {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: #007aff;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  margin-top: 16px;
+  transition: opacity 0.15s;
+}
+.btn-verify-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-verify-save.loading {
+  background: #86868b;
+}
+
+.pf-actions {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 16px;
+}
+.pf-actions .btn-verify-save {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
+}
+.btn-delete-provider {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #ff3b30;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-verify-save.btn-remove {
+  background: #ff3b30;
+}
+.btn-delete-provider.btn-cancel {
+  background: #e5e5ea;
+  color: #1d1d1f;
+}
+
+.provider-success-banner {
+  background: #e8f8ea;
+  border: 1px solid #34c759;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+  margin-top: 16px;
+}
+.provider-success-banner .check { color: #34c759; font-size: 18px; }
+.provider-success-banner .msg { font-weight: 500; color: #1d7a2f; margin-top: 4px; }
+
+
+/* API key visibility toggle */
+.api-key-wrapper { position: relative; width: 100%; }
+.api-key-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: #86868b;
+  font-size: 14px;
+  -webkit-user-select: none;
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  input.provider-form-input,
+  textarea.provider-form-textarea {
+    background: #2c2c2e;
+    border-color: #48484a;
+    color: #f5f5f7;
+  }
+  input.provider-form-input:focus,
+  textarea.provider-form-textarea:focus {
+    border-color: #007aff;
+    background: #1c1c1e;
+  }
+  .provider-form-nav { border-color: #48484a; }
+  .provider-success-banner { background: #1a3a1c; border-color: #30d158; }
+  .btn-delete-provider.btn-cancel { background: #48484a; color: #f5f5f7; }
+}
 </style>
 </head>
 <body>
@@ -643,30 +831,50 @@ input[type="range"] {
 
     <!-- Speech Tab -->
     <div id="tab-speech" class="tab-content">
-      <div class="content-title" data-i18n="stt_tab.title">Speech Recognition</div>
-      <div class="setting-group" id="stt-model-list">
-        <!-- Dynamically populated by renderSttTab() -->
+      <div class="prov-view-container" id="stt-view-container">
+        <!-- List View -->
+        <div class="prov-list-view" id="stt-list-view">
+          <div class="content-title-row"><div class="content-title" data-i18n="stt_tab.title">Speech Recognition</div><span class="help-icon" data-doc="provider-model-guide.html#asr-model-selection">?</span></div>
+          <div class="setting-group" id="stt-model-list">
+            <!-- Dynamically populated by renderSttTab() -->
+          </div>
+        </div>
+
+        <!-- Form View (add/edit) -->
+        <div class="prov-form-view" id="stt-form-view">
+          <!-- Dynamically populated by _showSttProviderForm() -->
+        </div>
       </div>
     </div>
 
     <!-- LLM Tab -->
     <div id="tab-llm" class="tab-content">
-      <div class="content-title-row"><div class="content-title" data-i18n="llm_tab.title">LLM</div><span class="help-icon" data-doc="provider-model-guide.html#ai-llm-provider-configuration">?</span></div>
-      <div class="setting-group" id="llm-model-list">
-        <!-- Dynamically populated by renderLlmTab() -->
-      </div>
-      <div class="group-title" data-i18n="llm_tab.model_timeout">Connection</div>
-      <div class="setting-group">
-        <div class="setting-row">
-          <div class="setting-left">
-            <div class="setting-label" data-i18n="llm_tab.model_timeout">Timeout</div>
-            <div class="setting-desc" data-i18n="llm_tab.model_timeout_desc">Maximum time to wait for a model response</div>
+      <div class="prov-view-container" id="llm-prov-container">
+        <!-- List View -->
+        <div class="prov-list-view" id="llm-list-view">
+          <div class="content-title-row"><div class="content-title" data-i18n="llm_tab.title">LLM</div><span class="help-icon" data-doc="provider-model-guide.html#ai-llm-provider-configuration">?</span></div>
+          <div class="setting-group" id="llm-model-list">
+            <!-- Dynamically populated by renderLlmTab() -->
           </div>
-          <div class="setting-right">
-            <input id="ctl-model-timeout" type="number" value="10" style="width:60px;"
-                   onchange="postCallback('on_model_timeout', parseInt(this.value))">
-            <span style="color:#86868b;font-size:12px;">sec</span>
+          <div class="group-title" data-i18n="llm_tab.model_timeout">Connection</div>
+          <div class="setting-group">
+            <div class="setting-row">
+              <div class="setting-left">
+                <div class="setting-label" data-i18n="llm_tab.model_timeout">Timeout</div>
+                <div class="setting-desc" data-i18n="llm_tab.model_timeout_desc">Maximum time to wait for a model response</div>
+              </div>
+              <div class="setting-right">
+                <input id="ctl-model-timeout" type="number" value="10" style="width:60px;"
+                       onchange="postCallback('on_model_timeout', parseInt(this.value))">
+                <span style="color:#86868b;font-size:12px;">sec</span>
+              </div>
+            </div>
           </div>
+        </div>
+
+        <!-- Form View (add/edit) -->
+        <div class="prov-form-view" id="llm-form-view">
+          <!-- Dynamically populated by _showProviderForm() -->
         </div>
       </div>
     </div>
@@ -1107,7 +1315,6 @@ function renderSttTab() {
   if (presets.length > 0) {
     html += '<div class="provider-header">';
     html += '  <span class="provider-name">' + _esc(_t('stt_tab.local_section', 'Local')) + '</span>';
-    html += '  <span class="help-icon" data-doc="provider-model-guide.html#asr-model-selection">?</span>';
     html += '  <span class="provider-badge local">On-device</span>';
     html += '</div>';
     for (var i = 0; i < presets.length; i++) {
@@ -1127,25 +1334,38 @@ function renderSttTab() {
     }
   }
 
-  // Remote providers
+  // Remote providers — group by provider name
   if (remotes.length > 0) {
-    html += '<div class="provider-header">';
-    html += '  <span class="provider-name">' + _esc(_t('stt_tab.remote_section', 'Remote')) + '</span>';
-    html += '  <span class="help-icon" data-doc="provider-model-guide.html#remote-asr-providers">?</span>';
-    html += '  <span class="provider-badge remote">Cloud</span>';
-    html += '</div>';
+    var sttGroups = {};
+    var sttGroupOrder = [];
     for (var j = 0; j < remotes.length; j++) {
       var r = remotes[j];
-      var rsel = (currentRemote && currentRemote[0] === r.provider && currentRemote[1] === r.model) ? ' selected' : '';
-      html += '<div class="model-row' + rsel + '" data-action="stt-select" data-type="remote" data-id="' + _esc(r.provider) + '" data-model="' + _esc(r.model) + '">';
-      html += '  <div class="model-radio"></div>';
-      html += '  <div class="model-info">';
-      html += '    <div class="model-name">' + _esc(r.display) + '</div>';
-      html += '  </div>';
-      html += '  <div class="model-actions">';
-      html += '    <button class="btn-small danger" data-action="stt-remove" data-provider="' + _esc(r.provider) + '">' + _esc(_t('stt_tab.remove_provider', 'Remove...')) + '</button>';
-      html += '  </div>';
+      if (!sttGroups[r.provider]) {
+        sttGroups[r.provider] = [];
+        sttGroupOrder.push(r.provider);
+      }
+      sttGroups[r.provider].push(r);
+    }
+    sttGroupOrder.sort(function(a, b) { return a.localeCompare(b); });
+
+    for (var g = 0; g < sttGroupOrder.length; g++) {
+      var provName = sttGroupOrder[g];
+      var items = sttGroups[provName];
+      html += '<div class="provider-header">';
+      html += '  <span class="provider-name">' + _esc(provName) + '</span>';
+      html += '  <span class="provider-badge remote">Cloud</span>';
+      html += '  <button class="btn-small" style="margin-left:auto;" data-action="stt-edit" data-provider="' + _esc(provName) + '">Edit</button>';
       html += '</div>';
+      for (var k = 0; k < items.length; k++) {
+        var item = items[k];
+        var rsel = (currentRemote && currentRemote[0] === item.provider && currentRemote[1] === item.model) ? ' selected' : '';
+        html += '<div class="model-row' + rsel + '" data-action="stt-select" data-type="remote" data-id="' + _esc(item.provider) + '" data-model="' + _esc(item.model) + '">';
+        html += '  <div class="model-radio"></div>';
+        html += '  <div class="model-info">';
+        html += '    <div class="model-name">' + _esc(item.display) + '</div>';
+        html += '  </div>';
+        html += '</div>';
+      }
     }
   }
 
@@ -1162,14 +1382,14 @@ function renderSttTab() {
   var container = document.getElementById('stt-model-list');
   if (!container) return;
   container.addEventListener('click', function(e) {
-    var removeBtn = e.target.closest('[data-action="stt-remove"]');
-    if (removeBtn) {
+    var editBtn = e.target.closest('[data-action="stt-edit"]');
+    if (editBtn) {
       e.stopPropagation();
-      postCallback('on_stt_remove_provider', removeBtn.dataset.provider);
+      _showSttProviderForm('edit', editBtn.dataset.provider);
       return;
     }
     if (e.target.closest('[data-action="stt-add"]')) {
-      postCallback('on_stt_add_provider');
+      _showSttProviderForm('add', null);
       return;
     }
     var row = e.target.closest('[data-action="stt-select"]');
@@ -1185,10 +1405,242 @@ function renderSttTab() {
 })();
 
 function _updateSttSelection(data) {
-  // Update CONFIG and re-render speech tab
   if (data.current_preset_id !== undefined) CONFIG.current_preset_id = data.current_preset_id;
   if (data.current_remote_asr !== undefined) CONFIG.current_remote_asr = data.current_remote_asr;
   renderSttTab();
+}
+
+function _renderSttActionsBar(mode, providerName) {
+  var h = '<button class="btn-verify-save" id="stt-pf-submit" data-action="stt-provider-submit" data-mode="' + mode + '" data-provider="' + _esc(providerName || '') + '">'
+    + _esc(_t('stt_tab.verify_save', 'Verify & Save'))
+    + '</button>';
+  if (mode === 'edit') {
+    h += '<button class="btn-delete-provider" data-action="stt-provider-delete-start">'
+      + _esc(_t('stt_tab.delete_provider', 'Delete'))
+      + '</button>';
+  }
+  return h;
+}
+
+function _showSttProviderForm(mode, providerName) {
+  var container = document.getElementById('stt-form-view');
+  if (!container) return;
+  var providers = CONFIG.stt_providers || {};
+  var data = (mode === 'edit' && providerName) ? (providers[providerName] || {}) : {};
+  var title = mode === 'edit'
+    ? _esc(_t('stt_tab.edit_provider', 'Edit')) + ': ' + _esc(providerName)
+    : _esc(_t('stt_tab.add_provider_title', 'Add Provider'));
+
+  var nameVal = mode === 'edit' ? _esc(providerName) : '';
+  var urlVal = _esc(data.base_url || '');
+  var modelsVal = _esc((data.models || []).join('\n'));
+
+  var html = '';
+  html += '<div class="provider-form-nav">';
+  html += '  <span class="provider-form-back" data-action="stt-provider-back">&larr; Speech</span>';
+  html += '  <span class="provider-form-title">' + title + '</span>';
+  html += '  <span style="width:50px;"></span>';
+  html += '</div>';
+
+  html += '<div class="provider-form-group">';
+  html += '  <div class="provider-form-label">Name <span class="required">*</span></div>';
+  html += '  <input class="provider-form-input" id="stt-pf-name" type="text" value="' + nameVal + '"';
+  html += '         placeholder="my-provider"' + (mode === 'edit' ? ' readonly' : '') + '>';
+  html += '  <div class="provider-form-error" id="stt-pf-name-err"></div>';
+  html += '</div>';
+
+  html += '<div class="provider-form-group">';
+  html += '  <div class="provider-form-label">Base URL <span class="required">*</span></div>';
+  html += '  <input class="provider-form-input" id="stt-pf-base-url" type="url" value="' + urlVal + '"';
+  html += '         placeholder="https://api.groq.com/openai/v1">';
+  html += '  <div class="provider-form-error" id="stt-pf-base-url-err"></div>';
+  html += '</div>';
+
+  html += '<div class="provider-form-group">';
+  html += '  <div class="provider-form-label">API Key';
+  if (mode === 'add') html += ' <span class="required">*</span>';
+  html += '  </div>';
+  html += '  <div class="api-key-wrapper">';
+  html += '    <input class="provider-form-input" id="stt-pf-api-key" type="password"';
+  html += '           placeholder="' + (mode === 'edit' ? 'Leave empty to keep current key' : 'gsk-...') + '">';
+  html += '    <span class="api-key-toggle" data-action="stt-toggle-api-key">&#128065;</span>';
+  html += '  </div>';
+  html += '  <div class="provider-form-error" id="stt-pf-api-key-err"></div>';
+  html += '</div>';
+
+  html += '<div class="provider-form-group">';
+  html += '  <div class="provider-form-label">Models <span class="required">*</span></div>';
+  html += '  <textarea class="provider-form-textarea" id="stt-pf-models" placeholder="whisper-large-v3-turbo">' + modelsVal + '</textarea>';
+  html += '  <div class="provider-form-hint">One model per line</div>';
+  html += '  <div class="provider-form-error" id="stt-pf-models-err"></div>';
+  html += '</div>';
+
+  html += '<div class="pf-actions" id="stt-pf-actions">';
+  html += _renderSttActionsBar(mode, providerName);
+  html += '</div>';
+
+  html += '<div id="stt-pf-result"></div>';
+
+  container.innerHTML = html;
+  container.dataset.formMode = mode;
+  container.dataset.formProvider = providerName || '';
+
+  document.getElementById('stt-view-container').classList.add('show-form');
+}
+
+function _hideSttProviderForm() {
+  document.getElementById('stt-view-container').classList.remove('show-form');
+}
+
+// Event delegation for STT provider form view
+(function() {
+  var formView = document.getElementById('stt-form-view');
+  if (!formView) return;
+
+  formView.addEventListener('click', function(e) {
+    if (e.target.closest('[data-action="stt-provider-back"]')) {
+      _hideSttProviderForm();
+      return;
+    }
+    var toggle = e.target.closest('[data-action="stt-toggle-api-key"]');
+    if (toggle) {
+      var input = document.getElementById('stt-pf-api-key');
+      if (input) input.type = input.type === 'password' ? 'text' : 'password';
+      return;
+    }
+    if (e.target.closest('[data-action="stt-provider-submit"]')) {
+      _submitSttProviderForm();
+      return;
+    }
+    if (e.target.closest('[data-action="stt-provider-delete-start"]')) {
+      var actions = document.getElementById('stt-pf-actions');
+      var prov = formView.dataset.formProvider;
+      if (actions && prov) {
+        actions.innerHTML = '<button class="btn-verify-save btn-remove" data-action="stt-provider-delete-confirm">'
+          + 'Remove <strong>' + _esc(prov) + '</strong>'
+          + '</button>'
+          + '<button class="btn-delete-provider btn-cancel" data-action="stt-provider-delete-cancel">Cancel</button>';
+      }
+      return;
+    }
+    if (e.target.closest('[data-action="stt-provider-delete-confirm"]')) {
+      var prov = formView.dataset.formProvider;
+      if (prov) postCallback('on_stt_delete_provider', prov);
+      _hideSttProviderForm();
+      return;
+    }
+    if (e.target.closest('[data-action="stt-provider-delete-cancel"]')) {
+      var actions = document.getElementById('stt-pf-actions');
+      if (actions) {
+        actions.innerHTML = _renderSttActionsBar(formView.dataset.formMode, formView.dataset.formProvider);
+      }
+      return;
+    }
+  });
+})();
+
+function _submitSttProviderForm() {
+  var errFields = ['stt-pf-name-err', 'stt-pf-base-url-err', 'stt-pf-api-key-err', 'stt-pf-models-err'];
+  for (var i = 0; i < errFields.length; i++) {
+    var el = document.getElementById(errFields[i]);
+    if (el) { el.textContent = ''; el.classList.remove('visible'); }
+  }
+  var formView = document.getElementById('stt-form-view');
+  var inputs = formView.querySelectorAll('.provider-form-input, .provider-form-textarea');
+  for (var i = 0; i < inputs.length; i++) inputs[i].classList.remove('error');
+  var mode = formView.dataset.formMode;
+  var name = (document.getElementById('stt-pf-name').value || '').trim();
+  var baseUrl = (document.getElementById('stt-pf-base-url').value || '').trim();
+  var apiKey = (document.getElementById('stt-pf-api-key').value || '').trim();
+  var modelsRaw = (document.getElementById('stt-pf-models').value || '').trim();
+
+  var errors = [];
+
+  if (!name) {
+    errors.push({field: 'stt-pf-name', err: 'stt-pf-name-err', msg: 'Name is required'});
+  } else if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    errors.push({field: 'stt-pf-name', err: 'stt-pf-name-err', msg: 'Only letters, digits, hyphens, and underscores allowed'});
+  } else if (mode === 'add') {
+    var providers = CONFIG.stt_providers || {};
+    if (providers[name]) {
+      errors.push({field: 'stt-pf-name', err: 'stt-pf-name-err', msg: 'Provider "' + name + '" already exists'});
+    }
+  }
+
+  if (!baseUrl) {
+    errors.push({field: 'stt-pf-base-url', err: 'stt-pf-base-url-err', msg: 'Base URL is required'});
+  }
+
+  if (mode === 'add' && !apiKey) {
+    errors.push({field: 'stt-pf-api-key', err: 'stt-pf-api-key-err', msg: 'API Key is required'});
+  }
+
+  var models = modelsRaw.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+  if (models.length === 0) {
+    errors.push({field: 'stt-pf-models', err: 'stt-pf-models-err', msg: 'At least one model is required'});
+  }
+
+  if (errors.length > 0) {
+    for (var i = 0; i < errors.length; i++) {
+      var e = errors[i];
+      document.getElementById(e.field).classList.add('error');
+      var errEl = document.getElementById(e.err);
+      errEl.textContent = e.msg;
+      errEl.classList.add('visible');
+    }
+    document.getElementById(errors[0].field).focus();
+    return;
+  }
+
+  var btn = document.getElementById('stt-pf-submit');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = 'Verifying...';
+  var allInputs = formView.querySelectorAll('input, textarea');
+  for (var i = 0; i < allInputs.length; i++) allInputs[i].disabled = true;
+
+  postCallback('on_stt_verify_save', {
+    name: name,
+    base_url: baseUrl,
+    api_key: apiKey,
+    models: models,
+    mode: mode
+  });
+}
+
+function _sttProviderSaveResult(result) {
+  var formView = document.getElementById('stt-form-view');
+  var btn = document.getElementById('stt-pf-submit');
+  var resultArea = document.getElementById('stt-pf-result');
+
+  if (result.ok) {
+    var actions = document.getElementById('stt-pf-actions');
+    if (actions) actions.style.display = 'none';
+    if (resultArea) {
+      resultArea.innerHTML = '<div class="provider-success-banner">'
+        + '<div class="check">&#10003;</div>'
+        + '<div class="msg">Provider saved successfully</div>'
+        + '</div>';
+    }
+    setTimeout(function() {
+      _hideSttProviderForm();
+    }, 1500);
+  } else {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('loading');
+      btn.textContent = _t('stt_tab.verify_save', 'Verify & Save');
+    }
+    var allInputs = formView.querySelectorAll('input, textarea');
+    for (var i = 0; i < allInputs.length; i++) allInputs[i].disabled = false;
+
+    var errEl = document.getElementById('stt-pf-base-url-err');
+    if (errEl) {
+      errEl.textContent = result.error || 'Verification failed';
+      errEl.classList.add('visible');
+      document.getElementById('stt-pf-base-url').classList.add('error');
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1202,7 +1654,7 @@ function renderLlmTab() {
   var current = CONFIG.current_llm || {};
   var html = '';
 
-  // Group by provider
+  // Group models by provider
   var groups = {};
   var groupOrder = [];
   for (var i = 0; i < models.length; i++) {
@@ -1214,12 +1666,19 @@ function renderLlmTab() {
     groups[m.provider].push(m);
   }
 
+  // Sort providers alphabetically, models within each provider too
+  groupOrder.sort(function(a, b) { return a.localeCompare(b); });
+  for (var s = 0; s < groupOrder.length; s++) {
+    groups[groupOrder[s]].sort(function(a, b) { return a.model.localeCompare(b.model); });
+  }
+
+  // Render provider groups with radio-selectable models (same style as STT tab)
   for (var g = 0; g < groupOrder.length; g++) {
     var provider = groupOrder[g];
     var items = groups[provider];
     html += '<div class="provider-header">';
     html += '  <span class="provider-name">' + _esc(provider) + '</span>';
-    html += '  <button class="btn-small danger" style="margin-left:auto;" data-action="llm-remove" data-provider="' + _esc(provider) + '">' + _esc(_t('llm_tab.remove', 'Remove...')) + '</button>';
+    html += '  <button class="btn-small" style="margin-left:auto;" data-action="llm-edit" data-provider="' + _esc(provider) + '">Edit</button>';
     html += '</div>';
     for (var k = 0; k < items.length; k++) {
       var item = items[k];
@@ -1236,7 +1695,7 @@ function renderLlmTab() {
     }
   }
 
-  // Add provider
+  // Add provider button
   html += '<div class="add-row">';
   html += '  <button class="toolbar-btn" style="font-size:13px;" data-action="llm-add">' + _esc(_t('llm_tab.add_provider', 'Add Provider...')) + '</button>';
   html += '</div>';
@@ -1249,14 +1708,14 @@ function renderLlmTab() {
   var container = document.getElementById('llm-model-list');
   if (!container) return;
   container.addEventListener('click', function(e) {
-    var removeBtn = e.target.closest('[data-action="llm-remove"]');
-    if (removeBtn) {
+    var editBtn = e.target.closest('[data-action="llm-edit"]');
+    if (editBtn) {
       e.stopPropagation();
-      postCallback('on_llm_remove_provider', removeBtn.dataset.provider);
+      _showProviderForm('edit', editBtn.dataset.provider);
       return;
     }
     if (e.target.closest('[data-action="llm-add"]')) {
-      postCallback('on_llm_add_provider');
+      _showProviderForm('add', null);
       return;
     }
     var row = e.target.closest('[data-action="llm-select"]');
@@ -1266,6 +1725,263 @@ function renderLlmTab() {
     }
   });
 })();
+
+function _renderActionsBar(mode, providerName) {
+  var h = '<button class="btn-verify-save" id="pf-submit" data-action="provider-submit" data-mode="' + mode + '" data-provider="' + _esc(providerName || '') + '">'
+    + _esc(_t('llm_tab.verify_save', 'Verify & Save'))
+    + '</button>';
+  if (mode === 'edit') {
+    h += '<button class="btn-delete-provider" data-action="provider-delete-start">'
+      + _esc(_t('llm_tab.delete_provider', 'Delete'))
+      + '</button>';
+  }
+  return h;
+}
+
+function _showProviderForm(mode, providerName) {
+  var container = document.getElementById('llm-form-view');
+  if (!container) return;
+  var providers = CONFIG.llm_providers || {};
+  var data = (mode === 'edit' && providerName) ? (providers[providerName] || {}) : {};
+  var title = mode === 'edit'
+    ? _esc(_t('llm_tab.edit_provider', 'Edit')) + ': ' + _esc(providerName)
+    : _esc(_t('llm_tab.add_provider_title', 'Add Provider'));
+
+  var nameVal = mode === 'edit' ? _esc(providerName) : '';
+  var urlVal = _esc(data.base_url || '');
+  var modelsVal = _esc((data.models || []).join('\n'));
+  var extraVal = data.extra_body && Object.keys(data.extra_body).length
+    ? _esc(JSON.stringify(data.extra_body, null, 2))
+    : '';
+
+  var html = '';
+  html += '<div class="provider-form-nav">';
+  html += '  <span class="provider-form-back" data-action="provider-back">&larr; LLM</span>';
+  html += '  <span class="provider-form-title">' + title + '</span>';
+  html += '  <span style="width:50px;"></span>';
+  html += '</div>';
+
+  html += '<div class="provider-form-group">';
+  html += '  <div class="provider-form-label">Name <span class="required">*</span></div>';
+  html += '  <input class="provider-form-input" id="pf-name" type="text" value="' + nameVal + '"';
+  html += '         placeholder="my-provider"' + (mode === 'edit' ? ' readonly' : '') + '>';
+  html += '  <div class="provider-form-error" id="pf-name-err"></div>';
+  html += '</div>';
+
+  html += '<div class="provider-form-group">';
+  html += '  <div class="provider-form-label">Base URL <span class="required">*</span></div>';
+  html += '  <input class="provider-form-input" id="pf-base-url" type="url" value="' + urlVal + '"';
+  html += '         placeholder="https://api.openai.com/v1">';
+  html += '  <div class="provider-form-error" id="pf-base-url-err"></div>';
+  html += '</div>';
+
+  html += '<div class="provider-form-group">';
+  html += '  <div class="provider-form-label">API Key';
+  if (mode === 'add') html += ' <span class="required">*</span>';
+  html += '  </div>';
+  html += '  <div class="api-key-wrapper">';
+  html += '    <input class="provider-form-input" id="pf-api-key" type="password"';
+  html += '           placeholder="' + (mode === 'edit' ? 'Leave empty to keep current key' : 'sk-...') + '">';
+  html += '    <span class="api-key-toggle" data-action="toggle-api-key">&#128065;</span>';
+  html += '  </div>';
+  html += '  <div class="provider-form-error" id="pf-api-key-err"></div>';
+  html += '</div>';
+
+  html += '<div class="provider-form-group">';
+  html += '  <div class="provider-form-label">Models <span class="required">*</span></div>';
+  html += '  <textarea class="provider-form-textarea" id="pf-models" placeholder="gpt-4o&#10;gpt-4o-mini">' + modelsVal + '</textarea>';
+  html += '  <div class="provider-form-hint">One model per line</div>';
+  html += '  <div class="provider-form-error" id="pf-models-err"></div>';
+  html += '</div>';
+
+  html += '<div class="provider-form-group">';
+  html += '  <div class="provider-form-label">Extra Body <span style="color:#86868b;font-weight:normal;">(JSON, optional)</span></div>';
+  html += '  <textarea class="provider-form-textarea" id="pf-extra-body" placeholder="{}" style="font-family:monospace;font-size:12px;">' + extraVal + '</textarea>';
+  html += '  <div class="provider-form-error" id="pf-extra-body-err"></div>';
+  html += '</div>';
+
+  html += '<div class="pf-actions" id="pf-actions">';
+  html += _renderActionsBar(mode, providerName);
+  html += '</div>';
+
+  html += '<div id="pf-result"></div>';
+
+  container.innerHTML = html;
+  container.dataset.formMode = mode;
+  container.dataset.formProvider = providerName || '';
+
+  document.getElementById('llm-prov-container').classList.add('show-form');
+}
+
+function _hideProviderForm() {
+  document.getElementById('llm-prov-container').classList.remove('show-form');
+}
+
+// Event delegation for provider form view
+(function() {
+  var formView = document.getElementById('llm-form-view');
+  if (!formView) return;
+
+  formView.addEventListener('click', function(e) {
+    if (e.target.closest('[data-action="provider-back"]')) {
+      _hideProviderForm();
+      return;
+    }
+    var toggle = e.target.closest('[data-action="toggle-api-key"]');
+    if (toggle) {
+      var input = document.getElementById('pf-api-key');
+      if (input) input.type = input.type === 'password' ? 'text' : 'password';
+      return;
+    }
+    if (e.target.closest('[data-action="provider-submit"]')) {
+      _submitProviderForm();
+      return;
+    }
+    if (e.target.closest('[data-action="provider-delete-start"]')) {
+      var actions = document.getElementById('pf-actions');
+      var prov = formView.dataset.formProvider;
+      if (actions && prov) {
+        actions.innerHTML = '<button class="btn-verify-save btn-remove" data-action="provider-delete-confirm">'
+          + 'Remove <strong>' + _esc(prov) + '</strong>'
+          + '</button>'
+          + '<button class="btn-delete-provider btn-cancel" data-action="provider-delete-cancel">Cancel</button>';
+      }
+      return;
+    }
+    if (e.target.closest('[data-action="provider-delete-confirm"]')) {
+      var prov = formView.dataset.formProvider;
+      if (prov) postCallback('on_llm_delete_provider', prov);
+      _hideProviderForm();
+      return;
+    }
+    if (e.target.closest('[data-action="provider-delete-cancel"]')) {
+      var actions = document.getElementById('pf-actions');
+      if (actions) {
+        actions.innerHTML = _renderActionsBar(formView.dataset.formMode, formView.dataset.formProvider);
+      }
+      return;
+    }
+  });
+})();
+
+function _submitProviderForm() {
+  // Clear previous errors
+  var errFields = ['pf-name-err', 'pf-base-url-err', 'pf-api-key-err', 'pf-models-err', 'pf-extra-body-err'];
+  for (var i = 0; i < errFields.length; i++) {
+    var el = document.getElementById(errFields[i]);
+    if (el) { el.textContent = ''; el.classList.remove('visible'); }
+  }
+  var formView = document.getElementById('llm-form-view');
+  var inputs = formView.querySelectorAll('.provider-form-input, .provider-form-textarea');
+  for (var i = 0; i < inputs.length; i++) inputs[i].classList.remove('error');
+  var mode = formView.dataset.formMode;
+  var name = (document.getElementById('pf-name').value || '').trim();
+  var baseUrl = (document.getElementById('pf-base-url').value || '').trim();
+  var apiKey = (document.getElementById('pf-api-key').value || '').trim();
+  var modelsRaw = (document.getElementById('pf-models').value || '').trim();
+  var extraBodyRaw = (document.getElementById('pf-extra-body').value || '').trim();
+
+  var errors = [];
+
+  if (!name) {
+    errors.push({field: 'pf-name', err: 'pf-name-err', msg: 'Name is required'});
+  } else if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    errors.push({field: 'pf-name', err: 'pf-name-err', msg: 'Only letters, digits, hyphens, and underscores allowed'});
+  } else if (mode === 'add') {
+    var providers = CONFIG.llm_providers || {};
+    if (providers[name]) {
+      errors.push({field: 'pf-name', err: 'pf-name-err', msg: 'Provider "' + name + '" already exists'});
+    }
+  }
+
+  if (!baseUrl) {
+    errors.push({field: 'pf-base-url', err: 'pf-base-url-err', msg: 'Base URL is required'});
+  }
+
+  if (mode === 'add' && !apiKey) {
+    errors.push({field: 'pf-api-key', err: 'pf-api-key-err', msg: 'API Key is required'});
+  }
+
+  var models = modelsRaw.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+  if (models.length === 0) {
+    errors.push({field: 'pf-models', err: 'pf-models-err', msg: 'At least one model is required'});
+  }
+
+  var extraBody = {};
+  if (extraBodyRaw) {
+    try {
+      extraBody = JSON.parse(extraBodyRaw);
+      if (typeof extraBody !== 'object' || Array.isArray(extraBody)) {
+        errors.push({field: 'pf-extra-body', err: 'pf-extra-body-err', msg: 'Must be a JSON object'});
+      }
+    } catch (e) {
+      errors.push({field: 'pf-extra-body', err: 'pf-extra-body-err', msg: 'Invalid JSON: ' + e.message});
+    }
+  }
+
+  if (errors.length > 0) {
+    for (var i = 0; i < errors.length; i++) {
+      var e = errors[i];
+      document.getElementById(e.field).classList.add('error');
+      var errEl = document.getElementById(e.err);
+      errEl.textContent = e.msg;
+      errEl.classList.add('visible');
+    }
+    document.getElementById(errors[0].field).focus();
+    return;
+  }
+
+  var btn = document.getElementById('pf-submit');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.textContent = 'Verifying...';
+  var allInputs = formView.querySelectorAll('input, textarea');
+  for (var i = 0; i < allInputs.length; i++) allInputs[i].disabled = true;
+
+  postCallback('on_llm_verify_save', {
+    name: name,
+    base_url: baseUrl,
+    api_key: apiKey,
+    models: models,
+    extra_body: extraBody,
+    mode: mode
+  });
+}
+
+function _providerSaveResult(result) {
+  var formView = document.getElementById('llm-form-view');
+  var btn = document.getElementById('pf-submit');
+  var resultArea = document.getElementById('pf-result');
+
+  if (result.ok) {
+    var actions = document.getElementById('pf-actions');
+    if (actions) actions.style.display = 'none';
+    if (resultArea) {
+      resultArea.innerHTML = '<div class="provider-success-banner">'
+        + '<div class="check">&#10003;</div>'
+        + '<div class="msg">Provider saved successfully</div>'
+        + '</div>';
+    }
+    setTimeout(function() {
+      _hideProviderForm();
+    }, 1500);
+  } else {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('loading');
+      btn.textContent = _t('llm_tab.verify_save', 'Verify & Save');
+    }
+    var allInputs = formView.querySelectorAll('input, textarea');
+    for (var i = 0; i < allInputs.length; i++) allInputs[i].disabled = false;
+
+    var errEl = document.getElementById('pf-base-url-err');
+    if (errEl) {
+      errEl.textContent = result.error || 'Verification failed';
+      errEl.classList.add('visible');
+      document.getElementById('pf-base-url').classList.add('error');
+    }
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* AI tab: Enhance modes                                               */
@@ -1976,17 +2692,20 @@ function _updateState(state) {
     if (state.hotkeys !== undefined) CONFIG.hotkeys = state.hotkeys;
     renderHotkeys();
   }
+  if (state.stt_providers !== undefined) CONFIG.stt_providers = state.stt_providers;
   if (state.stt_presets !== undefined || state.stt_remote_models !== undefined ||
-      state.current_preset_id !== undefined || state.current_remote_asr !== undefined) {
+      state.current_preset_id !== undefined || state.current_remote_asr !== undefined ||
+      state.stt_providers !== undefined) {
     if (state.stt_presets !== undefined) CONFIG.stt_presets = state.stt_presets;
     if (state.stt_remote_models !== undefined) CONFIG.stt_remote_models = state.stt_remote_models;
     if (state.current_preset_id !== undefined) CONFIG.current_preset_id = state.current_preset_id;
     if (state.current_remote_asr !== undefined) CONFIG.current_remote_asr = state.current_remote_asr;
     renderSttTab();
   }
-  if (state.llm_models !== undefined || state.current_llm !== undefined) {
-    if (state.llm_models !== undefined) CONFIG.llm_models = state.llm_models;
-    if (state.current_llm !== undefined) CONFIG.current_llm = state.current_llm;
+  if (state.llm_models !== undefined) CONFIG.llm_models = state.llm_models;
+  if (state.current_llm !== undefined) CONFIG.current_llm = state.current_llm;
+  if (state.llm_providers !== undefined) CONFIG.llm_providers = state.llm_providers;
+  if (state.llm_models !== undefined || state.current_llm !== undefined || state.llm_providers !== undefined) {
     renderLlmTab();
   }
   if (state.enhance_modes !== undefined || state.current_enhance_mode !== undefined) {

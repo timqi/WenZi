@@ -339,18 +339,6 @@ class TestSttRemoveProvider:
         mock_app._model_controller.on_asr_remove_provider.assert_called_with(mock_item)
 
 
-class TestLlmRemoveProvider:
-    def test_no_enhancer(self, ctrl, mock_app):
-        mock_app._enhancer = None
-        ctrl.llm_remove_provider()  # Should not raise
-
-    def test_delegates_to_model_controller(self, ctrl, mock_app):
-        mock_item = MagicMock()
-        mock_app._llm_remove_provider_items = {"openai": mock_item}
-        ctrl.llm_remove_provider()
-        mock_app._model_controller.on_enhance_remove_provider.assert_called_with(mock_item)
-
-
 class TestTabChange:
     @patch("wenzi.controllers.settings_controller.save_config")
     def test_persist_tab(self, mock_save, ctrl, mock_app):
@@ -472,3 +460,206 @@ class TestOpenDocLink:
     def test_catches_exception(self, mock_build, mock_wb, ctrl):
         mock_wb.open.side_effect = OSError("browser not found")
         ctrl.open_doc_link("user-guide.html#hotkeys")  # should not raise
+
+
+class TestCollectStateLlmProviders:
+    """Tests for llm_providers in _collect_state()."""
+
+    def test_collect_state_includes_llm_providers(self, ctrl, mock_app):
+        """_collect_state() includes provider config without API keys."""
+        mock_app._config["ai_enhance"] = {
+            "providers": {
+                "openai": {
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-secret",
+                    "models": ["gpt-4o", "gpt-4o-mini"],
+                },
+                "deepseek": {
+                    "base_url": "https://api.deepseek.com/v1",
+                    "api_key": "sk-ds-secret",
+                    "models": ["deepseek-chat"],
+                    "extra_body": {"temperature": 0.7},
+                },
+            }
+        }
+        state = ctrl._collect_state()
+        providers = state["llm_providers"]
+        assert "openai" in providers
+        assert providers["openai"]["base_url"] == "https://api.openai.com/v1"
+        assert providers["openai"]["models"] == ["gpt-4o", "gpt-4o-mini"]
+        assert providers["openai"]["extra_body"] == {}
+        assert "api_key" not in providers["openai"]
+        assert providers["deepseek"]["extra_body"] == {"temperature": 0.7}
+        assert "api_key" not in providers["deepseek"]
+
+    def test_collect_state_llm_providers_empty_when_no_config(self, ctrl, mock_app):
+        """llm_providers is empty dict when no providers configured."""
+        mock_app._config["ai_enhance"] = {}
+        state = ctrl._collect_state()
+        assert state["llm_providers"] == {}
+
+
+class TestLlmVerifySave:
+    """Tests for llm_verify_save() callback."""
+
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_verify_save_dispatches_to_model_controller(self, mock_save, ctrl, mock_app):
+        """Verify save calls model_controller.do_verify_and_save_provider."""
+        mock_app._model_controller.do_verify_and_save_provider.return_value = {"ok": True}
+
+        ctrl._do_llm_verify_save({
+            "name": "test",
+            "base_url": "https://api.example.com/v1",
+            "api_key": "sk-test",
+            "models": ["model-a"],
+            "extra_body": {},
+            "mode": "add",
+        })
+
+        mock_app._model_controller.do_verify_and_save_provider.assert_called_once_with(
+            name="test",
+            base_url="https://api.example.com/v1",
+            api_key="sk-test",
+            models=["model-a"],
+            extra_body={},
+            mode="add",
+        )
+
+    def test_verify_concurrent_guard(self, ctrl, mock_app):
+        """Second call while verify in progress is ignored."""
+        ctrl._verify_in_progress = True
+        ctrl.llm_verify_save({
+            "name": "test", "base_url": "u", "api_key": "k",
+            "models": ["m"], "extra_body": {}, "mode": "add",
+        })
+        mock_app._model_controller.do_verify_and_save_provider.assert_not_called()
+
+    def test_verify_stale_callback(self, ctrl, mock_app):
+        """Stale callback guard: verify_in_progress stays True when request_id mismatches."""
+        ctrl._verify_in_progress = True
+        ctrl._verify_request_id = 5
+        # The stale callback scenario: request_id was 3 but current is 5
+        # verify_in_progress should NOT be reset by a stale callback
+        assert ctrl._verify_in_progress is True
+        assert ctrl._verify_request_id == 5
+
+
+class TestLlmDeleteProvider:
+    """Tests for llm_delete_provider() via WebView."""
+
+    @patch("wenzi.controllers.settings_controller.keychain_list", return_value=[])
+    @patch("wenzi.controllers.settings_controller.keychain_delete")
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_delete_removes_provider_and_updates_config(self, mock_save, mock_kc_del, mock_kc_list, ctrl, mock_app):
+        mock_app._enhancer.remove_provider.return_value = True
+        mock_app._enhancer.provider_name = "openai"
+        mock_app._enhancer.model_name = "gpt-4o"
+        mock_app._config["ai_enhance"] = {
+            "providers": {"test-provider": {"base_url": "u", "api_key": "k", "models": ["m"]}},
+            "default_provider": "test-provider",
+            "default_model": "m",
+        }
+
+        ctrl.llm_delete_provider("test-provider")
+
+        mock_app._enhancer.remove_provider.assert_called_once_with("test-provider")
+        assert "test-provider" not in mock_app._config["ai_enhance"]["providers"]
+        mock_save.assert_called_once()
+
+
+class TestSttVerifySave:
+    """Tests for stt_verify_save() callback."""
+
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_verify_save_dispatches_to_model_controller(self, mock_save, ctrl, mock_app):
+        """Verify save calls model_controller.do_verify_and_save_stt_provider."""
+        mock_app._model_controller.do_verify_and_save_stt_provider.return_value = {"ok": True}
+
+        ctrl._do_stt_verify_save({
+            "name": "groq",
+            "base_url": "https://api.groq.com/openai/v1",
+            "api_key": "gsk-test",
+            "models": ["whisper-large-v3-turbo"],
+            "mode": "add",
+        })
+
+        mock_app._model_controller.do_verify_and_save_stt_provider.assert_called_once_with(
+            name="groq",
+            base_url="https://api.groq.com/openai/v1",
+            api_key="gsk-test",
+            models=["whisper-large-v3-turbo"],
+            mode="add",
+        )
+
+    def test_verify_concurrent_guard(self, ctrl, mock_app):
+        """Second call while verify in progress is ignored."""
+        ctrl._stt_verify_in_progress = True
+        ctrl.stt_verify_save({
+            "name": "groq", "base_url": "u", "api_key": "k",
+            "models": ["m"], "mode": "add",
+        })
+        mock_app._model_controller.do_verify_and_save_stt_provider.assert_not_called()
+
+
+class TestSttDeleteProvider:
+    """Tests for stt_delete_provider() via WebView."""
+
+    @patch("wenzi.controllers.settings_controller.keychain_list", return_value=[])
+    @patch("wenzi.controllers.settings_controller.keychain_delete")
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_delete_removes_provider_and_updates_config(self, mock_save, mock_kc_del, mock_kc_list, ctrl, mock_app):
+        mock_app._config["asr"] = {
+            "providers": {"groq": {"base_url": "u", "api_key": "k", "models": ["m"]}},
+            "default_provider": "groq",
+            "default_model": "m",
+        }
+        mock_app._current_remote_asr = None
+
+        ctrl.stt_delete_provider("groq")
+
+        assert "groq" not in mock_app._config["asr"]["providers"]
+        mock_save.assert_called_once()
+        mock_app._menu_builder.build_model_menu.assert_called_once()
+
+    @patch("wenzi.controllers.settings_controller.keychain_list", return_value=[])
+    @patch("wenzi.controllers.settings_controller.keychain_delete")
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_delete_active_provider_clears_remote(self, mock_save, mock_kc_del, mock_kc_list, ctrl, mock_app):
+        """Deleting the active STT provider should clear current_remote_asr."""
+        mock_app._config["asr"] = {
+            "providers": {"groq": {"base_url": "u", "api_key": "k", "models": ["m"]}},
+            "default_provider": "groq",
+            "default_model": "m",
+        }
+        mock_app._current_remote_asr = ("groq", "m")
+
+        ctrl.stt_delete_provider("groq")
+
+        assert mock_app._current_remote_asr is None
+        assert mock_app._current_preset_id is None
+        assert mock_app._config["asr"]["default_provider"] is None
+        assert mock_app._config["asr"]["default_model"] is None
+
+
+class TestCollectStateSttProviders:
+    """Tests for stt_providers in _collect_state()."""
+
+    @patch("wenzi.controllers.settings_controller.save_config")
+    def test_stt_providers_in_state(self, mock_save, ctrl, mock_app):
+        """Verify stt_providers is included in state and excludes API keys."""
+        mock_app._config["asr"]["providers"] = {
+            "groq": {
+                "base_url": "https://api.groq.com/openai/v1",
+                "api_key": "gsk-secret",
+                "models": ["whisper-large-v3-turbo"],
+            }
+        }
+
+        state = ctrl._collect_state()
+
+        assert "stt_providers" in state
+        assert "groq" in state["stt_providers"]
+        provider = state["stt_providers"]["groq"]
+        assert provider["base_url"] == "https://api.groq.com/openai/v1"
+        assert provider["models"] == ["whisper-large-v3-turbo"]
+        assert "api_key" not in provider

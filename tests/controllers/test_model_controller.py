@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 from wenzi.controllers.model_controller import (
@@ -11,6 +11,7 @@ from wenzi.controllers.model_controller import (
     migrate_asr_config,
     parse_asr_provider_text,
     parse_provider_text,
+    validate_provider_name,
     ModelController,
 )
 
@@ -457,54 +458,341 @@ class TestAsrProviderDraft:
         assert os.path.basename(draft_path) == ModelController._ASR_PROVIDER_DRAFT_FILENAME
 
 
-class TestLlmProviderDraft:
-    """Tests for LLM provider draft load/save/remove."""
+# ---------------------------------------------------------------------------
+# validate_provider_name
+# ---------------------------------------------------------------------------
 
-    def test_load_returns_template_when_no_draft_file(self, tmp_path):
-        config_path = str(tmp_path / "config.json")
-        ctrl = _make_controller(config_path)
-        content = ctrl._load_provider_draft()
-        assert content == ModelController._ADD_PROVIDER_TEMPLATE
 
-    def test_save_and_load_draft(self, tmp_path):
-        config_path = str(tmp_path / "config.json")
-        ctrl = _make_controller(config_path)
-        ctrl._save_provider_draft("llm draft content")
-        loaded = ctrl._load_provider_draft()
-        assert loaded == "llm draft content"
+class TestValidateProviderName:
+    """Tests for provider name format validation."""
 
-    def test_load_returns_template_when_draft_is_blank(self, tmp_path):
-        config_path = str(tmp_path / "config.json")
-        ctrl = _make_controller(config_path)
-        ctrl._save_provider_draft("\t\n")
-        content = ctrl._load_provider_draft()
-        assert content == ModelController._ADD_PROVIDER_TEMPLATE
+    def test_valid_names(self):
+        assert validate_provider_name("openai") is None
+        assert validate_provider_name("my-provider") is None
+        assert validate_provider_name("provider_2") is None
+        assert validate_provider_name("DeepSeek") is None
 
-    def test_remove_draft_deletes_file(self, tmp_path):
-        config_path = str(tmp_path / "config.json")
-        ctrl = _make_controller(config_path)
-        ctrl._save_provider_draft("something")
-        draft_path = ctrl._get_provider_draft_path()
-        assert os.path.exists(draft_path)
-        ctrl._remove_provider_draft()
-        assert not os.path.exists(draft_path)
+    def test_empty_name(self):
+        err = validate_provider_name("")
+        assert err is not None
+        assert "required" in err.lower()
 
-    def test_remove_draft_does_not_raise_when_file_missing(self, tmp_path):
-        config_path = str(tmp_path / "config.json")
-        ctrl = _make_controller(config_path)
-        ctrl._remove_provider_draft()
+    def test_spaces(self):
+        err = validate_provider_name("my provider")
+        assert err is not None
 
-    def test_draft_stored_in_same_dir_as_config(self, tmp_path):
-        """Draft file lives in the same directory as the config file."""
-        config_path = str(tmp_path / "WenZi" / "config.json")
-        ctrl = _make_controller(config_path)
-        draft_path = ctrl._get_provider_draft_path()
-        expected_dir = str(tmp_path / "WenZi")
-        assert os.path.dirname(draft_path) == expected_dir
-        assert os.path.basename(draft_path) == ModelController._PROVIDER_DRAFT_FILENAME
+    def test_dots(self):
+        err = validate_provider_name("my.provider")
+        assert err is not None
 
-    def test_asr_and_llm_drafts_use_different_filenames(self, tmp_path):
-        """ASR and LLM drafts must not collide with each other."""
-        config_path = str(tmp_path / "config.json")
-        ctrl = _make_controller(config_path)
-        assert ctrl._get_asr_provider_draft_path() != ctrl._get_provider_draft_path()
+    def test_slashes(self):
+        err = validate_provider_name("my/provider")
+        assert err is not None
+
+    def test_special_chars(self):
+        err = validate_provider_name("provider@home")
+        assert err is not None
+
+
+# ---------------------------------------------------------------------------
+# do_verify_and_save_provider
+# ---------------------------------------------------------------------------
+
+
+def _make_verify_controller():
+    """Create a ModelController with a mocked app for verify/save tests."""
+    app = MagicMock()
+    app._config = {"ai_enhance": {"providers": {}}}
+    app._config_path = "/tmp/test_config.yaml"
+    app._enhancer = MagicMock()
+    app._enhancer.provider_names = []
+    app._enhancer.provider_name = "openai"
+    app._enhancer.model_name = "gpt-4o"
+    app._menu_builder = MagicMock()
+    ctrl = ModelController.__new__(ModelController)
+    ctrl._app = app
+    return ctrl, app
+
+
+class TestDoVerifyAndSaveProvider:
+    """Tests for do_verify_and_save_provider()."""
+
+    @patch("wenzi.controllers.model_controller.save_config_with_secrets")
+    def test_add_success(self, mock_save):
+        ctrl, app = _make_verify_controller()
+        app._enhancer.verify_provider = AsyncMock(return_value=None)
+        app._enhancer.add_provider.return_value = True
+
+        result = ctrl.do_verify_and_save_provider(
+            name="test-provider",
+            base_url="https://api.example.com/v1",
+            api_key="sk-test",
+            models=["model-a"],
+            extra_body={},
+            mode="add",
+        )
+
+        assert result["ok"] is True
+        app._enhancer.add_provider.assert_called_once()
+        mock_save.assert_called_once()
+
+    def test_add_duplicate_name(self):
+        ctrl, app = _make_verify_controller()
+        app._enhancer.provider_names = ["existing"]
+
+        result = ctrl.do_verify_and_save_provider(
+            name="existing",
+            base_url="https://api.example.com/v1",
+            api_key="sk-test",
+            models=["model-a"],
+            extra_body={},
+            mode="add",
+        )
+
+        assert result["ok"] is False
+        assert "already exists" in result["error"]
+
+    def test_invalid_name_format(self):
+        ctrl, app = _make_verify_controller()
+
+        result = ctrl.do_verify_and_save_provider(
+            name="bad name!",
+            base_url="https://api.example.com/v1",
+            api_key="sk-test",
+            models=["model-a"],
+            extra_body={},
+            mode="add",
+        )
+
+        assert result["ok"] is False
+
+    def test_verify_failure(self):
+        ctrl, app = _make_verify_controller()
+        app._enhancer.verify_provider = AsyncMock(return_value="Connection refused")
+
+        result = ctrl.do_verify_and_save_provider(
+            name="test-provider",
+            base_url="https://api.bad.com/v1",
+            api_key="sk-test",
+            models=["model-a"],
+            extra_body={},
+            mode="add",
+        )
+
+        assert result["ok"] is False
+        assert "Connection refused" in result["error"]
+
+    @patch("wenzi.controllers.model_controller.save_config_with_secrets")
+    def test_edit_preserves_key_when_empty(self, mock_save):
+        ctrl, app = _make_verify_controller()
+        app._enhancer.provider_names = ["my-provider"]
+        app._config["ai_enhance"]["providers"] = {
+            "my-provider": {
+                "base_url": "https://old.com/v1",
+                "api_key": "sk-original",
+                "models": ["old-model"],
+            }
+        }
+        app._enhancer.verify_provider = AsyncMock(return_value=None)
+        app._enhancer.remove_provider.return_value = True
+        app._enhancer.add_provider.return_value = True
+
+        result = ctrl.do_verify_and_save_provider(
+            name="my-provider",
+            base_url="https://new.com/v1",
+            api_key="",  # empty = keep existing
+            models=["new-model"],
+            extra_body={},
+            mode="edit",
+        )
+
+        assert result["ok"] is True
+        # verify_provider should be called with old key
+        call_args = app._enhancer.verify_provider.call_args
+        assert call_args[0][1] == "sk-original"  # positional arg for api_key
+
+    @patch("wenzi.controllers.model_controller.save_config_with_secrets")
+    def test_edit_updates_key_when_provided(self, mock_save):
+        ctrl, app = _make_verify_controller()
+        app._enhancer.provider_names = ["my-provider"]
+        app._config["ai_enhance"]["providers"] = {
+            "my-provider": {
+                "base_url": "https://old.com/v1",
+                "api_key": "sk-original",
+                "models": ["old-model"],
+            }
+        }
+        app._enhancer.verify_provider = AsyncMock(return_value=None)
+        app._enhancer.remove_provider.return_value = True
+        app._enhancer.add_provider.return_value = True
+
+        result = ctrl.do_verify_and_save_provider(
+            name="my-provider",
+            base_url="https://new.com/v1",
+            api_key="sk-new-key",
+            models=["new-model"],
+            extra_body={},
+            mode="edit",
+        )
+
+        assert result["ok"] is True
+        call_args = app._enhancer.verify_provider.call_args
+        assert call_args[0][1] == "sk-new-key"
+
+
+# ---------------------------------------------------------------------------
+# do_verify_and_save_stt_provider
+# ---------------------------------------------------------------------------
+
+
+def _make_stt_verify_controller():
+    """Create a ModelController with a mocked app for STT verify/save tests."""
+    app = MagicMock()
+    app._config = {"asr": {"providers": {}}}
+    app._config_path = "/tmp/test_config.yaml"
+    app._config_dir = "/tmp/test_config_dir"
+    app._menu_builder = MagicMock()
+    ctrl = ModelController.__new__(ModelController)
+    ctrl._app = app
+    return ctrl, app
+
+
+class TestDoVerifyAndSaveSttProvider:
+    """Tests for do_verify_and_save_stt_provider()."""
+
+    @patch("wenzi.controllers.model_controller.save_config_with_secrets")
+    @patch("wenzi.transcription.whisper_api.WhisperAPITranscriber")
+    def test_add_success(self, mock_whisper_cls, mock_save):
+        ctrl, app = _make_stt_verify_controller()
+        mock_whisper_cls.verify_provider.return_value = None
+
+        result = ctrl.do_verify_and_save_stt_provider(
+            name="groq",
+            base_url="https://api.groq.com/openai/v1",
+            api_key="gsk-test",
+            models=["whisper-large-v3-turbo"],
+            mode="add",
+        )
+
+        assert result["ok"] is True
+        mock_whisper_cls.verify_provider.assert_called_once_with(
+            "https://api.groq.com/openai/v1", "gsk-test", "whisper-large-v3-turbo"
+        )
+        mock_save.assert_called_once()
+        assert "groq" in app._config["asr"]["providers"]
+        assert app._config["asr"]["providers"]["groq"]["base_url"] == "https://api.groq.com/openai/v1"
+        app._menu_builder.build_model_menu.assert_called_once()
+
+    def test_add_duplicate_name(self):
+        ctrl, app = _make_stt_verify_controller()
+        app._config["asr"]["providers"] = {"existing": {"base_url": "u", "api_key": "k", "models": ["m"]}}
+
+        result = ctrl.do_verify_and_save_stt_provider(
+            name="existing",
+            base_url="https://api.example.com/v1",
+            api_key="gsk-test",
+            models=["model-a"],
+            mode="add",
+        )
+
+        assert result["ok"] is False
+        assert "already exists" in result["error"]
+
+    def test_invalid_name_format(self):
+        ctrl, app = _make_stt_verify_controller()
+
+        result = ctrl.do_verify_and_save_stt_provider(
+            name="bad name!",
+            base_url="https://api.example.com/v1",
+            api_key="gsk-test",
+            models=["model-a"],
+            mode="add",
+        )
+
+        assert result["ok"] is False
+
+    @patch("wenzi.transcription.whisper_api.WhisperAPITranscriber")
+    def test_verify_failure(self, mock_whisper_cls):
+        ctrl, app = _make_stt_verify_controller()
+        mock_whisper_cls.verify_provider.return_value = "Connection refused"
+
+        result = ctrl.do_verify_and_save_stt_provider(
+            name="test-provider",
+            base_url="https://api.bad.com/v1",
+            api_key="gsk-test",
+            models=["model-a"],
+            mode="add",
+        )
+
+        assert result["ok"] is False
+        assert "Connection refused" in result["error"]
+
+    @patch("wenzi.controllers.model_controller.save_config_with_secrets")
+    @patch("wenzi.transcription.whisper_api.WhisperAPITranscriber")
+    def test_edit_preserves_key_when_empty(self, mock_whisper_cls, mock_save):
+        ctrl, app = _make_stt_verify_controller()
+        app._config["asr"]["providers"] = {
+            "groq": {
+                "base_url": "https://old.com/v1",
+                "api_key": "gsk-original",
+                "models": ["old-model"],
+            }
+        }
+        mock_whisper_cls.verify_provider.return_value = None
+
+        result = ctrl.do_verify_and_save_stt_provider(
+            name="groq",
+            base_url="https://new.com/v1",
+            api_key="",  # empty = keep existing
+            models=["new-model"],
+            mode="edit",
+        )
+
+        assert result["ok"] is True
+        mock_whisper_cls.verify_provider.assert_called_once_with(
+            "https://new.com/v1", "gsk-original", "new-model"
+        )
+
+    @patch("wenzi.controllers.model_controller.save_config_with_secrets")
+    @patch("wenzi.transcription.whisper_api.WhisperAPITranscriber")
+    def test_edit_updates_key_when_provided(self, mock_whisper_cls, mock_save):
+        ctrl, app = _make_stt_verify_controller()
+        app._config["asr"]["providers"] = {
+            "groq": {
+                "base_url": "https://old.com/v1",
+                "api_key": "gsk-original",
+                "models": ["old-model"],
+            }
+        }
+        mock_whisper_cls.verify_provider.return_value = None
+
+        result = ctrl.do_verify_and_save_stt_provider(
+            name="groq",
+            base_url="https://new.com/v1",
+            api_key="gsk-new-key",
+            models=["new-model"],
+            mode="edit",
+        )
+
+        assert result["ok"] is True
+        mock_whisper_cls.verify_provider.assert_called_once_with(
+            "https://new.com/v1", "gsk-new-key", "new-model"
+        )
+
+    def test_edit_no_existing_key(self):
+        ctrl, app = _make_stt_verify_controller()
+        app._config["asr"]["providers"] = {
+            "groq": {"base_url": "u", "api_key": "", "models": ["m"]}
+        }
+
+        with patch("wenzi.keychain.keychain_get", return_value=""):
+            result = ctrl.do_verify_and_save_stt_provider(
+                name="groq",
+                base_url="https://new.com/v1",
+                api_key="",
+                models=["new-model"],
+                mode="edit",
+            )
+
+        assert result["ok"] is False
+        assert "No existing API key" in result["error"]
