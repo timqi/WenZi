@@ -683,6 +683,48 @@ class PreviewController:
                     )
                 except Exception as e:
                     logger.error("Failed to log conversation: %s", e)
+
+                # Record correction session if the current mode tracks corrections
+                try:
+                    mode_def = (
+                        app._enhancer.get_mode_definition(app._enhance_mode)
+                        if app._enhancer
+                        else None
+                    )
+                    if mode_def is not None and mode_def.track_corrections:
+                        asr_model = app._current_stt_model()
+                        llm_model = app._current_llm_model()
+                        app_bundle_id = (
+                            self._input_context.bundle_id
+                            if self._input_context is not None
+                            and hasattr(self._input_context, "bundle_id")
+                            else None
+                        )
+                        app._correction_tracker.record(
+                            asr_text=app._current_preview_asr_text,
+                            enhanced_text=result_holder.get("enhanced_text"),
+                            final_text=final_text,
+                            asr_model=asr_model,
+                            llm_model=llm_model,
+                            app_bundle_id=app_bundle_id,
+                            enhance_mode=app._enhance_mode,
+                            audio_duration=getattr(app, "_preview_audio_duration", 0.0),
+                            user_corrected=bool(result_holder.get("user_corrected")),
+                            timestamp=ts,
+                        )
+                        # Mark the conversation history record as correction-tracked
+                        if ts is not None:
+                            try:
+                                app._conversation_history.update_record(
+                                    ts, correction_tracked=True
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    "Failed to set correction_tracked on history record: %s", e
+                                )
+                except Exception as e:
+                    logger.error("Failed to record correction: %s", e)
+
                 action = "copy" if copy_to_clip else "confirm"
                 self._save_to_preview_history(
                     ts, action, result_holder, wav_data,
