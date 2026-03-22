@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import re
 from functools import lru_cache
-from html import escape
 
 COLORS = [
     "#E05252", "#E07B39", "#D4A843", "#5AAE5A", "#43A5A5", "#4A90D9",
@@ -57,7 +56,7 @@ def generate(name: str, size: int = 32) -> str:
     """Generate a data URI for a two-letter avatar SVG from a project name."""
     h = _djb2(name)
     color = COLORS[h % len(COLORS)]
-    initials = escape(_get_initials(name))
+    initials = _get_initials(name)
 
     rx = size * 0.1875
     font_size = size * 0.42

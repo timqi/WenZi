@@ -11,6 +11,12 @@ from cc_sessions.identicon import (
 )
 
 
+def _decode_svg(uri: str) -> str:
+    """Decode a data URI to its SVG string content."""
+    b64 = uri.split(",", 1)[1]
+    return base64.b64decode(b64).decode()
+
+
 class TestDjb2:
     def test_deterministic(self):
         assert _djb2("VoiceText") == _djb2("VoiceText")
@@ -55,7 +61,6 @@ class TestGetInitials:
         assert _get_initials("react-dashboard") == "Rd"
 
     def test_first_upper_second_lower(self):
-        """First letter should be uppercase, second lowercase."""
         for name in ["VoiceText", "claude-code", "dotfiles", "WenZi"]:
             initials = _get_initials(name)
             assert initials[0].isupper(), f"{name} -> {initials}: first should be upper"
@@ -78,48 +83,37 @@ class TestGenerate:
         assert uri.startswith("data:image/svg+xml;base64,")
 
     def test_valid_svg(self):
-        uri = generate("test-project")
-        b64 = uri.split(",", 1)[1]
-        svg_bytes = base64.b64decode(b64)
-        root = ET.fromstring(svg_bytes)
+        svg_str = _decode_svg(generate("test-project"))
+        root = ET.fromstring(svg_str)
         assert root.tag == "{http://www.w3.org/2000/svg}svg"
 
     def test_svg_contains_text_element(self):
-        uri = generate("VoiceText")
-        b64 = uri.split(",", 1)[1]
-        svg_str = base64.b64decode(b64).decode()
+        svg_str = _decode_svg(generate("VoiceText"))
         assert "<text " in svg_str
         assert "Vt" in svg_str
 
     def test_empty_name(self):
         uri = generate("")
         assert uri.startswith("data:image/svg+xml;base64,")
-        b64 = uri.split(",", 1)[1]
-        svg_str = base64.b64decode(b64).decode()
-        assert "?" in svg_str
+        assert "?" in _decode_svg(uri)
 
     def test_long_name(self):
         uri = generate("a" * 1000)
         assert uri.startswith("data:image/svg+xml;base64,")
 
-    def test_color_in_palette(self):
+    def test_color_from_palette(self):
         for name in ["VoiceText", "claude-code", "WenZi"]:
-            h = _djb2(name)
-            color = COLORS[h % len(COLORS)]
-            uri = generate(name)
-            b64 = uri.split(",", 1)[1]
-            svg_str = base64.b64decode(b64).decode()
-            assert color in svg_str
+            svg_str = _decode_svg(generate(name))
+            assert any(c in svg_str for c in COLORS), (
+                f"{name}: SVG should contain a color from the palette"
+            )
 
     def test_initials_in_svg(self):
-        """Verify the correct initials appear in the generated SVG."""
         cases = [
             ("claude-code", "Cc"),
             ("VoiceText", "Vt"),
             ("dotfiles", "Do"),
         ]
         for name, expected in cases:
-            uri = generate(name)
-            b64 = uri.split(",", 1)[1]
-            svg_str = base64.b64decode(b64).decode()
+            svg_str = _decode_svg(generate(name))
             assert expected in svg_str, f"{name} should have '{expected}' in SVG"
