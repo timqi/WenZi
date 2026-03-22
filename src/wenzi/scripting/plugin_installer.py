@@ -12,7 +12,6 @@ from wenzi.scripting.plugin_meta import (
     INSTALL_TOML,
     find_plugin_dir,
     load_install_info,
-    load_plugin_meta,
     read_source,
 )
 
@@ -114,19 +113,8 @@ class PluginInstaller:
                 f.write(file_data)
 
     def _resolve_install_dir(self, plugin_id: str) -> str:
-        raw = plugin_id.rsplit(".", 1)[-1] if "." in plugin_id else plugin_id
-        dir_name = raw.replace("-", "_")
-        install_dir = os.path.join(self._plugins_dir, dir_name)
-        if os.path.isdir(install_dir):
-            existing_meta = load_plugin_meta(install_dir)
-            if existing_meta.id and existing_meta.id != plugin_id:
-                for i in range(2, 100):
-                    install_dir = os.path.join(self._plugins_dir, f"{dir_name}-{i}")
-                    if not os.path.isdir(install_dir):
-                        break
-                else:
-                    raise ValueError(f"Cannot find available directory for {plugin_id}")
-        return install_dir
+        dir_name = plugin_id.replace(".", "_").replace("-", "_")
+        return os.path.join(self._plugins_dir, dir_name)
 
     @staticmethod
     def _escape_toml_string(value: str) -> str:

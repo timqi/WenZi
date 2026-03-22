@@ -130,34 +130,23 @@ class TestInstall:
             for d in os.listdir(plugins_dir)
         )
 
-    def test_install_dir_collision_different_id_gets_suffix(self, plugins_dir, serve_dir, http_server):
-        """If the target dir already exists for a different plugin id, append -2."""
-        # Pre-create a dir named 'myplugin' with a different id
-        existing = os.path.join(plugins_dir, "myplugin")
-        os.makedirs(existing)
-        with open(os.path.join(existing, "plugin.toml"), "w") as f:
-            f.write(
-                '[plugin]\n'
-                'id = "com.other.myplugin"\n'
-                'name = "Other"\n'
-                'version = "1.0.0"\n'
-            )
-
+    def test_install_dir_uses_full_bundle_id(self, plugins_dir, serve_dir, http_server):
+        """Install directory name is derived from the full bundle ID."""
         (serve_dir / "myplugin").mkdir()
+        (serve_dir / "myplugin" / "__init__.py").write_bytes(b"# plugin")
         (serve_dir / "myplugin" / "plugin.toml").write_text(
             '[plugin]\n'
-            'id = "com.example.myplugin"\n'
-            'name = "New Plugin"\n'
+            'id = "com.example.my-plugin"\n'
+            'name = "My Plugin"\n'
             'version = "1.0.0"\n'
-            'files = []\n'
+            'files = ["__init__.py"]\n'
         )
 
         installer = PluginInstaller(plugins_dir)
         install_dir = installer.install(f"{http_server}/myplugin/plugin.toml")
 
-        # Should have installed into myplugin-2
-        assert os.path.basename(install_dir) == "myplugin-2"
-        assert os.path.isdir(install_dir)
+        assert os.path.basename(install_dir) == "com_example_my_plugin"
+        assert os.path.isfile(os.path.join(install_dir, "__init__.py"))
 
 
 # ---------------------------------------------------------------------------
