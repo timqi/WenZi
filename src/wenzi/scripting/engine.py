@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import logging
 import os
+import shutil
 import sys
 import traceback as _tb
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
@@ -767,6 +768,27 @@ class ScriptEngine:
         if not os.path.isdir(self._plugins_dir):
             self._plugin_load_errors = errors
             return
+
+        # Clean up stale temp/backup directories from interrupted installs
+        for entry in os.listdir(self._plugins_dir):
+            entry_path = os.path.join(self._plugins_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            if entry.startswith("_tmp_"):
+                shutil.rmtree(entry_path, ignore_errors=True)
+                logger.info("Removed stale temp dir: %s", entry)
+            elif entry.endswith(".bak"):
+                target = entry_path.removesuffix(".bak")
+                if os.path.isdir(target):
+                    shutil.rmtree(entry_path, ignore_errors=True)
+                    logger.info("Removed stale backup dir: %s", entry)
+                else:
+                    os.rename(entry_path, target)
+                    logger.info(
+                        "Restored backup dir: %s -> %s",
+                        entry,
+                        os.path.basename(target),
+                    )
 
         from wenzi.scripting.plugin_meta import load_plugin_meta
 

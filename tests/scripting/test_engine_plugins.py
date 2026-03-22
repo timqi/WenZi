@@ -454,3 +454,91 @@ class TestDisabledPluginsMigration:
         # Cleanup
         if str(plugins_dir) in sys.path:
             sys.path.remove(str(plugins_dir))
+
+
+class TestStartupCleanup:
+    """Test that _load_plugins cleans up stale temp/backup directories."""
+
+    def test_removes_stale_tmp_dirs(self, tmp_path):
+        """_tmp_ directories are removed before plugin discovery."""
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        stale = plugins_dir / "_tmp_abc123"
+        stale.mkdir()
+        (stale / "somefile.py").write_text("leftover")
+
+        from wenzi.scripting.engine import ScriptEngine
+
+        engine = ScriptEngine(
+            script_dir=str(scripts_dir),
+            plugins_dir=str(plugins_dir),
+        )
+        engine._load_plugins()
+
+        assert not stale.exists()
+
+    def test_restores_orphan_bak(self, tmp_path):
+        """A .bak dir with no matching target is renamed back (crash recovery)."""
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        bak = plugins_dir / "my_plugin.bak"
+        bak.mkdir()
+        (bak / "__init__.py").write_text("def setup(wz): pass\n")
+        (bak / "plugin.toml").write_text(
+            '[plugin]\nid = "com.test.my"\nname = "My"\n'
+        )
+
+        from wenzi.scripting.engine import ScriptEngine
+
+        engine = ScriptEngine(
+            script_dir=str(scripts_dir),
+            plugins_dir=str(plugins_dir),
+        )
+        engine._load_plugins()
+
+        assert not bak.exists()
+        restored = plugins_dir / "my_plugin"
+        assert restored.exists()
+        assert (restored / "__init__.py").exists()
+
+        # Cleanup
+        for name in list(sys.modules):
+            if name.startswith("my_plugin"):
+                del sys.modules[name]
+        if str(plugins_dir) in sys.path:
+            sys.path.remove(str(plugins_dir))
+
+    def test_removes_stale_bak_when_target_exists(self, tmp_path):
+        """A .bak dir is removed if the target directory already exists."""
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        target = plugins_dir / "my_plugin"
+        target.mkdir()
+        (target / "__init__.py").write_text("def setup(wz): pass\n")
+        bak = plugins_dir / "my_plugin.bak"
+        bak.mkdir()
+        (bak / "old_file.py").write_text("stale")
+
+        from wenzi.scripting.engine import ScriptEngine
+
+        engine = ScriptEngine(
+            script_dir=str(scripts_dir),
+            plugins_dir=str(plugins_dir),
+        )
+        engine._load_plugins()
+
+        assert not bak.exists()
+        assert target.exists()
+
+        # Cleanup
+        for name in list(sys.modules):
+            if name.startswith("my_plugin"):
+                del sys.modules[name]
+        if str(plugins_dir) in sys.path:
+            sys.path.remove(str(plugins_dir))
