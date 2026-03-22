@@ -1,5 +1,6 @@
 """Tests for CorrectionTracker: SQLite schema, diff extraction, and record logic."""
 
+import json
 import sqlite3
 
 from wenzi.enhance.correction_tracker import CorrectionTracker, extract_word_pairs
@@ -12,7 +13,7 @@ from wenzi.enhance.correction_tracker import CorrectionTracker, extract_word_pai
 
 def test_init_creates_tables(tmp_path):
     db_path = str(tmp_path / "tracker.db")
-    tracker = CorrectionTracker(db_path=db_path)
+    CorrectionTracker(db_path=db_path)
     conn = sqlite3.connect(db_path)
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     assert "correction_sessions" in tables
@@ -274,8 +275,6 @@ def test_get_llm_vocab_includes_variants(tmp_path):
 # ---------------------------------------------------------------------------
 # Task 6: backfill_from_history()
 # ---------------------------------------------------------------------------
-
-import json
 
 
 def _write_jsonl(path, records):
