@@ -85,9 +85,9 @@ class PluginRegistry:
             return PluginStatus.MANUALLY_PLACED, None
         installed_ver = install_info.get("installed_version", "")
         pinned_ref = install_info.get("pinned_ref", "")
+        if pinned_ref:
+            return PluginStatus.PINNED, installed_ver
         if self._parse_version(installed_ver) < self._parse_version(registry_version):
-            if pinned_ref:
-                return PluginStatus.PINNED, installed_ver
             return PluginStatus.UPDATE_AVAILABLE, installed_ver
         return PluginStatus.INSTALLED, installed_ver
 

@@ -183,7 +183,7 @@ class TestPinnedStatus:
         assert ver == "1.0.0"
 
     def test_pinned_at_latest_version(self, tmp_path):
-        """Pinned plugin at same version as registry -> INSTALLED."""
+        """Pinned plugin at same version as registry -> PINNED (not INSTALLED)."""
         plugins_dir = tmp_path / "plugins"
         d = plugins_dir / "alpha"
         d.mkdir(parents=True)
@@ -196,7 +196,7 @@ class TestPinnedStatus:
         )
         registry = PluginRegistry(plugins_dir=str(plugins_dir))
         status, ver = registry.compute_status("com.test.alpha", "2.0.0", "", "1.0.0")
-        assert status == PluginStatus.INSTALLED
+        assert status == PluginStatus.PINNED
         assert ver == "2.0.0"
 
     def test_non_pinned_still_shows_update(self, tmp_path):
