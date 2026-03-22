@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 class RecordingController:
     """Handles hotkey → recording → transcription → output flow."""
 
+    _RELEASE_WAIT_TIMEOUT = 1.0  # seconds to wait for delayed start to finish
+    _DELAYED_START_SECS = 0.35  # delay before starting recording (sound feedback)
+
     def __init__(self, app: WenZiApp) -> None:
         self._app = app
         self._streaming_active = False
@@ -179,7 +182,7 @@ class RecordingController:
 
         def _delayed_start():
             import time
-            time.sleep(0.35)
+            time.sleep(self._DELAYED_START_SECS)
             try:
                 if not app._busy and not self._cancel_delayed.is_set():
                     self._start_recording_and_update_indicator()
@@ -394,7 +397,7 @@ class RecordingController:
 
         def _delayed_start():
             import time
-            time.sleep(0.35)
+            time.sleep(self._DELAYED_START_SECS)
             try:
                 if not app._busy and not self._cancel_delayed.is_set():
                     self._start_recording_and_update_indicator()
@@ -454,7 +457,7 @@ class RecordingController:
         # true final state — prevents a race where cancel sees
         # is_recording=False while recorder.start() is still blocking,
         # cancels the watchdog, and leaves the recording orphaned.
-        if not app._recording_started.wait(timeout=1.0):  # 1s > 350ms delay + start()
+        if not app._recording_started.wait(timeout=self._RELEASE_WAIT_TIMEOUT):
             self._cancel_recording_watchdog()
             self._reset_to_idle()
             return
@@ -500,7 +503,7 @@ class RecordingController:
             self._release_done = True
         app = self._app
         # Wait for delayed start to finish (if sound feedback caused a delay)
-        if not app._recording_started.wait(timeout=1.0):
+        if not app._recording_started.wait(timeout=self._RELEASE_WAIT_TIMEOUT):
             self._cancel_delayed.set()
             self._reset_to_idle()
             return

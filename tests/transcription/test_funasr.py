@@ -481,7 +481,10 @@ class TestLoaders:
 
     def test_load_vad_failure(self):
         t = FunASRTranscriber()
-        with patch.object(t, "_get_model_dir", side_effect=Exception("vad error")):
+        with patch.dict("sys.modules", {
+            "funasr_onnx": MagicMock(),
+            "funasr_onnx.vad_bin": MagicMock(),
+        }), patch.object(t, "_get_model_dir", side_effect=Exception("vad error")):
             result = t._load_vad()
         assert result is False
         assert t._vad_model is None
