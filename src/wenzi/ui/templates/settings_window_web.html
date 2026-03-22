@@ -1453,13 +1453,13 @@ function renderPluginCard(p) {
   } else if (p.status === 'update_available') {
     actions = '<button class="btn btn-primary" data-id="' + _esc(p.id) + '" onclick="updatePlugin(this.dataset.id)">Update (' + _esc(p.installed_version) + ' \u2192 ' + _esc(p.version) + ')</button>';
     actions += toggleHtml(p.id, p.enabled);
-    actions += '<button class="btn btn-danger" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id, event)" class="uninstall-btn">Uninstall</button>';
+    actions += '<button class="btn btn-danger uninstall-btn" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id, event)">Uninstall</button>';
   } else if (p.status === 'installed') {
     actions += toggleHtml(p.id, p.enabled);
-    actions += '<button class="btn btn-danger" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id, event)" class="uninstall-btn">Uninstall</button>';
+    actions += '<button class="btn btn-danger uninstall-btn" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id, event)">Uninstall</button>';
   } else if (p.status === 'pinned') {
     actions += toggleHtml(p.id, p.enabled);
-    actions += '<button class="btn btn-danger" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id, event)" class="uninstall-btn">Uninstall</button>';
+    actions += '<button class="btn btn-danger uninstall-btn" data-id="' + _esc(p.id) + '" onclick="uninstallPlugin(this.dataset.id, event)">Uninstall</button>';
   } else if (p.status === 'manually_placed') {
     actions += toggleHtml(p.id, p.enabled);
   }
