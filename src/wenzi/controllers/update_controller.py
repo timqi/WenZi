@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from wenzi.app import WenZiApp
     from wenzi.updater import AppUpdater
 
+from wenzi import get_version
 from wenzi.i18n import t
 from wenzi.statusbar import StatusMenuItem
 
@@ -80,13 +81,6 @@ def _fetch_latest_release() -> Optional[dict[str, Any]]:
     except Exception as exc:
         logger.debug("Update check failed: %s", exc)
         return None
-
-
-def _get_current_version() -> str:
-    """Return the current app version, honoring WENZI_DEV_VERSION env var."""
-    from wenzi import __version__
-
-    return os.environ.get("WENZI_DEV_VERSION") or __version__
 
 
 def _find_dmg_url(release_data: dict) -> Optional[str]:
@@ -170,7 +164,7 @@ class UpdateController:
             AppUpdater.cleanup_staged_app()
             return False
 
-        current = _get_current_version()
+        current = get_version()
         if not _is_newer(staged_version, current):
             logger.info(
                 "Staged app %s is not newer than current %s, removing",
@@ -224,7 +218,7 @@ class UpdateController:
     def _check_update(self) -> None:
         """Perform the update check (runs in a background thread)."""
         try:
-            current = _get_current_version()
+            current = get_version()
             if current == "dev":
                 logger.debug("Skipping update check in dev mode")
                 return

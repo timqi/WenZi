@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from wenzi.app import WenZiApp
 
+from wenzi import get_version
 from wenzi.config import BUILTIN_REGISTRY_URL, save_config
 from wenzi.enhance.enhancer import MODE_OFF
 from wenzi.i18n import t
@@ -1295,9 +1296,7 @@ class SettingsController:
         def _fetch():
             try:
                 extra = app._config.get("plugins", {}).get("extra_registries", [])
-                import wenzi
-
-                current_ver = getattr(wenzi, "__version__", "dev")
+                current_ver = get_version()
                 infos = self._plugin_registry.merge_registries(
                     official_source=BUILTIN_REGISTRY_URL,
                     extra_sources=extra,
@@ -1437,7 +1436,7 @@ class SettingsController:
                 info.meta.id,
                 info.meta.version,
                 info.meta.min_wenzi_version,
-                self._current_wenzi_version(),
+                get_version(),
                 local_index,
             )
             info.status = status
@@ -1457,9 +1456,6 @@ class SettingsController:
         plugins_data = self._plugin_infos_to_state(self._last_plugin_infos)
         self._app._settings_panel.update_state({"plugins": plugins_data})
 
-    def _current_wenzi_version(self) -> str:
-        import wenzi
-        return getattr(wenzi, "__version__", "dev")
 
     def _on_registry_add(self, url: str) -> None:
         """Add an extra plugin registry URL."""
