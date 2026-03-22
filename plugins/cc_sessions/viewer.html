@@ -605,6 +605,7 @@ const TOOL_META = {
   Edit:       { icon: "\u270F\uFE0F",  css: "tool-edit",  mergeable: true },
   Bash:       { icon: "\u25B6\uFE0F",  css: "tool-bash",  mergeable: false },
   Write:      { icon: "\u{1F4DD}", css: "tool-write", mergeable: false },
+  Agent:      { icon: "\u{1F916}", css: "tool-other", mergeable: false },
 };
 
 function getToolMeta(name) {
@@ -620,6 +621,7 @@ function toolDetail(name, input) {
   if (name === "Edit" && input.file_path) return basename(input.file_path);
   if (name === "Write" && input.file_path) return basename(input.file_path);
   if (name === "Bash" && input.command) return truncate(input.command, 60);
+  if (name === "Agent" && input.description) return truncate(input.description, 60);
   // Generic fallback
   const first = Object.values(input)[0];
   return typeof first === "string" ? truncate(first, 50) : "";
