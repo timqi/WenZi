@@ -218,7 +218,8 @@ class TestChooserSource:
         assert cs.name == "calculator"
         assert cs.prefix is None
         assert cs.priority == 12
-        assert cs.action_hints == {"enter": "Paste", "cmd_enter": "Copy"}
+        assert "enter" in cs.action_hints
+        assert "cmd_enter" in cs.action_hints
 
     def test_search_callable(self, calc):
         cs = calc.as_chooser_source()

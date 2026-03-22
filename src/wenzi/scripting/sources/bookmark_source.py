@@ -537,13 +537,16 @@ class BookmarkSource:
 
     def as_chooser_source(self, prefix: str = "bm") -> ChooserSource:
         """Return a ChooserSource wrapping this BookmarkSource."""
+        from wenzi.i18n import t
+
         return ChooserSource(
             name="bookmarks",
+            display_name=t("chooser.source.bookmarks"),
             prefix=prefix,
             search=self.search,
             priority=5,
             description="Search bookmarks",
             action_hints={
-                "enter": "Open",
+                "enter": t("chooser.action.open"),
             },
         )

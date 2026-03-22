@@ -1127,7 +1127,10 @@ class ChooserPanel:
         hints = []
         for src in self._sources.values():
             if src.prefix:
-                hints.append(f"{src.prefix} {src.name}")
+                hints.append({
+                    "prefix": src.prefix,
+                    "label": src.display_name or src.name,
+                })
         self._eval_js(
             f"setPrefixHints({json.dumps(hints, ensure_ascii=False)})"
         )

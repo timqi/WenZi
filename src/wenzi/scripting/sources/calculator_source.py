@@ -181,6 +181,8 @@ class CalculatorSource:
         return []
 
     def as_chooser_source(self) -> ChooserSource:
+        from wenzi.i18n import t
+
         return ChooserSource(
             name="calculator",
             prefix=None,
@@ -188,8 +190,8 @@ class CalculatorSource:
             priority=12,
             description="Calculator & unit conversion",
             action_hints={
-                "enter": "Paste",
-                "cmd_enter": "Copy",
+                "enter": t("chooser.action.paste"),
+                "cmd_enter": t("chooser.action.copy"),
             },
         )
 

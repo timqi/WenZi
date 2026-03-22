@@ -299,7 +299,8 @@ class TestAsChooserSource:
         assert prefixed[0].prefix == "ss"
         assert prefixed[0].name == "system_settings"
         assert prefixed[0].search is not None
-        assert prefixed[0].action_hints == {"enter": "Open", "cmd_enter": "Copy URL"}
+        assert "enter" in prefixed[0].action_hints
+        assert "cmd_enter" in prefixed[0].action_hints
         assert prefixed[0].description
 
     def test_unprefixed_source(self, tmp_path):

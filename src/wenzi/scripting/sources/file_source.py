@@ -301,16 +301,19 @@ class FileSource:
 
     def as_chooser_source(self, prefix: str = "f") -> ChooserSource:
         """Return a ChooserSource wrapping this FileSource."""
+        from wenzi.i18n import t
+
         return ChooserSource(
             name="files",
+            display_name=t("chooser.source.files"),
             prefix=prefix,
             search=self.search,
             priority=3,
             description="Search files",
             action_hints={
-                "enter": "Open",
-                "cmd_enter": "Reveal",
-                "shift": "Preview",
+                "enter": t("chooser.action.open"),
+                "cmd_enter": t("chooser.action.reveal"),
+                "shift": t("chooser.action.preview"),
             },
         )
 
@@ -386,16 +389,19 @@ class FolderSource:
 
     def as_chooser_source(self, prefix: str = "fd") -> ChooserSource:
         """Return a ChooserSource wrapping this FolderSource."""
+        from wenzi.i18n import t
+
         return ChooserSource(
             name="folders",
+            display_name=t("chooser.source.folders"),
             prefix=prefix,
             search=self.search,
             priority=3,
             description="Search folders",
             action_hints={
-                "enter": "Open",
-                "cmd_enter": "Reveal",
-                "shift": "Preview",
+                "enter": t("chooser.action.open"),
+                "cmd_enter": t("chooser.action.reveal"),
+                "shift": t("chooser.action.preview"),
             },
         )
 

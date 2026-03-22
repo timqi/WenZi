@@ -85,6 +85,7 @@ class ChooserSource:
     """
 
     name: str
+    display_name: Optional[str] = None  # Localized label for UI (prefix hints)
     prefix: Optional[str] = None
     search: Callable[[str], List[ChooserItem]] = field(default=None, repr=False)
     priority: int = 0  # Higher values appear first

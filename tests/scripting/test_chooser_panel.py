@@ -401,7 +401,8 @@ class TestPrefixHints:
         panel._push_prefix_hints_to_js()
         call_args = panel._eval_js.call_args[0][0]
         assert "setPrefixHints" in call_args
-        assert "cb clipboard" in call_args
+        assert '"prefix": "cb"' in call_args
+        assert '"label": "clipboard"' in call_args
 
     def test_no_prefix_sources(self):
         panel = _make_panel()

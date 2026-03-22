@@ -149,28 +149,33 @@ class CommandSource:
 
     def as_chooser_source(self) -> ChooserSource:
         """Return a :class:`ChooserSource` wired to this command registry."""
+        from wenzi.i18n import t
+
         return ChooserSource(
             name="commands",
+            display_name=t("chooser.source.commands"),
             prefix=COMMAND_PREFIX,
             search=self.search,
             complete=self.complete,
             priority=8,
             description="Command palette",
             action_hints={
-                "enter": "Run",
-                "tab": "Complete",
+                "enter": t("chooser.action.run"),
+                "tab": t("chooser.action.complete"),
             },
         )
 
     def as_promoted_chooser_source(self) -> ChooserSource:
         """Return an unprefixed :class:`ChooserSource` for promoted commands."""
+        from wenzi.i18n import t
+
         return ChooserSource(
             name="commands-promoted",
             prefix=None,
             search=self.promoted_search,
             priority=6,
             action_hints={
-                "enter": "Run",
+                "enter": t("chooser.action.run"),
             },
         )
 

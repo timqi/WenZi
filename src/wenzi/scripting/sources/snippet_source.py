@@ -839,17 +839,20 @@ class SnippetSource:
 
     def as_chooser_source(self, prefix: str = "sn") -> ChooserSource:
         """Return a ChooserSource wrapping this SnippetSource."""
+        from wenzi.i18n import t
+
         return ChooserSource(
             name="snippets",
+            display_name=t("chooser.source.snippets"),
             prefix=prefix,
             search=self.search,
             priority=3,
             description="Text snippets",
             action_hints={
-                "enter": "Paste",
-                "cmd_enter": "Copy",
-                "alt_enter": "Edit",
-                "delete": "Delete",
+                "enter": t("chooser.action.paste"),
+                "cmd_enter": t("chooser.action.copy"),
+                "alt_enter": t("chooser.action.edit"),
+                "delete": t("chooser.action.delete"),
             },
             show_preview=True,
             create_action=self.create_snippet,

@@ -405,7 +405,7 @@ class TestAltModifier:
         source = ClipboardSource(monitor)
         cs = source.as_chooser_source()
         assert cs.action_hints is not None
-        assert cs.action_hints.get("alt_enter") == "Edit"
+        assert "alt_enter" in cs.action_hints
 
 
 class TestMaxResults:

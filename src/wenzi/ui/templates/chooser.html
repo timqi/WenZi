@@ -846,8 +846,7 @@ function setPrefixHints(hints) {
     prefixHints = hints || [];
     if (hints.length > 0) {
         footerRight.innerHTML = hints.map(function(h) {
-            var parts = h.split(' ', 2);
-            return '<kbd>' + parts[0] + '</kbd> ' + (parts[1] || '');
+            return _hint(h.prefix, h.label || '');
         }).join('  ');
     } else {
         footerRight.innerHTML = '';
@@ -921,27 +920,31 @@ function clearActionHints() {
     footerLeft.innerHTML = '';
 }
 
+function _hint(kbd, label) {
+    return '<span style="white-space:nowrap"><kbd>' + kbd + '</kbd> ' + label + '</span>';
+}
+
 function setActionHints(hints) {
-    var parts = ['<kbd>\u2191\u2193</kbd> ' + i18n('footer.navigate')];
+    var parts = [_hint('\u2191\u2193', i18n('footer.navigate'))];
     if (hints.enter) {
-        parts.push('<kbd>\u21b5</kbd> ' + hints.enter);
+        parts.push(_hint('\u21b5', hints.enter));
     }
     if (hints.cmd_enter) {
-        parts.push('<kbd>\u2318\u21b5</kbd> ' + hints.cmd_enter);
+        parts.push(_hint('\u2318\u21b5', hints.cmd_enter));
     }
     if (hints.alt_enter) {
-        parts.push('<kbd>\u2325\u21b5</kbd> ' + hints.alt_enter);
+        parts.push(_hint('\u2325\u21b5', hints.alt_enter));
     }
     if (hints['delete']) {
-        parts.push('<kbd>\u2318\u232b</kbd> ' + hints['delete']);
+        parts.push(_hint('\u2318\u232b', hints['delete']));
     }
     if (hints.shift) {
-        parts.push('<kbd>\u21e7</kbd> ' + hints.shift);
+        parts.push(_hint('\u21e7', hints.shift));
     }
     if (hints.tab) {
-        parts.push('<kbd>\u21e5</kbd> ' + hints.tab);
+        parts.push(_hint('\u21e5', hints.tab));
     }
-    parts.push('<kbd>Esc</kbd> ' + i18n('footer.close'));
+    parts.push(_hint('Esc', i18n('footer.close')));
     footerLeft.innerHTML = parts.join('  ');
 }
 

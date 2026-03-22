@@ -134,7 +134,7 @@ class TestFileSource:
         assert cs.prefix == "f"
         assert cs.priority == 3
         assert cs.search is not None
-        assert cs.action_hints["shift"] == "Preview"
+        assert "shift" in cs.action_hints
 
     def test_preview_is_path_type(self, tmp_path):
         with patch(
@@ -187,7 +187,7 @@ class TestFolderSource:
         assert cs.name == "folders"
         assert cs.prefix == "fd"
         assert cs.priority == 3
-        assert cs.action_hints["shift"] == "Preview"
+        assert "shift" in cs.action_hints
 
     def test_folder_icon_cache_hit(self, tmp_path):
         """Cached folder icon should return file:// URL."""

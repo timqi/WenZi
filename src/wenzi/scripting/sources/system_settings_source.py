@@ -433,15 +433,21 @@ class SystemSettingsSource:
 
     def as_chooser_source(self, prefix: str = "ss") -> list:
         """Return two ChooserSource instances: prefixed + unprefixed."""
+        from wenzi.i18n import t
+
         ChooserSource = self._ChooserSource
         return [
             ChooserSource(
                 name="system_settings",
+                display_name=t("chooser.source.system_settings"),
                 prefix=prefix,
                 search=self.search,
                 priority=5,
                 description="Search macOS System Settings",
-                action_hints={"enter": "Open", "cmd_enter": "Copy URL"},
+                action_hints={
+                    "enter": t("chooser.action.open"),
+                    "cmd_enter": t("chooser.action.copy_url"),
+                },
             ),
             ChooserSource(
                 name="system_settings_mixed",

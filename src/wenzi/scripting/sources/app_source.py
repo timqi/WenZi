@@ -354,14 +354,17 @@ class AppSource:
 
     def as_chooser_source(self) -> ChooserSource:
         """Return a ChooserSource wrapping this AppSource."""
+        from wenzi.i18n import t
+
         return ChooserSource(
             name="apps",
+            display_name=t("chooser.source.apps"),
             prefix=None,
             search=self.search,
             priority=10,
             description="Search applications",
             action_hints={
-                "enter": "Launch",
-                "cmd_enter": "Reveal",
+                "enter": t("chooser.action.launch"),
+                "cmd_enter": t("chooser.action.reveal"),
             },
         )

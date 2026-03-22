@@ -330,17 +330,20 @@ class ClipboardSource:
 
     def as_chooser_source(self, prefix: str = "cb") -> ChooserSource:
         """Return a ChooserSource wrapping this ClipboardSource."""
+        from wenzi.i18n import t
+
         return ChooserSource(
             name="clipboard",
+            display_name=t("chooser.source.clipboard"),
             prefix=prefix,
             search=self.search,
             priority=5,
             description="Clipboard history",
             action_hints={
-                "enter": "Paste",
-                "cmd_enter": "Copy",
-                "alt_enter": "Edit",
-                "delete": "Delete",
+                "enter": t("chooser.action.paste"),
+                "cmd_enter": t("chooser.action.copy"),
+                "alt_enter": t("chooser.action.edit"),
+                "delete": t("chooser.action.delete"),
             },
             show_preview=True,
         )
