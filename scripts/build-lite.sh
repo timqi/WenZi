@@ -28,7 +28,7 @@ cd "$PROJECT_DIR"
 
 echo "==> Setting up Lite venv..."
 test -d .venv-lite || uv venv .venv-lite
-UV_PROJECT_ENVIRONMENT=.venv-lite uv sync
+UV_PROJECT_ENVIRONMENT=.venv-lite uv sync --group dev
 
 echo "==> Cleaning previous build..."
 rm -rf build dist
