@@ -27,6 +27,7 @@ class RecordingController:
     def __init__(self, app: WenZiApp) -> None:
         self._app = app
         self._streaming_active = False
+        self._streaming_lock = threading.Lock()  # protects _streaming_active check-then-act
         self._live_overlay = None
         self._prefer_mode: Optional[str] = None
         # Saved state for restoring after a per-hotkey mode override
@@ -38,6 +39,9 @@ class RecordingController:
         # Guard against watchdog + normal release racing into on_hotkey_release
         self._release_lock = threading.Lock()
         self._release_done = False
+        # Monotonic token so a late-finishing background thread does not
+        # clear _busy that was set by a newer recording session.
+        self._busy_token: int = 0
         self._input_context = None
         self._delayed_thread: threading.Thread | None = None
 
@@ -45,6 +49,17 @@ class RecordingController:
     def input_context(self):
         """The input context captured at the last hotkey press."""
         return self._input_context
+
+    def _claim_busy(self) -> int:
+        """Set ``_busy`` and return a monotonic token for ``_release_busy``."""
+        self._busy_token += 1
+        self._app._busy = True
+        return self._busy_token
+
+    def _release_busy(self, token: int) -> None:
+        """Clear ``_busy`` only if no newer session has claimed it."""
+        if self._busy_token == token:
+            self._app._busy = False
 
     def _fire_scripting_event(self, event_name: str, **kwargs) -> None:
         """Fire a scripting event if the script engine is available."""
@@ -367,15 +382,16 @@ class RecordingController:
 
     def on_restart_recording(self) -> None:
         """Called when restart key (space) is pressed during recording."""
+        app = self._app
         with self._release_lock:
             self._release_done = False
-        app = self._app
-        if not app._recorder.is_recording:
-            return
-        # Only cancel the watchdog after confirming recording is active,
-        # so a restart during the sound-feedback delay doesn't orphan the
-        # watchdog while recorder.start() is still in progress.
-        self._cancel_recording_watchdog()
+            # Cancel watchdog while holding the lock so it cannot fire
+            # on_hotkey_release between the cancel and the _release_done
+            # reset.  Only cancel when actually recording — otherwise the
+            # watchdog must survive to guard the pending delayed_start.
+            if not app._recorder.is_recording:
+                return
+            self._cancel_recording_watchdog()
         logger.info("Restart key pressed, restarting recording")
 
         # Stop streaming if active
@@ -431,14 +447,13 @@ class RecordingController:
     def _stop_streaming_if_active(self, context: str = "") -> None:
         """Stop streaming transcription if active, clear callback, reset flag.
 
-        Thread-safe: clears ``_streaming_active`` before calling
-        ``stop_streaming()`` so a concurrent caller will see ``False`` and
-        skip.
+        Thread-safe: acquires ``_streaming_lock`` to make the
+        check-then-clear atomic, so concurrent callers cannot both enter.
         """
-        if not self._streaming_active:
-            return
-        # Clear flag first — prevents a concurrent thread from also entering.
-        self._streaming_active = False
+        with self._streaming_lock:
+            if not self._streaming_active:
+                return
+            self._streaming_active = False
         self._app._recorder.clear_on_audio_chunk()
         try:
             self._app._transcriber.stop_streaming()
@@ -517,8 +532,9 @@ class RecordingController:
 
         # Capture and clear streaming flag atomically to prevent the orphan
         # cleanup in _delayed_start from also calling stop_streaming().
-        streaming_active = self._streaming_active
-        self._streaming_active = False
+        with self._streaming_lock:
+            streaming_active = self._streaming_active
+            self._streaming_active = False
 
         # Disconnect audio chunk callback before stopping recorder
         app._recorder.clear_on_audio_chunk()
@@ -545,7 +561,7 @@ class RecordingController:
                 animate=app._preview_enabled or use_enhance
             )
 
-            app._busy = True
+            busy_token = self._claim_busy()
 
             def _do_streaming_stop():
                 from PyObjCTools import AppHelper
@@ -573,7 +589,7 @@ class RecordingController:
                     AppHelper.callAfter(app._recording_indicator.hide)
                     app._set_status("statusbar.status.error")
                 finally:
-                    app._busy = False
+                    self._release_busy(busy_token)
 
             threading.Thread(target=_do_streaming_stop, daemon=True).start()
             return
@@ -589,7 +605,7 @@ class RecordingController:
         # (which is now shown immediately after recording ends)
         self.stop_recording_indicator(animate=True)
 
-        app._busy = True
+        busy_token = self._claim_busy()
 
         if app._preview_enabled:
             app._set_status("statusbar.status.transcribing")
@@ -605,7 +621,7 @@ class RecordingController:
                 except Exception as e:
                     logger.error("Preview transcription failed: %s", e)
                     app._set_status("statusbar.status.error")
-                    app._busy = False
+                    self._release_busy(busy_token)
 
             threading.Thread(target=_do_preview, daemon=True).start()
         else:
@@ -619,7 +635,7 @@ class RecordingController:
             from PyObjCTools import AppHelper
 
             def _on_esc_cancel():
-                app._busy = False
+                self._release_busy(busy_token)
                 app._set_status("statusbar.status.ready")
 
             def _show_direct_overlay():
@@ -672,10 +688,8 @@ class RecordingController:
                     )
                     restore_accessory()
                 finally:
-                    # Only reset _busy if not cancelled — on_cancel already
-                    # reset it, and a new recording may have started since.
                     if not direct_cancel.is_set():
-                        app._busy = False
+                        self._release_busy(busy_token)
 
             threading.Thread(target=_do_transcribe, daemon=True).start()
 
@@ -693,7 +707,8 @@ class RecordingController:
 
             app._transcriber.start_streaming(_on_partial)
             app._recorder.set_on_audio_chunk(app._transcriber.feed_audio)
-            self._streaming_active = True
+            with self._streaming_lock:
+                self._streaming_active = True
 
             # Activate the overlay (already shown in faded state),
             # or show it now if it wasn't pre-created.
@@ -704,7 +719,8 @@ class RecordingController:
             logger.info("Streaming transcription started")
         except Exception:
             logger.exception("Failed to start streaming, will use batch mode")
-            self._streaming_active = False
+            with self._streaming_lock:
+                self._streaming_active = False
 
     def _show_live_overlay(self, active: bool = True) -> None:
         """Show the live transcription overlay (must be called on main thread).

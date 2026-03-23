@@ -215,7 +215,9 @@ def _type_via_clipboard(payload: str) -> bool:
             def _restore():
                 time.sleep(1.0)
                 try:
-                    _set_pasteboard_string(old_clip)
+                    # Use concealed markers so clipboard monitors skip
+                    # this restore and don't record a ghost entry.
+                    _set_pasteboard_concealed(old_clip)
                 except Exception:
                     pass
             threading.Thread(target=_restore, daemon=True).start()
