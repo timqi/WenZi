@@ -101,15 +101,9 @@ def register(wz):
         text = data.get("asr_text", "")
         await asyncio.sleep(0.1)
         logger.info("[async-demo] transcription_done: %s", text[:50])
-        wz.notify("Async Event", f"transcription_done: {text[:50]}", sound=_rand_sound())
+        wz.notify("Async Event", f"transcription_done: {text[:50]}", sound=None)
 
-    @wz.chooser.command("async-event", title="Async Event", subtitle="Verify async event listener is registered")
-    def cmd_event(args):
-        wz.notify(
-            "Async Event",
-            "async on('transcription_done') handler is active. "
-            "Dictate something to trigger it.",
-        )
+
 
     @wz.chooser.command("async-concurrent", title="Async Concurrent", subtitle="Run multiple async tasks in parallel")
     async def cmd_concurrent(args):

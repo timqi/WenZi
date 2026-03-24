@@ -38,7 +38,7 @@ class TestAsyncDemoRegistration:
         cs = wz.chooser._command_source
         expected = [
             "async-sleep", "async-fetch", "async-timer",
-            "async-event", "async-concurrent", "async-error",
+            "async-concurrent", "async-error",
             "async-run", "async-pick",
         ]
         for name in expected:
