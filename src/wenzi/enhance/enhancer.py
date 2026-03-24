@@ -23,6 +23,7 @@ from .mode_loader import (
     load_modes,
 )
 from .conversation_history import ConversationHistory
+from .pool_monitor import PoolMonitor
 from .repetition import detect_repetition, truncate_repeated
 from .vocabulary import VocabularyIndex
 
@@ -309,6 +310,11 @@ class TextEnhancer:
             if self._active_model not in models and models:
                 self._active_model = models[0]
 
+        # Connection pool monitor
+        self._pool_monitor = PoolMonitor(self._providers, self._providers_config)
+        if self._providers:
+            self._pool_monitor.start_periodic(interval=60.0)
+
     def _init_providers(self) -> None:
         """Initialize all configured providers."""
         for name, pcfg in self._providers_config.items():
@@ -341,6 +347,8 @@ class TextEnhancer:
         This is a teardown method — after calling close(), the enhancer
         can no longer make API calls. Only call during application shutdown.
         """
+        self._pool_monitor.stop_periodic()
+        self._pool_monitor.log_stats("shutdown")
         for name, (client, _, _) in list(self._providers.items()):
             try:
                 await client.close()
@@ -1011,10 +1019,12 @@ class TextEnhancer:
             kwargs = self._build_request_kwargs(text, system_content)
             client, _, _ = self._providers[self._active_provider]
 
+            self._pool_monitor.log_stats("enhance:before_request", self._active_provider)
             response = await asyncio.wait_for(
                 client.chat.completions.create(**kwargs),
                 timeout=self._timeout,
             )
+            self._pool_monitor.log_stats("enhance:after_response", self._active_provider)
             enhanced = response.choices[0].message.content
             if enhanced:
                 enhanced = strip_think_tags(enhanced)
@@ -1040,6 +1050,7 @@ class TextEnhancer:
                 logger.warning("LLM returned empty text, using original")
                 return text, usage
         except asyncio.TimeoutError:
+            self._pool_monitor.log_stats("enhance:timeout", self._active_provider)
             logger.error("AI enhancement timed out after %ds", self._timeout)
             return text, None
         except Exception as e:
@@ -1082,6 +1093,7 @@ class TextEnhancer:
             # Retry loop for initial connection
             last_error = None
             stream = None
+            self._pool_monitor.log_stats("stream:before_create", self._active_provider)
             for attempt in range(1 + self._max_retries):
                 if attempt > 0:
                     yield (
@@ -1099,6 +1111,7 @@ class TextEnhancer:
                         client.chat.completions.create(**kwargs),
                         timeout=self._connection_timeout,
                     )
+                    self._pool_monitor.log_stats("stream:after_create", self._active_provider)
                     break  # Connection succeeded
                 except asyncio.TimeoutError:
                     last_error = (
@@ -1170,6 +1183,7 @@ class TextEnhancer:
                         logger.debug("LLM stream closed")
                     except Exception:
                         pass
+                self._pool_monitor.log_stats("stream:after_close", self._active_provider)
 
             full_text = "".join(collected).strip()
             if repetition_aborted:
@@ -1187,9 +1201,11 @@ class TextEnhancer:
                 yield "", usage, False
 
         except asyncio.TimeoutError:
+            self._pool_monitor.log_stats("stream:timeout", self._active_provider)
             logger.error("AI stream enhancement timed out after %ds", self._timeout)
             yield text, None, False
         except Exception as e:
+            self._pool_monitor.log_stats("stream:error", self._active_provider)
             logger.error("AI stream enhancement failed: %s", e)
             yield f"(error: {e})", None, False
 
