@@ -1048,7 +1048,7 @@ function setupAutoReload() {
 async function loadSession(info) {
   // Update info bar
   if (info.title) {
-    const t = info.title.length > 20 ? info.title.slice(0, 20) + "…" : info.title;
+    const t = info.title.length > 60 ? info.title.slice(0, 60) + "…" : info.title;
     document.getElementById("titlebar-title").textContent = t;
   }
   if (info.project) document.getElementById("info-project").textContent = info.project;
