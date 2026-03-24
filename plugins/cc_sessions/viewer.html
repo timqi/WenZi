@@ -1050,6 +1050,14 @@ async function loadSession(info) {
   await resolveSubagents(messages, info);
   renderConversation(messages);
   renderStats(messages);
+
+  // Auto-scroll to bottom if session was active within the last minute
+  const lastMsg = messages[messages.length - 1];
+  const lastTs = lastMsg?.timestamp;
+  if (lastTs && (Date.now() - new Date(lastTs).getTime()) < 60000) {
+    const c = document.getElementById("conversation");
+    c.scrollTop = c.scrollHeight;
+  }
 }
 
 // ── Main render ──
