@@ -168,6 +168,77 @@ class TestStreamingOverlayPanel:
         panel.close()
         panel.set_status("done")
 
+    def test_enter_handler_calls_on_confirm_asr(self, _mock_appkit):
+        """Enter should invoke on_confirm_asr callback."""
+        mock_appkit_mod = _mock_appkit.appkit
+        panel = _make_panel()
+        on_confirm_asr = MagicMock()
+
+        handler = None
+
+        def capture_handler(mask, h):
+            nonlocal handler
+            handler = h
+            return MagicMock()
+
+        mock_appkit_mod.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_ = (
+            capture_handler
+        )
+
+        panel.show(asr_text="test", on_confirm_asr=on_confirm_asr)
+        assert handler is not None
+
+        mock_event = MagicMock()
+        mock_event.keyCode.return_value = 36  # Enter/Return
+        handler(mock_event)
+        on_confirm_asr.assert_called_once()
+
+    def test_enter_does_not_close_overlay(self, _mock_appkit):
+        """Enter should NOT close the overlay (caller handles closing)."""
+        mock_appkit_mod = _mock_appkit.appkit
+        panel = _make_panel()
+
+        handler = None
+
+        def capture_handler(mask, h):
+            nonlocal handler
+            handler = h
+            return MagicMock()
+
+        mock_appkit_mod.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_ = (
+            capture_handler
+        )
+
+        panel.show(asr_text="test", on_confirm_asr=MagicMock())
+        assert handler is not None
+
+        mock_event = MagicMock()
+        mock_event.keyCode.return_value = 36
+        handler(mock_event)
+        # Panel should still be open
+        assert panel._panel is not None
+
+    def test_enter_without_callback_no_crash(self, _mock_appkit):
+        """Enter without on_confirm_asr should not crash."""
+        mock_appkit_mod = _mock_appkit.appkit
+        panel = _make_panel()
+
+        handler = None
+
+        def capture_handler(mask, h):
+            nonlocal handler
+            handler = h
+            return MagicMock()
+
+        mock_appkit_mod.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_ = (
+            capture_handler
+        )
+
+        panel.show(asr_text="test")
+        mock_event = MagicMock()
+        mock_event.keyCode.return_value = 36
+        handler(mock_event)  # Should not raise
+
     def test_show_without_cancel_event(self, _mock_appkit):
         panel = _make_panel()
         panel.show(asr_text="test")

@@ -22,8 +22,9 @@ _PANEL_HEIGHT = 200
 _CORNER_RADIUS = 10
 _SCREEN_MARGIN = 20
 
-# ESC key code
+# Key codes
 _ESC_KEY_CODE = 53
+_RETURN_KEY_CODE = 36
 
 # Delayed close
 _CLOSE_DELAY = 1.0
@@ -74,6 +75,7 @@ class StreamingOverlayPanel:
         self._esc_monitor: object = None
         self._cancel_event: Optional[threading.Event] = None
         self._on_cancel: object = None
+        self._on_confirm_asr: object = None
         self._loading_timer: object = None
         self._loading_seconds: int = 0
         self._llm_info: str = ""
@@ -123,12 +125,14 @@ class StreamingOverlayPanel:
         stt_info: str = "",
         llm_info: str = "",
         on_cancel: object = None,
+        on_confirm_asr: object = None,
     ) -> None:
         """Create and show the overlay panel. Must be called on main thread.
 
         Args:
-            on_cancel: Optional callback invoked immediately when ESC is
-                pressed, before the overlay closes. Runs on the main thread.
+            on_cancel: Optional callback invoked when ESC is pressed.
+            on_confirm_asr: Optional callback invoked when Enter is pressed
+                (skip enhancement, output ASR text directly).
         """
         try:
             from AppKit import NSColor, NSPanel, NSScreen, NSStatusWindowLevel
@@ -140,6 +144,7 @@ class StreamingOverlayPanel:
 
             self._cancel_event = cancel_event
             self._on_cancel = on_cancel
+            self._on_confirm_asr = on_confirm_asr
             self._loading_seconds = 0
             self._llm_info = llm_info
             self._page_loaded = False
@@ -242,18 +247,19 @@ class StreamingOverlayPanel:
             logger.error("Failed to show streaming overlay", exc_info=True)
 
     # ------------------------------------------------------------------
-    # ESC key monitor
+    # Key monitor (ESC / Enter)
     # ------------------------------------------------------------------
 
     def _register_esc_monitor(self) -> None:
-        """Register a global key event monitor for ESC key."""
+        """Register a global key event monitor for ESC and Enter keys."""
         try:
             from AppKit import NSEvent
 
             NSKeyDownMask = 1 << 10
 
             def _handler(event):
-                if event.keyCode() == _ESC_KEY_CODE:
+                key = event.keyCode()
+                if key == _ESC_KEY_CODE:
                     if self._cancel_event is not None:
                         self._cancel_event.set()
                     if self._on_cancel is not None:
@@ -263,6 +269,14 @@ class StreamingOverlayPanel:
                             logger.error("on_cancel callback failed", exc_info=True)
                     self.close()
                     logger.info("Streaming cancelled via ESC key")
+                elif key == _RETURN_KEY_CODE and self._on_confirm_asr is not None:
+                    try:
+                        self._on_confirm_asr()
+                    except Exception:
+                        logger.error(
+                            "on_confirm_asr callback failed", exc_info=True
+                        )
+                    logger.info("ASR confirmed via Enter key")
 
             self._esc_monitor = (
                 NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
@@ -270,7 +284,7 @@ class StreamingOverlayPanel:
                 )
             )
         except Exception:
-            logger.error("Failed to register ESC monitor", exc_info=True)
+            logger.error("Failed to register key monitor", exc_info=True)
 
     def _remove_esc_monitor(self) -> None:
         """Remove the global ESC key monitor."""
@@ -498,6 +512,7 @@ class StreamingOverlayPanel:
         self._remove_esc_monitor()
         self._cancel_event = None
         self._on_cancel = None
+        self._on_confirm_asr = None
         self._page_loaded = False
         self._pending_js.clear()
 
