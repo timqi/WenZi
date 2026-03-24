@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 
+_SOUNDS = ["Glass", "Ping", "Hero", "Purr", "Pop", "Frog", "Funk", "Tink"]
+
 logger = logging.getLogger(__name__)
+
+
+def _rand_sound() -> str:
+    return random.choice(_SOUNDS)
 
 
 def register(wz):
@@ -15,14 +22,20 @@ def register(wz):
     @wz.chooser.command("async-sleep", title="Async Sleep", subtitle="async def callback with await asyncio.sleep")
     async def cmd_sleep(args):
         s = args.strip()
-        seconds = float(s) if s else 1.0
-        wz.alert(f"Sleeping {seconds}s...", duration=seconds + 0.5)
-        await asyncio.sleep(seconds)
-        wz.notify("Async Sleep", f"Woke up after {seconds}s!")
+        seconds = float(s) if s else 3.0
+        remaining = seconds
+        while remaining > 0:
+            wz.alert(f"Sleeping... {remaining:.1f}s", duration=1.5)
+            step = min(0.1, remaining)
+            await asyncio.sleep(step)
+            remaining -= step
+        wz.alert(f"Woke up after {seconds}s!", duration=2.0)
+        wz.notify("Async Sleep", f"Woke up after {seconds}s!", sound=_rand_sound())
 
     async def _fetch_url(url: str):
         import urllib.request
 
+        wz.alert(f"Fetching {url}...", duration=10.0)
         loop = asyncio.get_running_loop()
         start = time.monotonic()
         resp = await loop.run_in_executor(
@@ -31,10 +44,9 @@ def register(wz):
         elapsed = time.monotonic() - start
         status = resp.status
         length = len(resp.read())
-        wz.notify(
-            "Async Fetch",
-            f"{url} — HTTP {status}, {length} bytes in {elapsed:.2f}s",
-        )
+        msg = f"HTTP {status}, {length} bytes in {elapsed:.2f}s"
+        wz.alert(msg, duration=3.0)
+        wz.notify("Async Fetch", msg, sound=_rand_sound())
 
     wz.chooser.register_command(
         name="async-fetch",
@@ -51,7 +63,7 @@ def register(wz):
     async def cmd_timer(args):
         if _timer_state["id"] is not None:
             wz.timer.cancel(_timer_state["id"])
-            wz.notify("Async Timer", f"Stopped after {_timer_state['count']} ticks")
+            wz.notify("Async Timer", f"Stopped after {_timer_state['count']} ticks", sound=_rand_sound())
             _timer_state["id"] = None
             _timer_state["count"] = 0
             return
@@ -65,7 +77,7 @@ def register(wz):
             logger.info("Async timer tick #%d", n)
 
         _timer_state["id"] = wz.timer.every(2.0, tick)
-        wz.notify("Async Timer", "Started — run again to stop")
+        wz.notify("Async Timer", "Started — run again to stop", sound=_rand_sound())
 
     @wz.on("transcription_done")
     async def on_transcription(data):
@@ -99,6 +111,7 @@ def register(wz):
         wz.notify(
             "Async Concurrent",
             f"All done in {elapsed:.1f}s: {', '.join(results)}",
+            sound=_rand_sound(),
         )
 
     @wz.chooser.command("async-error", title="Async Error", subtitle="Raise an exception — check log for error output")
@@ -112,7 +125,7 @@ def register(wz):
         async def background_work():
             wz.alert("wz.run() started...", duration=2.0)
             await asyncio.sleep(1.0)
-            wz.notify("Async Run", "wz.run() coroutine completed!")
+            wz.notify("Async Run", "wz.run() coroutine completed!", sound=_rand_sound())
 
         wz.run(background_work())
 
@@ -131,8 +144,39 @@ def register(wz):
             title = item.get("title", "?")
             wz.alert(f"Processing '{title}'...", duration=2.0)
             await asyncio.sleep(1.0)
-            wz.notify("Async Pick", f"You picked: {title}")
+            wz.notify("Async Pick", f"You picked: {title}", sound=_rand_sound())
 
         wz.chooser.pick(items, callback=on_picked, placeholder="Pick an option...")
+
+    # ------------------------------------------------------------------
+    # Async source — demonstrates async def in @wz.chooser.source()
+    # ------------------------------------------------------------------
+
+    @wz.chooser.source(
+        "async-search",
+        prefix="as",
+        description="Async search demo (simulates network delay)",
+        search_timeout=3.0,
+    )
+    async def async_source_search(query):
+        """Simulate an async source that fetches results from a remote API."""
+        if not query.strip():
+            return [
+                {
+                    "title": "Type to search (async)...",
+                    "subtitle": "Results load after 0.5s simulated delay",
+                },
+            ]
+        await asyncio.sleep(0.5)  # Simulate network latency
+        return [
+            {
+                "title": f"Async result: {query}",
+                "subtitle": "Found after 0.5s delay",
+            },
+            {
+                "title": f"Async result: {query.upper()}",
+                "subtitle": "Uppercase variant",
+            },
+        ]
 
     logger.info("Async demo plugin loaded")
