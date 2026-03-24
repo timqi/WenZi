@@ -614,17 +614,28 @@ class RecordingFlow:
                         cancel_event, confirm_asr_event
                     )
 
-                    if chain_steps:
-                        text = await self._run_direct_chain_stream(
-                            asr_text, chain_steps, abort_event
+                    try:
+                        if chain_steps:
+                            text = await self._run_direct_chain_stream(
+                                asr_text, chain_steps, abort_event
+                            )
+                        else:
+                            text = await self._run_direct_single_stream(
+                                asr_text, abort_event
+                            )
+                    finally:
+                        for t in abort_tasks:
+                            t.cancel()
+                        results = await asyncio.gather(
+                            *abort_tasks, return_exceptions=True
                         )
-                    else:
-                        text = await self._run_direct_single_stream(
-                            asr_text, abort_event
-                        )
-
-                    for t in abort_tasks:
-                        t.cancel()
+                        for r in results:
+                            if isinstance(r, Exception) and not isinstance(
+                                r, asyncio.CancelledError
+                            ):
+                                logger.warning(
+                                    "abort waiter error: %s", r
+                                )
 
                     if confirm_asr_event.is_set():
                         logger.debug("Enter during enhance: using ASR text")
