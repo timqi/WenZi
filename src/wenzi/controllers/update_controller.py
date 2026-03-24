@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import os
@@ -266,11 +267,14 @@ class UpdateController:
 
         self._release_url = url
         item = StatusMenuItem(title, callback=self._on_update_click)
-        try:
-            self._app._menu.insert_before("About WenZi", item)
-            self._update_menu_item = item
-        except KeyError:
-            logger.debug("Could not insert update menu item: 'About WenZi' not found")
+        menu = self._app._menu
+        ns_menu = menu._ensure_submenu()
+        ns_menu.insertItem_atIndex_(item._menuitem, 0)
+        # Keep OrderedDict in sync — prepend to front
+        menu._items = collections.OrderedDict(
+            [(title, item)] + list(menu._items.items())
+        )
+        self._update_menu_item = item
 
     def _remove_update_menu(self) -> None:
         """Remove the update menu item if present (main thread)."""
