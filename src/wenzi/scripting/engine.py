@@ -118,6 +118,10 @@ class ScriptEngine:
         self._reloading = True
         try:
             logger.info("Reloading scripts...")
+            # Cancel async tasks from the previous script cycle
+            from wenzi.scripting.api._async_util import get_tracker
+
+            get_tracker().cancel_all()
             self.stop()
             self._purge_user_modules()
             # Restore built-in key maps before scripts re-register custom keys

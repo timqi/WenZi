@@ -6,6 +6,7 @@ import logging
 import threading
 from typing import Callable, Optional
 
+from wenzi.scripting.api._async_util import wrap_async
 from wenzi.scripting.registry import LeaderConfig, LeaderMapping, ScriptingRegistry
 from wenzi.scripting.ui.leader_alert import LeaderAlertPanel
 
@@ -35,8 +36,13 @@ class HotkeyAPI:
             self.define_key(name, keycode)
 
     def bind(self, hotkey_str: str, callback: Callable) -> None:
-        """Bind a hotkey combination (e.g. "ctrl+cmd+v")."""
-        self._registry.register_hotkey(hotkey_str, callback)
+        """Bind a hotkey combination (e.g. "ctrl+cmd+v").
+
+        *callback* may be a regular function or an ``async def``.
+        Async callbacks are automatically submitted to the background
+        event loop.
+        """
+        self._registry.register_hotkey(hotkey_str, wrap_async(callback))
 
     def unbind(self, hotkey_str: str) -> None:
         """Remove and stop a hotkey binding."""

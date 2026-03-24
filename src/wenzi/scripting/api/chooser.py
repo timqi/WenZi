@@ -5,11 +5,17 @@ from __future__ import annotations
 import logging
 from typing import Callable, Dict, List, Optional
 
+from wenzi.scripting.api._async_util import wrap_async
 from wenzi.scripting.sources import ChooserItem, ChooserSource, ModifierAction
 from wenzi.scripting.sources.command_source import CommandEntry, CommandSource
 from wenzi.scripting.ui.chooser_panel import ChooserPanel
 
 logger = logging.getLogger(__name__)
+
+
+def _wrap_optional(fn: Optional[Callable]) -> Optional[Callable]:
+    """Wrap an optional callable with async support."""
+    return wrap_async(fn) if fn is not None else None
 
 
 def _parse_modifiers(raw: Optional[Dict]) -> Optional[Dict[str, ModifierAction]]:
@@ -26,7 +32,7 @@ def _parse_modifiers(raw: Optional[Dict]) -> Optional[Dict[str, ModifierAction]]
         if isinstance(val, dict):
             result[key] = ModifierAction(
                 subtitle=val.get("subtitle", ""),
-                action=val.get("action"),
+                action=_wrap_optional(val.get("action")),
             )
     return result or None
 
@@ -38,11 +44,11 @@ def _dict_to_chooser_item(item: dict) -> ChooserItem:
         subtitle=item.get("subtitle", ""),
         icon=item.get("icon", ""),
         item_id=item.get("item_id", ""),
-        action=item.get("action"),
-        secondary_action=item.get("secondary_action"),
+        action=_wrap_optional(item.get("action")),
+        secondary_action=_wrap_optional(item.get("secondary_action")),
         reveal_path=item.get("reveal_path"),
         modifiers=_parse_modifiers(item.get("modifiers")),
-        delete_action=item.get("delete_action"),
+        delete_action=_wrap_optional(item.get("delete_action")),
         confirm_delete=item.get("confirm_delete", False),
         preview=item.get("preview"),
         icon_badge=item.get("icon_badge", ""),
@@ -249,6 +255,7 @@ class ChooserAPI:
             callback: ``callback(item_dict | None)``.
             placeholder: Custom placeholder text for the search input.
         """
+        callback = wrap_async(callback)
         source_name = f"__pick_{id(callback)}"
         chooser_items = [_dict_to_chooser_item(d) for d in (items or [])]
 
@@ -335,7 +342,7 @@ class ChooserAPI:
         """
 
         def decorator(func: Callable) -> Callable:
-            self._event_handlers.setdefault(event, []).append(func)
+            self._event_handlers.setdefault(event, []).append(wrap_async(func))
             return func
 
         return decorator
@@ -383,7 +390,7 @@ class ChooserAPI:
             title=title,
             subtitle=subtitle,
             icon=icon,
-            action=action,
+            action=wrap_async(action),
             modifiers=_parse_modifiers(modifiers),
             promoted=promoted,
         )
