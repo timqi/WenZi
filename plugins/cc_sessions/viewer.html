@@ -156,6 +156,17 @@
     background: var(--copy-btn-bg);
   }
 
+  .tool-model-tag {
+    font-size: 10px;
+    color: var(--ts-color);
+    opacity: 0.7;
+    margin-left: auto;
+    margin-right: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: inherit;
+  }
+
   .view-session-btn {
     font-size: 10px;
     color: var(--copy-btn-color);
@@ -164,7 +175,6 @@
     border-radius: 3px;
     padding: 1px 6px;
     cursor: pointer;
-    margin-left: auto;
     margin-right: 4px;
     font-family: inherit;
     white-space: nowrap;
@@ -560,13 +570,22 @@
 
   .stats-list-item {
     display: flex;
+    align-items: center;
     justify-content: space-between;
+    gap: 6px;
     font-size: 11px;
     padding: 2px 0;
     color: var(--text-secondary);
   }
   .stats-list-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .stats-list-item .count { font-weight: 500; color: var(--text-primary); margin-left: 8px; }
+  .stats-list-item .subagent-link {
+    color: var(--copy-btn-color);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   /* ── Loading state ── */
   .loading {
@@ -750,12 +769,16 @@ function openSubagent(agentId, description) {
   });
 }
 
+function getSubagentModel(toolUseId, fallbackModel) {
+  const sub = window._subagentMap[toolUseId];
+  return sub?.model || fallbackModel || "";
+}
+
 async function resolveSubagents(messages, info) {
   window._subagentMap = {};
 
   const resultMap = buildToolResultMap(messages);
 
-  // Find Agent tool_use calls and extract agentIds from results
   const agentCalls = [];
   for (const msg of messages) {
     if (msg.type !== "assistant") continue;
@@ -783,7 +806,6 @@ async function resolveSubagents(messages, info) {
 
   if (agentCalls.length === 0) return;
 
-  // Batch check file existence
   const idsToCheck = agentCalls.filter(a => a.agentId).map(a => a.agentId);
   let existsMap = {};
   if (idsToCheck.length > 0 && typeof wz !== "undefined" && wz.call) {
@@ -797,14 +819,14 @@ async function resolveSubagents(messages, info) {
     }
   }
 
-  // Populate global map
   for (const ac of agentCalls) {
+    const agentInfo = existsMap[ac.agentId] || {};
     window._subagentMap[ac.toolUseId] = {
       agentId: ac.agentId,
       description: ac.description,
       type: ac.type,
-      model: ac.model,
-      exists: ac.agentId ? (existsMap[ac.agentId] === true) : false,
+      model: agentInfo.model || ac.model || "",
+      exists: ac.agentId ? (agentInfo.exists === true) : false,
     };
   }
 }
@@ -1261,9 +1283,18 @@ function createToolSingle(call, result) {
     <span class="tool-arrow">&#9654;</span>
   `;
 
-  // Add "View Session" button for Agent tool calls with resolved subagent
   if (call.name === "Agent" && call.id) {
     const sub = window._subagentMap[call.id];
+    const arrow = headerEl.querySelector(".tool-arrow");
+
+    const modelName = getSubagentModel(call.id, call.input?.model);
+    if (modelName) {
+      const modelTag = document.createElement("span");
+      modelTag.className = "tool-model-tag";
+      modelTag.textContent = modelName;
+      headerEl.insertBefore(modelTag, arrow);
+    }
+
     if (sub && sub.exists) {
       const viewBtn = document.createElement("button");
       viewBtn.className = "view-session-btn";
@@ -1272,7 +1303,6 @@ function createToolSingle(call, result) {
         e.stopPropagation();
         openSubagent(sub.agentId, sub.description);
       });
-      const arrow = headerEl.querySelector(".tool-arrow");
       headerEl.insertBefore(viewBtn, arrow);
     }
   }
@@ -1624,24 +1654,18 @@ function buildStatsHTML(s) {
         <span class="count">\u00d7${count}</span>
       </div>`;
     }
-    // List individual subagent descriptions
     html += '<div style="margin-top:6px;border-top:1px solid var(--border-color);padding-top:6px;">';
     for (const sa of s.subagents) {
       const sub = window._subagentMap[sa.toolUseId];
-      const modelTag = sa.model ? ` <span style="opacity:0.5">(${escapeHtml(sa.model)})</span>` : "";
-      if (sub && sub.exists) {
-        html += `<div class="stats-list-item">
-          <a href="#" class="subagent-link" data-agent-id="${escapeHtml(sub.agentId)}"
-             data-description="${escapeHtml(sa.description)}"
-             style="color:var(--copy-btn-color);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
-            ${escapeHtml(sa.description)}${modelTag}
-          </a>
-        </div>`;
-      } else {
-        html += `<div class="stats-list-item">
-          <span class="name">${escapeHtml(sa.description)}${modelTag}</span>
-        </div>`;
-      }
+      const modelName = getSubagentModel(sa.toolUseId, sa.model);
+      const modelSpan = modelName
+        ? `<span class="tool-model-tag">${escapeHtml(modelName)}</span>`
+        : "";
+      const descHtml = (sub && sub.exists)
+        ? `<a href="#" class="subagent-link" data-agent-id="${escapeHtml(sub.agentId)}"
+             data-description="${escapeHtml(sa.description)}">${escapeHtml(sa.description)}</a>`
+        : `<span class="name">${escapeHtml(sa.description)}</span>`;
+      html += `<div class="stats-list-item">${descHtml}${modelSpan}</div>`;
     }
     html += '</div></div>';
   }
