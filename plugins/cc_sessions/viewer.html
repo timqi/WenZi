@@ -46,6 +46,7 @@
     --scrollbar-track: transparent;
     --pre-bg: #1e1e1e;
     --pre-text: #d4d4d4;
+    --color-success: #22c55e;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -72,6 +73,7 @@
       --scrollbar-thumb: rgba(255, 255, 255, 0.15);
       --pre-bg: #0d1117;
       --pre-text: #c9d1d9;
+      --color-success: #4ade80;
     }
   }
 
@@ -331,6 +333,7 @@
   /* ── Message Turn ── */
   .turn {
     margin-bottom: 20px;
+    position: relative;
   }
 
   .turn-header {
@@ -354,6 +357,25 @@
     color: var(--text-secondary);
     font-size: 11px;
   }
+
+  .copy-msg-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 0;
+    color: var(--text-muted);
+    border-radius: 4px;
+  }
+  .turn:hover .copy-msg-btn { opacity: 0.4; }
+  .turn:hover .copy-msg-btn:hover { opacity: 1; color: var(--copy-btn-color); background: var(--copy-btn-bg); }
+  .copy-msg-btn.copied { opacity: 1; color: var(--color-success); }
+  .copy-msg-btn svg { width: 14px; height: 14px; }
 
   .collapsible {
     position: relative;
@@ -873,6 +895,43 @@ function escapeHtml(s) {
   return el.innerHTML;
 }
 
+// ── Copy message button helper ──
+const _copyIconTpl = document.createElement("template");
+_copyIconTpl.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V3a1.5 1.5 0 0 1 1.5-1.5H11"/></svg>`;
+const _checkIconTpl = document.createElement("template");
+_checkIconTpl.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 8.5 6.5 11.5 12.5 4.5"/></svg>`;
+
+const _copyTimers = new Set();
+function _clearCopyTimers() {
+  for (const id of _copyTimers) clearTimeout(id);
+  _copyTimers.clear();
+}
+
+function createCopyMsgBtn(textFn) {
+  const btn = document.createElement("button");
+  btn.className = "copy-msg-btn";
+  btn.title = "Copy message";
+  btn.appendChild(_copyIconTpl.content.cloneNode(true));
+  let resetTimer = 0;
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const text = textFn();
+    wz.send("copy_resume", { text });
+    _copyTimers.delete(resetTimer);
+    clearTimeout(resetTimer);
+    btn.replaceChildren(_checkIconTpl.content.cloneNode(true));
+    btn.classList.add("copied");
+    resetTimer = setTimeout(() => {
+      _copyTimers.delete(resetTimer);
+      if (!btn.isConnected) return;
+      btn.replaceChildren(_copyIconTpl.content.cloneNode(true));
+      btn.classList.remove("copied");
+    }, 1500);
+    _copyTimers.add(resetTimer);
+  });
+  return btn;
+}
+
 // ── Extract user message text ──
 function extractUserText(content) {
   if (typeof content === "string") return content;
@@ -1124,6 +1183,7 @@ async function loadSession(info) {
 let _lastRenderedTime = "";
 
 function renderConversation(messages) {
+  _clearCopyTimers();
   const conv = document.getElementById("conversation");
   conv.innerHTML = "";
   document.getElementById("outline").innerHTML = "";
@@ -1168,10 +1228,11 @@ function renderConversation(messages) {
         <span class="badge badge-assistant">Claude</span>
         ${showTime ? `<span class="timestamp">${escapeHtml(firstTime)}</span>` : ""}
       `;
+      const assistantTexts = [];
       turnEl.appendChild(header);
+      turnEl.appendChild(createCopyMsgBtn(() => assistantTexts.join("\n\n").trim()));
 
       // Collect all consecutive assistant messages (skip interleaved tool_result user msgs)
-      const assistantTexts = [];
       while (i < turns.length && (turns[i].type === "assistant" || (turns[i].type === "user" && _isToolResultOnly(turns[i])))) {
         if (turns[i].type === "assistant") {
           renderAssistantContent(turnEl, turns[i], assistantTexts, globalResultMap);
@@ -1310,13 +1371,19 @@ function renderUserTurn(el, msg) {
   if (showTime) _lastRenderedTime = time;
   const text = extractUserText(msg.message?.content || msg.content || "");
 
-  el.innerHTML = `
-    <div class="turn-header">
-      <span class="badge badge-user">You</span>
-      ${showTime ? `<span class="timestamp">${escapeHtml(time)}</span>` : ""}
-    </div>
-    <div class="user-content">${escapeHtml(text)}</div>
+  const header = document.createElement("div");
+  header.className = "turn-header";
+  header.innerHTML = `
+    <span class="badge badge-user">You</span>
+    ${showTime ? `<span class="timestamp">${escapeHtml(time)}</span>` : ""}
   `;
+  el.appendChild(header);
+  el.appendChild(createCopyMsgBtn(() => text));
+
+  const contentEl = document.createElement("div");
+  contentEl.className = "user-content";
+  contentEl.textContent = text;
+  el.appendChild(contentEl);
 
   // Add to outline
   addOutlineItem(text, el, "user");
