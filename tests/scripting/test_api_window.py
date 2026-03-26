@@ -6,6 +6,7 @@ import pytest
 
 from wenzi.scripting.api.window import (
     WindowAPI,
+    _unzoom_if_needed,
     _visible_frame_ax,
 )
 
@@ -30,6 +31,7 @@ def _mock_ax(monkeypatch, *, pos=(100, 200), size=(800, 600)):
     )
     set_pos_calls = []
     set_size_calls = []
+    unzoom_calls = []
     monkeypatch.setattr(
         "wenzi.scripting.api.window._set_position",
         lambda w, x, y: set_pos_calls.append((x, y)),
@@ -38,7 +40,11 @@ def _mock_ax(monkeypatch, *, pos=(100, 200), size=(800, 600)):
         "wenzi.scripting.api.window._set_size",
         lambda w, x, y: set_size_calls.append((x, y)),
     )
-    return win, set_pos_calls, set_size_calls
+    monkeypatch.setattr(
+        "wenzi.scripting.api.window._unzoom_if_needed",
+        lambda w: unzoom_calls.append(w),
+    )
+    return win, set_pos_calls, set_size_calls, unzoom_calls
 
 
 def _mock_screen(x=0, y=0, w=1920, h=1080, vis_x=0, vis_y=0, vis_w=1920, vis_h=1055, name="Built-in"):
@@ -66,7 +72,7 @@ def _mock_screen(x=0, y=0, w=1920, h=1080, vis_x=0, vis_y=0, vis_w=1920, vis_h=1
 
 class TestFocusedFrame:
     def test_returns_dict(self, monkeypatch):
-        _mock_ax(monkeypatch, pos=(50, 100), size=(640, 480))
+        _mock_ax(monkeypatch, pos=(50, 100), size=(640, 480))  # unzoom_calls unused
         api = WindowAPI()
         frame = api.focused_frame()
         assert frame == {"x": 50, "y": 100, "w": 640, "h": 480}
@@ -80,7 +86,7 @@ class TestFocusedFrame:
 
 class TestSetFrame:
     def test_sets_position_and_size(self, monkeypatch):
-        _, pos_calls, size_calls = _mock_ax(monkeypatch)
+        _, pos_calls, size_calls, _ = _mock_ax(monkeypatch)
         WindowAPI().set_frame(10, 20, 300, 400)
         # Position set twice (before and after resize)
         assert pos_calls == [(10, 20), (10, 20)]
@@ -107,7 +113,7 @@ class TestSnap:
         ],
     )
     def test_snap_positions(self, monkeypatch, position, expected_frac):
-        win, pos_calls, size_calls = _mock_ax(monkeypatch, pos=(100, 50), size=(800, 600))
+        win, pos_calls, size_calls, _ = _mock_ax(monkeypatch, pos=(100, 50), size=(800, 600))
         # Mock screen: visible area 1920x1055 starting at (0, 25) in AX coords
         screen = _mock_screen()
         monkeypatch.setattr(
@@ -139,7 +145,7 @@ class TestSnap:
 
 class TestCenter:
     def test_centers_on_screen(self, monkeypatch):
-        win, pos_calls, _ = _mock_ax(monkeypatch, pos=(0, 0), size=(400, 300))
+        win, pos_calls, _, _ = _mock_ax(monkeypatch, pos=(0, 0), size=(400, 300))
         monkeypatch.setattr(
             "wenzi.scripting.api.window._screen_for_window", lambda w: MagicMock()
         )
@@ -183,7 +189,7 @@ class TestScreens:
 
 class TestMoveToScreen:
     def test_moves_to_next_screen(self, monkeypatch):
-        win, pos_calls, size_calls = _mock_ax(
+        win, pos_calls, size_calls, _ = _mock_ax(
             monkeypatch, pos=(100, 125), size=(960, 1055)
         )
         s1 = _mock_screen(name="Primary")
@@ -216,6 +222,110 @@ class TestMoveToScreen:
             "wenzi.scripting.api.window._screen_for_window", lambda w: s1
         )
         WindowAPI().move_to_screen("next")  # should not raise
+
+
+class TestUnzoom:
+    def test_unzooms_when_zoomed(self, monkeypatch):
+        """_unzoom_if_needed sets AXIsZoomed to False when window is zoomed."""
+        import ApplicationServices as _as
+
+        set_calls = []
+        monkeypatch.setattr(
+            _as, "AXUIElementCopyAttributeValue",
+            lambda w, attr, _: (_as.kAXErrorSuccess, True),
+        )
+        monkeypatch.setattr(
+            _as, "AXUIElementSetAttributeValue",
+            lambda w, attr, val: set_calls.append((attr, val)),
+        )
+        win = MagicMock()
+        _unzoom_if_needed(win)
+        assert set_calls == [("AXIsZoomed", False)]
+
+    def test_noop_when_not_zoomed(self, monkeypatch):
+        import ApplicationServices as _as
+
+        set_calls = []
+        monkeypatch.setattr(
+            _as, "AXUIElementCopyAttributeValue",
+            lambda w, attr, _: (_as.kAXErrorSuccess, False),
+        )
+        monkeypatch.setattr(
+            _as, "AXUIElementSetAttributeValue",
+            lambda w, attr, val: set_calls.append((attr, val)),
+        )
+        win = MagicMock()
+        _unzoom_if_needed(win)
+        assert set_calls == []
+
+    def test_snap_calls_unzoom(self, monkeypatch):
+        """snap() must call _unzoom_if_needed before repositioning."""
+        win, pos_calls, size_calls, unzoom_calls = _mock_ax(
+            monkeypatch, pos=(100, 50), size=(800, 600)
+        )
+        monkeypatch.setattr(
+            "wenzi.scripting.api.window._screen_for_window", lambda w: MagicMock()
+        )
+        monkeypatch.setattr(
+            "wenzi.scripting.api.window._visible_frame_ax",
+            lambda s: (0, 25, 1920, 1055),
+        )
+        WindowAPI().snap("left")
+        assert len(unzoom_calls) == 1
+        assert unzoom_calls[0] is win
+
+    def test_set_frame_calls_unzoom(self, monkeypatch):
+        win, _, _, unzoom_calls = _mock_ax(monkeypatch)
+        WindowAPI().set_frame(10, 20, 300, 400)
+        assert len(unzoom_calls) == 1
+        assert unzoom_calls[0] is win
+
+    def test_center_calls_unzoom(self, monkeypatch):
+        win, _, _, unzoom_calls = _mock_ax(monkeypatch, pos=(0, 0), size=(400, 300))
+        monkeypatch.setattr(
+            "wenzi.scripting.api.window._screen_for_window", lambda w: MagicMock()
+        )
+        monkeypatch.setattr(
+            "wenzi.scripting.api.window._visible_frame_ax",
+            lambda s: (0, 25, 1920, 1055),
+        )
+        WindowAPI().center()
+        assert len(unzoom_calls) == 1
+        assert unzoom_calls[0] is win
+
+    def test_move_to_screen_calls_unzoom(self, monkeypatch):
+        win, _, _, unzoom_calls = _mock_ax(
+            monkeypatch, pos=(100, 125), size=(960, 1055)
+        )
+        s1 = _mock_screen(name="Primary")
+        s2 = _mock_screen(name="Secondary")
+        _patch_nsscreen(monkeypatch, [s1, s2])
+        monkeypatch.setattr(
+            "wenzi.scripting.api.window._screen_for_window", lambda w: s1
+        )
+        monkeypatch.setattr(
+            "wenzi.scripting.api.window._visible_frame_ax",
+            lambda s: (0, 25, 1920, 1055) if s is s1 else (1920, 25, 1920, 1055),
+        )
+        WindowAPI().move_to_screen("next")
+        assert len(unzoom_calls) == 1
+        assert unzoom_calls[0] is win
+
+    def test_noop_when_ax_error(self, monkeypatch):
+        """_unzoom_if_needed does nothing when AXIsZoomed is unsupported."""
+        import ApplicationServices as _as
+
+        set_calls = []
+        monkeypatch.setattr(
+            _as, "AXUIElementCopyAttributeValue",
+            lambda w, attr, _: (-25200, None),  # kAXErrorAttributeUnsupported
+        )
+        monkeypatch.setattr(
+            _as, "AXUIElementSetAttributeValue",
+            lambda w, attr, val: set_calls.append((attr, val)),
+        )
+        _unzoom_if_needed(MagicMock())
+        assert set_calls == []
 
 
 class TestVisibleFrameAx:

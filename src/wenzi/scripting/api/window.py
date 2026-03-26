@@ -8,23 +8,57 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def _get_focused_window():
-    """Return the AXUIElement for the focused window, or None."""
+def _unzoom_if_needed(win):
+    """Un-zoom (un-maximize) the window if it is currently zoomed.
+
+    Some apps (e.g. Chrome) ignore AXPosition/AXSize changes while the
+    window is in the zoomed state.  Clearing AXIsZoomed first allows the
+    subsequent position/size calls to take effect.
+    """
     from ApplicationServices import (
-        AXUIElementCreateSystemWide,
+        AXUIElementCopyAttributeValue,
+        AXUIElementSetAttributeValue,
+        kAXErrorSuccess,
+    )
+
+    err, zoomed = AXUIElementCopyAttributeValue(win, "AXIsZoomed", None)
+    logger.debug("_unzoom_if_needed: err=%s zoomed=%s", err, zoomed)
+    if err == kAXErrorSuccess and zoomed:
+        ret = AXUIElementSetAttributeValue(win, "AXIsZoomed", False)
+        logger.debug("_unzoom_if_needed: set AXIsZoomed=False ret=%s", ret)
+
+
+def _get_focused_window():
+    """Return the AXUIElement for the focused window, or None.
+
+    Uses NSWorkspace to find the frontmost application (more reliable than
+    the AX system-wide ``AXFocusedApplication`` query, which can return
+    ``kAXErrorCannotComplete`` for Electron apps like Chrome and Slack).
+    """
+    from AppKit import NSWorkspace
+    from ApplicationServices import (
+        AXUIElementCreateApplication,
         AXUIElementCopyAttributeValue,
         kAXErrorSuccess,
     )
 
-    system = AXUIElementCreateSystemWide()
-    err, app = AXUIElementCopyAttributeValue(
-        system, "AXFocusedApplication", None
-    )
-    if err != kAXErrorSuccess or app is None:
+    front_app = NSWorkspace.sharedWorkspace().frontmostApplication()
+    if front_app is None:
+        logger.debug("_get_focused_window: no frontmost app")
         return None
+    pid = front_app.processIdentifier()
+    app = AXUIElementCreateApplication(pid)
     err, win = AXUIElementCopyAttributeValue(app, "AXFocusedWindow", None)
     if err != kAXErrorSuccess or win is None:
+        logger.debug(
+            "_get_focused_window: no focused window for %s pid=%s (err=%s)",
+            front_app.localizedName(), pid, err,
+        )
         return None
+    logger.debug(
+        "_get_focused_window: %s pid=%s win=%s",
+        front_app.localizedName(), pid, win,
+    )
     return win
 
 
@@ -144,6 +178,8 @@ class WindowAPI:
         win = _get_focused_window()
         if win is None:
             return
+        # Un-zoom first — some apps ignore AX changes while zoomed.
+        _unzoom_if_needed(win)
         # Set position, then size, then position again.
         # Some apps reposition the window on resize, so the second
         # position call corrects for that.
@@ -195,6 +231,7 @@ class WindowAPI:
             return
         win = _get_focused_window()
         if win is None:
+            logger.debug("snap(%s): no focused window", position)
             return
 
         sx, sy, sw, sh = _visible_frame_ax(_screen_for_window(win))
@@ -204,9 +241,19 @@ class WindowAPI:
         w = fw * sw
         h = fh * sh
 
+        logger.debug(
+            "snap(%s): target x=%.0f y=%.0f w=%.0f h=%.0f "
+            "(before: pos=%s size=%s)",
+            position, x, y, w, h, _get_position(win), _get_size(win),
+        )
+        _unzoom_if_needed(win)
         _set_position(win, x, y)
         _set_size(win, w, h)
         _set_position(win, x, y)
+        logger.debug(
+            "snap(%s): after: pos=%s size=%s",
+            position, _get_position(win), _get_size(win),
+        )
 
     def center(self) -> None:
         """Center the focused window on its current screen."""
@@ -216,6 +263,7 @@ class WindowAPI:
         sz = _get_size(win)
         if sz is None:
             return
+        _unzoom_if_needed(win)
         sx, sy, sw, sh = _visible_frame_ax(_screen_for_window(win))
         _set_position(win, sx + (sw - sz[0]) / 2, sy + (sh - sz[1]) / 2)
 
@@ -264,6 +312,7 @@ class WindowAPI:
         new_w = rel_w * nsw
         new_h = rel_h * nsh
 
+        _unzoom_if_needed(win)
         _set_position(win, new_x, new_y)
         _set_size(win, new_w, new_h)
         _set_position(win, new_x, new_y)

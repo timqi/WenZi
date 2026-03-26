@@ -397,6 +397,12 @@ class TapHotkeyListener:
         self._loop = None
         self._thread: Optional[threading.Thread] = None
 
+    def _run_activate(self):
+        try:
+            self._on_activate()
+        except Exception as e:
+            logger.error("on_activate callback error: %s", e)
+
     def _callback(self, proxy, event_type, event, refcon):
         try:
             import Quartz
@@ -417,10 +423,13 @@ class TapHotkeyListener:
 
             if keycode == self._keycode and flags == self._mod_flags:
                 logger.debug("TapHotkeyListener matched: %s", self._hotkey_str)
-                try:
-                    self._on_activate()
-                except Exception as e:
-                    logger.error("on_activate callback error: %s", e)
+                # Dispatch to a separate thread so the CGEventTap callback
+                # returns immediately.  AX queries (used by window management)
+                # require cross-process IPC that can time out inside the tap
+                # callback, especially for Electron apps (Chrome, Slack).
+                threading.Thread(
+                    target=self._run_activate, daemon=True,
+                ).start()
                 return None  # Swallow the event
 
             return event
