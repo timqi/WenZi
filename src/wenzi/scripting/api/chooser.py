@@ -244,6 +244,37 @@ class ChooserAPI:
         """
         self.show(initial_query=prefix + " ")
 
+    def show_universal_action(
+        self,
+        context_text: str,
+        on_close: Optional[Callable] = None,
+        initial_query: Optional[str] = None,
+        placeholder: Optional[str] = None,
+    ) -> None:
+        """Show the chooser in Universal Action mode.
+
+        Displays *context_text* as a read-only context block above the
+        search field.  The search field filters available actions.
+
+        Args:
+            context_text: Selected text to display as context.
+            on_close: Callback invoked when the panel closes.
+            initial_query: Pre-fill the search input.
+            placeholder: Override the search input placeholder.
+        """
+        try:
+            from PyObjCTools import AppHelper
+
+            AppHelper.callAfter(
+                self._panel.show_universal_action,
+                context_text=context_text,
+                on_close=on_close,
+                initial_query=initial_query,
+                placeholder=placeholder,
+            )
+        except Exception:
+            logger.exception("Failed to show Universal Action")
+
     def close(self) -> None:
         """Close the chooser panel."""
         try:
