@@ -369,15 +369,19 @@ var contextBlock = document.getElementById('context-block');
 var contextTextEl = document.getElementById('context-text');
 var contextLabelEl = document.getElementById('context-label');
 
+var _exclusiveMode = false;  // UA mode: always expand panel even with empty input
+
 function setContextText(text, label) {
     if (!text) {
         contextBlock.classList.remove('visible');
+        _exclusiveMode = false;
         return;
     }
     contextLabelEl.textContent = label || 'Selected Text';
     contextTextEl.textContent = text;
     contextTextEl.classList.remove('expanded');
     contextBlock.classList.add('visible');
+    _exclusiveMode = true;
     post('resize');
 }
 
@@ -385,6 +389,7 @@ function clearContext() {
     contextBlock.classList.remove('visible');
     contextTextEl.textContent = '';
     contextTextEl.classList.remove('expanded');
+    _exclusiveMode = false;
 }
 
 if (contextTextEl) {
@@ -692,7 +697,7 @@ function _requestResize() {
 }
 
 function _checkPanelResize() {
-    var shouldExpand = searchInput.value.length > 0 && items.length > 0;
+    var shouldExpand = items.length > 0 && (searchInput.value.length > 0 || _exclusiveMode);
     if (shouldExpand !== _panelExpanded) {
         _panelExpanded = shouldExpand;
         _requestResize();
