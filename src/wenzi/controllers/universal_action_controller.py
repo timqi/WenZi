@@ -196,6 +196,7 @@ class UniversalActionController:
     def _on_source_selected(self, source, text: str) -> None:
         """Call source search with selected text, execute first result's action."""
         import asyncio
+        from PyObjCTools import AppHelper
 
         def _run():
             try:
@@ -211,13 +212,12 @@ class UniversalActionController:
                     return
                 first = results[0]
                 if first.action is not None:
-                    first.action()
+                    # Dispatch to main thread — actions may create UI
+                    AppHelper.callAfter(first.action)
                 elif first.preview:
                     chooser = self._app._script_engine._wz.chooser
                     ql = chooser._panel._ql_panel
                     if ql is not None:
-                        from PyObjCTools import AppHelper
-
                         AppHelper.callAfter(ql.show_preview, first.preview)
             except Exception:
                 logger.exception("UA source %s search failed", source.name)
