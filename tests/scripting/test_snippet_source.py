@@ -178,7 +178,8 @@ class TestSnippetStore:
         if setup_fn is not None:
             os.makedirs(snippets_dir, exist_ok=True)
             setup_fn(snippets_dir)
-        return SnippetStore(path=snippets_dir), snippets_dir, tmpdir
+        last_cat = os.path.join(tmpdir, "last_cat")
+        return SnippetStore(path=snippets_dir, last_category_path=last_cat), snippets_dir, tmpdir
 
     def test_empty_directory(self):
         store, _, _ = self._make_store()
@@ -1061,6 +1062,42 @@ class TestSplitRandomSections:
 
 
 # ---------------------------------------------------------------------------
+# Last category persistence
+# ---------------------------------------------------------------------------
+
+
+class TestSnippetStoreLastCategory:
+    def test_default_empty(self, tmp_path):
+        store = SnippetStore(
+            path=str(tmp_path / "snippets"),
+            last_category_path=str(tmp_path / "last_cat"),
+        )
+        assert store.last_category == ""
+
+    def test_roundtrip(self, tmp_path):
+        store = SnippetStore(
+            path=str(tmp_path / "snippets"),
+            last_category_path=str(tmp_path / "last_cat"),
+        )
+        store.last_category = "greetings"
+        assert store.last_category == "greetings"
+
+    def test_persists_across_instances(self, tmp_path):
+        cat_path = str(tmp_path / "last_cat")
+        store1 = SnippetStore(path=str(tmp_path / "snippets"), last_category_path=cat_path)
+        store1.last_category = "work"
+
+        store2 = SnippetStore(path=str(tmp_path / "snippets"), last_category_path=cat_path)
+        assert store2.last_category == "work"
+
+    def test_creates_parent_dirs(self, tmp_path):
+        cat_path = str(tmp_path / "nested" / "dir" / "last_cat")
+        store = SnippetStore(path=str(tmp_path / "snippets"), last_category_path=cat_path)
+        store.last_category = "test"
+        assert store.last_category == "test"
+
+
+# ---------------------------------------------------------------------------
 # Random snippet store tests
 # ---------------------------------------------------------------------------
 
@@ -1072,7 +1109,8 @@ class TestSnippetStoreRandom:
         if setup_fn is not None:
             os.makedirs(snippets_dir, exist_ok=True)
             setup_fn(snippets_dir)
-        return SnippetStore(path=snippets_dir), snippets_dir, tmpdir
+        last_cat = os.path.join(tmpdir, "last_cat")
+        return SnippetStore(path=snippets_dir, last_category_path=last_cat), snippets_dir, tmpdir
 
     def test_load_random_snippet(self):
         def setup(d):

@@ -31,7 +31,8 @@ def _make_store(setup_fn=None):
     if setup_fn is not None:
         os.makedirs(snippets_dir, exist_ok=True)
         setup_fn(snippets_dir)
-    return SnippetStore(path=snippets_dir)
+    last_cat = os.path.join(tmpdir, "last_cat")
+    return SnippetStore(path=snippets_dir, last_category_path=last_cat)
 
 
 class TestBufferAndMatching:

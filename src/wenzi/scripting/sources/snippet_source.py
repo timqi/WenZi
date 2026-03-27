@@ -51,6 +51,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from wenzi.config import DEFAULT_SNIPPETS_DIR as _CFG_SNIPPETS_DIR
+from wenzi.config import DEFAULT_SNIPPET_LAST_CATEGORY_PATH as _CFG_LAST_CAT
 from wenzi.scripting.sources import (
     ChooserItem, ChooserSource, ModifierAction,
     copy_to_clipboard, fuzzy_match_fields, paste_text,
@@ -59,6 +60,7 @@ from wenzi.scripting.sources import (
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SNIPPETS_DIR = os.path.expanduser(_CFG_SNIPPETS_DIR)
+_DEFAULT_LAST_CAT_PATH = os.path.expanduser(_CFG_LAST_CAT)
 
 _SUPPORTED_EXTENSIONS = (".md", ".txt")
 
@@ -277,8 +279,13 @@ class SnippetStore:
     categories.  Optional YAML frontmatter holds the keyword.
     """
 
-    def __init__(self, path: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        path: Optional[str] = None,
+        last_category_path: Optional[str] = None,
+    ) -> None:
         self._dir = path or _DEFAULT_SNIPPETS_DIR
+        self._last_cat_path = last_category_path or _DEFAULT_LAST_CAT_PATH
         self._snippets: List[Dict[str, str]] = []
         self._migrated = False
         self._cached_mtime: float = 0.0  # max mtime across directory tree
@@ -646,9 +653,8 @@ class SnippetStore:
     @property
     def last_category(self) -> str:
         """Read the last used category from disk."""
-        path = os.path.join(self._dir, ".last_category")
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(self._last_cat_path, "r", encoding="utf-8") as f:
                 return f.read().strip()
         except (OSError, ValueError):
             return ""
@@ -656,10 +662,9 @@ class SnippetStore:
     @last_category.setter
     def last_category(self, value: str) -> None:
         """Persist the last used category to disk."""
-        os.makedirs(self._dir, exist_ok=True)
-        path = os.path.join(self._dir, ".last_category")
+        os.makedirs(os.path.dirname(self._last_cat_path), exist_ok=True)
         try:
-            with open(path, "w", encoding="utf-8") as f:
+            with open(self._last_cat_path, "w", encoding="utf-8") as f:
                 f.write(value)
         except OSError:
             logger.exception("Failed to save last category")
