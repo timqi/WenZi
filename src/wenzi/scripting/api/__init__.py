@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any, Callable, Coroutine, List, Optional
 
@@ -214,6 +215,28 @@ class _WZNamespace:
         from wenzi.input import type_text as _type_text
 
         _type_text(text, method=mapped)
+
+    def cache_dir(self, name: str) -> str:
+        """Return per-plugin cache directory, creating it if needed.
+
+        Returns ``~/.cache/WenZi/plugins/<name>/``.
+        """
+        from wenzi.config import resolve_cache_dir
+
+        d = os.path.join(resolve_cache_dir(), "plugins", name)
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def data_dir(self, name: str) -> str:
+        """Return per-plugin data directory, creating it if needed.
+
+        Returns ``~/.local/share/WenZi/plugins/<name>/``.
+        """
+        from wenzi.config import resolve_data_dir
+
+        d = os.path.join(resolve_data_dir(), "plugins", name)
+        os.makedirs(d, exist_ok=True)
+        return d
 
     def date(self, fmt: str = "%Y-%m-%d") -> str:
         """Return formatted current date/time."""
