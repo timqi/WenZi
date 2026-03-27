@@ -408,6 +408,7 @@ class ChooserAPI:
         icon: str = "",
         modifiers: Optional[Dict] = None,
         promoted: bool = False,
+        universal_action: bool = False,
     ) -> None:
         """Register a named command in the command palette (``>`` prefix).
 
@@ -429,6 +430,7 @@ class ChooserAPI:
             action=wrap_async(action),
             modifiers=_parse_modifiers(modifiers),
             promoted=promoted,
+            universal_action=universal_action,
         )
         self._command_source.register(entry)
 
@@ -444,6 +446,7 @@ class ChooserAPI:
         icon: str = "",
         modifiers: Optional[Dict] = None,
         promoted: bool = False,
+        universal_action: bool = False,
     ) -> Callable:
         """Decorator to register a function as a chooser command.
 
@@ -470,6 +473,7 @@ class ChooserAPI:
                 icon=icon,
                 modifiers=modifiers,
                 promoted=promoted,
+                universal_action=universal_action,
             )
             return func
 
@@ -489,6 +493,7 @@ class ChooserAPI:
         show_preview: bool = False,
         search_timeout: Optional[float] = None,
         debounce_delay: Optional[float] = None,
+        universal_action: bool = False,
     ) -> Callable:
         """Decorator to register a search function as a chooser source.
 
@@ -553,6 +558,7 @@ class ChooserAPI:
                 is_async=_is_async,
                 search_timeout=search_timeout,
                 debounce_delay=debounce_delay,
+                universal_action=universal_action,
             )
             self._panel.register_source(src)
             logger.info(
