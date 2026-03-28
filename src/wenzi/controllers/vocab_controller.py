@@ -83,6 +83,7 @@ class VocabController:
             "on_edit_field": self.on_edit_field,
             "on_export": self.on_export,
             "on_import": self.on_import,
+            "on_close": self._on_panel_closed,
         }
         self._panel.show(callbacks)
 
@@ -90,6 +91,17 @@ class VocabController:
         """Close the panel if visible (called on app quit)."""
         if self._panel is not None and self._panel.is_visible:
             self._panel.close()
+        self._clear_cached_entries()
+
+    def _on_panel_closed(self) -> None:
+        """Called when the panel is closed (via close button or programmatically)."""
+        self._clear_cached_entries()
+
+    def _clear_cached_entries(self) -> None:
+        """Release cached entry lists to free memory."""
+        self._all_entries = []
+        self._base_filtered = []
+        self._filtered_entries = []
 
     # ------------------------------------------------------------------
     # Data loading

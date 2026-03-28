@@ -445,6 +445,7 @@ class ResultPreviewPanel:
         self._translate_webview = None
         self._hotwords_webview_panel = None
         self._context_webview_panel = None
+        self._info_panel = None
         self._page_loaded: bool = False
         self._pending_js: list[str] = []
         self._navigation_delegate = None
@@ -1015,6 +1016,26 @@ class ResultPreviewPanel:
         self._navigation_delegate = None
         self._page_loaded = False
         self._pending_js = []
+        # Close child panels to prevent memory leaks
+        for attr in (
+            '_hotwords_webview_panel',
+            '_context_webview_panel',
+            '_info_panel',
+        ):
+            child = getattr(self, attr, None)
+            if child is not None:
+                try:
+                    child.close()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        if self._translate_webview is not None:
+            try:
+                self._translate_webview.close()
+            except Exception:
+                pass
+            self._translate_webview = None
+        self._asr_wav_data = None
         self._on_confirm = None
         self._on_cancel = None
         self._on_add_manual_vocab = None
@@ -1531,6 +1552,13 @@ class ResultPreviewPanel:
         )
         from Foundation import NSMakeRect
 
+        # Close previous info panel to avoid orphan windows
+        if self._info_panel is not None:
+            try:
+                self._info_panel.close()
+            except Exception:
+                pass
+
         width, height = 520, 400
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, width, height),
@@ -1560,6 +1588,7 @@ class ResultPreviewPanel:
         scroll.setDocumentView_(tv)
         panel.contentView().addSubview_(scroll)
         panel.makeKeyAndOrderFront_(None)
+        self._info_panel = panel
 
     def _open_webview_panel(self, title: str, html_content: str, old_panel=None):
         """Open (or replace) a floating WKWebView panel.

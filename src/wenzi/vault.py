@@ -310,3 +310,10 @@ def get_vault() -> Vault:
             if _vault is None:
                 _vault = Vault()
     return _vault
+
+
+def shutdown_vault() -> None:
+    """Flush pending vault writes.  Call during app shutdown."""
+    v = _vault
+    if v is not None:
+        v.flush_sync()

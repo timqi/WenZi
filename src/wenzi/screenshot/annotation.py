@@ -161,6 +161,9 @@ class AnnotationLayer:
     def close(self) -> None:
         """Tear down the panel and clean up."""
         if self._panel is not None:
+            # Release Fabric.js canvas, undo stack, and mosaic buffers
+            # before the WKWebView is torn down.
+            self._panel.eval_js("cleanupCanvas()")
             self._panel.close()
             self._panel = None
 

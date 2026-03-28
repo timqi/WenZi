@@ -149,6 +149,7 @@ class PoolMonitor:
         self._providers = providers
         self._providers_config = providers_config
         self._periodic_task: asyncio.Task | None = None
+        self._stop_flag = False
 
     # -- one-shot logging ---------------------------------------------------
 
@@ -187,10 +188,14 @@ class PoolMonitor:
         if self._periodic_task is not None and not self._periodic_task.done():
             return  # already running
 
+        self._stop_flag = False
+
         async def _loop() -> None:
             try:
-                while True:
+                while not self._stop_flag:
                     await asyncio.sleep(interval)
+                    if self._stop_flag:
+                        break
                     try:
                         self.log_stats("periodic")
                     except Exception:
@@ -208,6 +213,7 @@ class PoolMonitor:
 
     def stop_periodic(self) -> None:
         """Stop the periodic logging task."""
+        self._stop_flag = True
         if self._periodic_task is not None:
             try:
                 self._periodic_task.cancel()

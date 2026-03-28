@@ -88,11 +88,12 @@ class QueryHistory:
         self._schedule_flush()
 
     def _schedule_flush(self) -> None:
-        if self._flush_timer is not None:
-            self._flush_timer.cancel()
-        self._flush_timer = threading.Timer(_FLUSH_DELAY, self._flush)
-        self._flush_timer.daemon = True
-        self._flush_timer.start()
+        with self._lock:
+            if self._flush_timer is not None:
+                self._flush_timer.cancel()
+            self._flush_timer = threading.Timer(_FLUSH_DELAY, self._flush)
+            self._flush_timer.daemon = True
+            self._flush_timer.start()
 
     def _flush(self) -> None:
         with self._lock:
@@ -110,7 +111,9 @@ class QueryHistory:
 
     def flush_sync(self) -> None:
         """Immediately flush pending data to disk."""
-        if self._flush_timer is not None:
-            self._flush_timer.cancel()
+        with self._lock:
+            timer = self._flush_timer
             self._flush_timer = None
+        if timer is not None:
+            timer.cancel()
         self._flush()

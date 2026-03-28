@@ -265,10 +265,10 @@ class TestWebViewPanelLifecycle:
         with patch.dict("sys.modules", {"AppKit": MagicMock()}):
             panel.close()
         assert panel._open is False
-        # Reset mock to clear the _rejectAll call made during close()
-        panel._webview.evaluateJavaScript_completionHandler_.reset_mock()
+        # After close, _webview is cleared to break retain cycles
+        assert panel._webview is None
+        # send() should be a no-op (guarded by _open check, no crash)
         panel.send("evt", {})
-        panel._webview.evaluateJavaScript_completionHandler_.assert_not_called()
 
     def test_double_close_is_noop(self):
         panel = _make_panel()

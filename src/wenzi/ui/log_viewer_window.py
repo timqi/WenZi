@@ -466,6 +466,8 @@ class LogViewerPanel:
             new_lines = new_data.splitlines()
             new_entries = parse_log_lines(new_lines)
             self._all_entries.extend(new_entries)
+            if len(self._all_entries) > self._MAX_INITIAL_LINES:
+                self._all_entries = self._all_entries[-self._MAX_INITIAL_LINES:]
             self._apply_filters()
         except Exception:
             logger.exception("Error polling log file")

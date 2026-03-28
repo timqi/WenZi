@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import threading
 import uuid
@@ -79,6 +80,9 @@ class ScriptingRegistry:
         self._chooser_sources: Dict[str, Any] = {}  # name → ChooserSource
         self._event_listeners: Dict[str, List[Callable]] = {}
         self._lock = threading.Lock()
+        self._event_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="event-dispatch",
+        )
 
     @property
     def leaders(self) -> Dict[str, LeaderConfig]:
@@ -203,21 +207,21 @@ class ScriptingRegistry:
             logger.info("Unregistered event listener: %s", event_name)
 
     def fire_event(self, event_name: str, **kwargs) -> None:
-        """Invoke all handlers for *event_name* in a background thread."""
+        """Invoke all handlers for *event_name* via the thread pool."""
         handlers = list(self._event_listeners.get(event_name, []))
         if not handlers:
             return
 
-        def _run():
-            for handler in handlers:
-                try:
-                    handler(kwargs)
-                except Exception:
-                    logger.exception(
-                        "Event handler error for %s", event_name
-                    )
+        def _run_handler(handler):
+            try:
+                handler(kwargs)
+            except Exception:
+                logger.exception(
+                    "Event handler error for %s", event_name
+                )
 
-        threading.Thread(target=_run, daemon=True).start()
+        for handler in handlers:
+            self._event_executor.submit(_run_handler, handler)
 
     def clear(self) -> None:
         """Stop all timers and clear all registrations."""
@@ -245,4 +249,8 @@ class ScriptingRegistry:
         self._remaps.clear()
         self._chooser_sources.clear()
         self._event_listeners.clear()
+        self._event_executor.shutdown(wait=False)
+        self._event_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="event-dispatch",
+        )
         logger.info("Registry cleared")

@@ -27,9 +27,18 @@ _PADDING_H = 24
 _PADDING_V = 16
 _CORNER_RADIUS = 14
 
+_current_hud = None
+
 
 def show_hud(message: str) -> None:
     """Show a HUD message on screen. Must be called from the main thread."""
+    global _current_hud
+    if _current_hud is not None:
+        try:
+            _current_hud.orderOut_(None)
+        except Exception:
+            pass
+
     from AppKit import (
         NSBackingStoreBuffered,
         NSColor,
@@ -100,6 +109,7 @@ def show_hud(message: str) -> None:
     # Show with fade-in
     panel.setAlphaValue_(0.0)
     panel.orderFrontRegardless()
+    _current_hud = panel
 
     from AppKit import NSAnimationContext
 
@@ -118,7 +128,10 @@ def show_hud(message: str) -> None:
 
         # Remove after fade-out completes
         def _cleanup(t):
+            global _current_hud
             panel.orderOut_(None)
+            if _current_hud is panel:
+                _current_hud = None
 
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             _FADE_OUT + 0.05, _TimerHelper.with_callback(_cleanup), b"fire:", None, False,

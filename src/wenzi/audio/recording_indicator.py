@@ -403,12 +403,26 @@ class RecordingIndicatorPanel:
         if self._indicator_view is not None:
             self._indicator_view._recording_active = True
 
+    def _clear_view_backref(self) -> None:
+        """Clear the _indicator back-reference on the NSView to break the cycle."""
+        if (
+            self._indicator_view
+            and hasattr(self._indicator_view, "_view")
+            and self._indicator_view._view
+        ):
+            try:
+                self._indicator_view._view._indicator = None
+            except Exception:
+                pass
+
     def hide(self) -> None:
         """Hide and clean up the indicator panel."""
         try:
             if self._timer is not None:
                 self._timer.invalidate()
                 self._timer = None
+
+            self._clear_view_backref()
 
             if self._panel is not None:
                 self._panel.orderOut_(None)
@@ -449,6 +463,8 @@ class RecordingIndicatorPanel:
                     self._panel.setContentSize_(
                         (float(_PANEL_WIDTH_WITH_MODE), float(current_height))
                     )
+                    # Clear old view's back-reference before creating new one
+                    self._clear_view_backref()
                     # Recreate content view at new width
                     content_view = self._indicator_view.create_view(
                         _PANEL_WIDTH_WITH_MODE, int(current_height)
@@ -507,6 +523,8 @@ class RecordingIndicatorPanel:
             new_height = _PANEL_HEIGHT_WITH_LABEL
             current_width = int(self._panel.frame().size.width)
 
+            # Clear old view's back-reference before creating new one
+            self._clear_view_backref()
             # Resize panel and content view (preserve current width)
             content_view = self._indicator_view.create_view(current_width, new_height)
             self._panel.setContentSize_((float(current_width), float(new_height)))
@@ -565,6 +583,7 @@ class RecordingIndicatorPanel:
 
             def _on_complete():
                 panel.orderOut_(None)
+                self._clear_view_backref()
                 self._panel = None
                 self._indicator_view = None
                 self._smoothed_level = 0.0

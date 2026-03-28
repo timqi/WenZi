@@ -414,11 +414,31 @@ class WebViewPanel:
                 pass
             self._tmp_html_path = None
 
+        # Break WKWebView retain cycles before removing the panel.
+        # The script message handler creates a strong reference cycle:
+        # WKWebView -> userContentController -> messageHandler -> _panel_ref -> self -> _webview
+        # We must remove the handler and clear back-references to allow deallocation.
+        try:
+            if self._webview is not None:
+                ucc = self._webview.configuration().userContentController()
+                ucc.removeScriptMessageHandlerForName_("wz")
+                ucc.removeAllUserScripts()
+        except Exception:
+            pass
+        if self._message_handler_obj is not None:
+            self._message_handler_obj._panel_ref = None
+        if self._close_delegate is not None:
+            self._close_delegate._panel_ref = None
+        if self._panel is not None:
+            self._panel.setDelegate_(None)
+
         if self._panel is not None:
             from AppKit import NSApp
 
             self._panel.orderOut_(None)
             NSApp.setActivationPolicy_(1)  # Accessory (statusbar-only)
+
+        self._webview = None
 
     def set_html(self, html: str) -> None:
         """Update the HTML content."""

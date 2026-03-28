@@ -288,6 +288,7 @@ class AppSource:
         if not self._scanned or (now - self._last_scan_time > self._SCAN_TTL):
             if self._scanned:
                 logger.debug("App list TTL expired, rescanning")
+            self._icon_cache.clear()
             self._apps = _scan_apps()
             self._scanned = True
             self._last_scan_time = now
@@ -295,6 +296,7 @@ class AppSource:
 
     def rescan(self) -> None:
         """Force a rescan of application directories."""
+        self._icon_cache.clear()
         self._apps = _scan_apps()
         self._scanned = True
         self._last_scan_time = time.monotonic()

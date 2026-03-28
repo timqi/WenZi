@@ -154,6 +154,9 @@ class SnippetExpander:
             Quartz.CFRunLoopStop(self._loop)
             self._loop = None
         self._tap = None
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
         with self._lock:
             self._buffer = ""
         logger.info("SnippetExpander stopped")

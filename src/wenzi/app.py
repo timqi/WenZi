@@ -440,6 +440,7 @@ class WenZiApp(StatusBarApp):
             "Screenshot", callback=self._on_screenshot
         )
         self._screenshot_hotkey_listener = None
+        self._clipboard_hotkey_listener = None
         self._screenshot_annotation = None
 
         # Feedback toggle items
@@ -1083,6 +1084,13 @@ class WenZiApp(StatusBarApp):
 
     def _show_annotation_ui(self, image_path: str) -> None:
         """Open the annotation UI for a captured screenshot (main thread)."""
+        if self._screenshot_annotation is not None:
+            try:
+                self._screenshot_annotation.close()
+            except Exception:
+                pass
+            self._screenshot_annotation = None
+
         from wenzi.screenshot import AnnotationLayer
 
         self._screenshot_annotation = AnnotationLayer()
@@ -1115,6 +1123,39 @@ class WenZiApp(StatusBarApp):
             self._settings_panel.close()
         if self._vocab_controller is not None:
             self._vocab_controller.close_panel()
+        # Close active UI panels and release resources
+        try:
+            self._recording_indicator.hide()
+        except Exception:
+            logger.debug("Recording indicator hide failed", exc_info=True)
+        try:
+            self._streaming_overlay.close()
+        except Exception:
+            logger.debug("Streaming overlay close failed", exc_info=True)
+        try:
+            self._transcriber.cleanup()
+        except Exception:
+            logger.debug("Transcriber cleanup failed", exc_info=True)
+        try:
+            self._preview_panel.close()
+        except Exception:
+            logger.debug("Preview panel close failed", exc_info=True)
+        try:
+            if self._history_browser is not None:
+                self._history_browser.close()
+        except Exception:
+            logger.debug("History browser close failed", exc_info=True)
+        try:
+            if self._screenshot_annotation is not None:
+                self._screenshot_annotation.close()
+        except Exception:
+            logger.debug("Screenshot annotation close failed", exc_info=True)
+        # Flush encrypted vault to disk before shutting down
+        try:
+            from wenzi.vault import shutdown_vault
+            shutdown_vault()
+        except Exception:
+            logger.debug("Vault shutdown failed", exc_info=True)
         # Close AI provider clients and shut down the shared asyncio loop
         if self._enhancer:
             try:

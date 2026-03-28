@@ -579,6 +579,13 @@ class StreamingOverlayPanel:
             self._panel.orderOut_(None)
             self._panel = None
 
+        try:
+            if self._webview is not None:
+                self._webview.setNavigationDelegate_(None)
+            if self._nav_delegate is not None:
+                self._nav_delegate._panel_ref = None
+        except Exception:
+            logger.debug("Error clearing delegate refs", exc_info=True)
         self._webview = None
         self._nav_delegate = None
         logger.debug("Streaming overlay closed")

@@ -141,6 +141,9 @@ class ClipboardSource:
         """
         if not bundle_id:
             return ""
+        if len(self._icon_mem_cache) > 200:
+            self._icon_mem_cache.clear()
+            self._icon_miss_until.clear()
         if bundle_id in self._icon_mem_cache:
             return self._icon_mem_cache[bundle_id]
 

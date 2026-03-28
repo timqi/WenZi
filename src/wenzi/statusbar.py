@@ -174,6 +174,8 @@ class StatusMenuItem:
     def pop(self, title: str) -> Any:
         """Remove and return item by title."""
         value = self._items.pop(title)
+        if isinstance(value, StatusMenuItem):
+            value.set_callback(None)
         if self._menu is not None:
             self._menu.removeItem_(value._menuitem)
         return value
@@ -195,6 +197,9 @@ class StatusMenuItem:
 
     def clear(self) -> None:
         """Remove all items from submenu."""
+        for value in self._items.values():
+            if isinstance(value, StatusMenuItem):
+                value.set_callback(None)
         if self._menu is not None:
             self._menu.removeAllItems()
         self._items.clear()
@@ -208,6 +213,8 @@ class StatusMenuItem:
 
     def __delitem__(self, key: str) -> None:
         value = self._items.pop(key)
+        if isinstance(value, StatusMenuItem):
+            value.set_callback(None)
         if self._menu is not None:
             self._menu.removeItem_(value._menuitem)
 

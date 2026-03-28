@@ -134,8 +134,14 @@ class ScriptEngine:
             from wenzi.hotkey import unregister_custom_keys
 
             unregister_custom_keys()
-            # Reset APIs so they create fresh instances
+            # Reset APIs so they create fresh instances.
+            # Close the chooser panel first to break WKWebView retain cycles.
             self._wz._hotkey_api = None
+            try:
+                if self._wz._chooser_api is not None:
+                    self._wz._chooser_api.panel.close()
+            except Exception:
+                logger.debug("Error closing chooser panel during reload", exc_info=True)
             self._wz._chooser_api = None
             self._wz._ui_api = None
             # Keep menubar items alive for reuse (avoids NSStatusBar flicker)

@@ -54,6 +54,7 @@ class TranslateWebViewPanel:
 
     def __init__(self) -> None:
         self._panel = None
+        self._webview = None
         self._delegate = None
 
     def show(self, text: str) -> None:
@@ -102,6 +103,7 @@ class TranslateWebViewPanel:
         webview.loadRequest_(request)
 
         panel.contentView().addSubview_(webview)
+        self._webview = webview
 
         # Delegate to auto-close on focus loss
         delegate = _ResignDelegate.alloc().init()
@@ -119,6 +121,9 @@ class TranslateWebViewPanel:
 
     def _cleanup(self) -> None:
         """Close the panel and clear references."""
+        if self._webview is not None:
+            self._webview.stopLoading()
+            self._webview = None
         if self._panel is not None:
             try:
                 self._panel.close()

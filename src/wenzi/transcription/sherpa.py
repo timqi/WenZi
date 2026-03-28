@@ -258,8 +258,8 @@ class SherpaOnnxTranscriber(BaseTranscriber):
                 logger.warning(
                     "Decode thread did not exit within timeout, cleaning up references"
                 )
-                self._decode_thread = None
-                self._on_partial = None
+                self._cleanup_stream()
+                return self._last_text
 
         # Final decode pass
         while self._recognizer.is_ready(self._stream):
@@ -317,6 +317,8 @@ class SherpaOnnxTranscriber(BaseTranscriber):
             self.cancel_streaming()
         self._recognizer = None
         self._initialized = False
+        import gc
+        gc.collect()
         # Clean up hotwords file
         try:
             self._hotwords_path().unlink(missing_ok=True)

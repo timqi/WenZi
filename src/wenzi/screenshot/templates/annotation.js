@@ -752,4 +752,25 @@
       return;
     }
   });
+
+  // ── Cleanup (prevent memory leaks) ──
+
+  function cleanupCanvas() {
+    if (canvas) {
+      canvas.dispose();
+      canvas = null;
+    }
+    bgImage = null;
+    if (hiddenCanvas) {
+      hiddenCanvas = null;
+    }
+    hiddenCtx = null;
+    stateStack = [];
+    mosaicState = null;
+  }
+
+  // Expose to global scope so Python can call via eval_js
+  window.cleanupCanvas = cleanupCanvas;
+
+  window.addEventListener("beforeunload", cleanupCanvas);
 })();

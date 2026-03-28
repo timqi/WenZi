@@ -33,6 +33,7 @@ class MLXWhisperTranscriber(BaseTranscriber):
         self._initialized = False
         self._mlx_whisper = None
         self._punc_restorer = None
+        self._transcription_count = 0
 
     @property
     def initialized(self) -> bool:
@@ -82,8 +83,30 @@ class MLXWhisperTranscriber(BaseTranscriber):
         if self._punc_restorer:
             self._punc_restorer.cleanup()
             self._punc_restorer = None
+
+        # Try to clear mlx_whisper's internal model cache
+        try:
+            if self._mlx_whisper is not None:
+                # Try known cache locations in different mlx_whisper versions
+                for attr in ('_cache', '_model_cache', 'models'):
+                    if hasattr(self._mlx_whisper, attr):
+                        cache = getattr(self._mlx_whisper, attr)
+                        if isinstance(cache, dict):
+                            cache.clear()
+                # Also check the load_models submodule
+                load_mod = getattr(self._mlx_whisper, 'load_models', None)
+                if load_mod:
+                    for attr in ('_cache', '_model_cache'):
+                        if hasattr(load_mod, attr):
+                            cache = getattr(load_mod, attr)
+                            if isinstance(cache, dict):
+                                cache.clear()
+        except Exception:
+            pass
+
         self._mlx_whisper = None
         self._initialized = False
+        self._transcription_count = 0
         gc.collect()
         try:
             import mlx.core as mx
@@ -149,6 +172,20 @@ class MLXWhisperTranscriber(BaseTranscriber):
 
         if self._punc_restorer and text.strip() and not self.skip_punc:
             text = self._punc_restorer.restore(text)
+
+        # Periodically clear GPU memory to prevent accumulation
+        self._transcription_count += 1
+        if self._transcription_count % 5 == 0:
+            try:
+                import mlx.core as mx
+
+                mx.metal.clear_cache()
+                logger.debug(
+                    "Cleared Metal cache after %d transcriptions",
+                    self._transcription_count,
+                )
+            except Exception:
+                pass
 
         logger.info("Transcription result: %s", text[:100])
         return text

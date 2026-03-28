@@ -153,11 +153,22 @@ class StatsChartPanel:
 
     def close(self) -> None:
         """Close panel and restore accessory mode."""
-        if self._panel is not None:
-            from AppKit import NSApp
+        try:
+            if self._webview is not None:
+                self._webview.stopLoading_(None)
+                self._webview = None
+            if self._panel is not None:
+                self._panel.setDelegate_(None)
+                if self._close_delegate is not None:
+                    self._close_delegate._panel_ref = None
+                self._close_delegate = None
+                self._panel.orderOut_(None)
+                self._panel = None
+        except Exception:
+            logger.debug("stats_panel: error during close cleanup", exc_info=True)
 
-            self._panel.orderOut_(None)
-            NSApp.setActivationPolicy_(1)  # Accessory (statusbar-only)
+        from AppKit import NSApp
+        NSApp.setActivationPolicy_(1)  # Accessory (statusbar-only)
 
     def _build_panel(self) -> None:
         """Build NSPanel + WKWebView."""

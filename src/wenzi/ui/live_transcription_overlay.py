@@ -200,6 +200,7 @@ class LiveTranscriptionOverlay:
                 self._panel = None
             self._text_field = None
             self._content_view = None
+            LiveTranscriptionOverlay._instances.discard(self)
             logger.debug("Live transcription overlay hidden")
         except Exception as e:
             logger.warning("Failed to hide live transcription overlay: %s", e)

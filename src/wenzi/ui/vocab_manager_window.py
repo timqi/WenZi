@@ -140,6 +140,13 @@ class VocabManagerPanel:
 
     def close(self) -> None:
         """Close the panel and clean up."""
+        # Invoke on_close callback before clearing callbacks
+        on_close = self._callbacks.get("on_close")
+        if on_close is not None:
+            try:
+                on_close()
+            except Exception:
+                pass
         if self._panel is not None:
             self._panel.setDelegate_(None)
             self._close_delegate = None
