@@ -6,6 +6,8 @@ from wenzi.enhance.text_diff import (
     _is_punctuation_only,
     _normalize_cjk_spacing,
     _strip_boundary_punctuation,
+    _to_simplified,
+    extract_word_pairs,
     inline_diff,
     tokenize_for_diff,
 )
@@ -255,3 +257,59 @@ class TestIsPunctuationOnly:
 
     def test_space_is_punctuation(self):
         assert _is_punctuation_only(" ")
+
+
+class TestToSimplified:
+    def test_traditional_to_simplified(self):
+        tokens = ["說", "話"]
+        assert _to_simplified(tokens) == ["说", "话"]
+
+    def test_already_simplified(self):
+        tokens = ["说", "话"]
+        assert _to_simplified(tokens) == ["说", "话"]
+
+    def test_latin_unchanged(self):
+        tokens = ["hello", " ", "world"]
+        assert _to_simplified(tokens) == ["hello", " ", "world"]
+
+    def test_mixed_tokens(self):
+        tokens = ["說", "Python", "話"]
+        assert _to_simplified(tokens) == ["说", "Python", "话"]
+
+
+class TestTradSimpDiff:
+    """Trad/simp variants of the same character should not appear as diffs."""
+
+    def test_inline_diff_pure_trad_simp(self):
+        """Pure trad-to-simp conversion produces no diff brackets."""
+        result = inline_diff("說話", "说话")
+        assert "[" not in result
+
+    def test_inline_diff_trad_simp_with_real_change(self):
+        """Only the real change is bracketed; trad/simp equivalences are silent."""
+        result = inline_diff("說話", "说了")
+        assert "[話→了]" in result or "[话→了]" in result
+        assert "說→说" not in result
+
+    def test_inline_diff_mixed_trad_simp_sentence(self):
+        """Sentence-level trad/simp with a real correction."""
+        result = inline_diff("這個東西很漂亮", "这个东西很好看")
+        assert "漂亮" in result or "好看" in result  # real change
+        assert "這→这" not in result  # trad/simp should be silent
+
+    def test_extract_word_pairs_pure_trad_simp(self):
+        """No pairs extracted when only trad/simp difference exists."""
+        pairs = extract_word_pairs("說話", "说话")
+        assert pairs == []
+
+    def test_extract_word_pairs_trad_simp_with_real_change(self):
+        """Only real changes appear in extracted pairs."""
+        pairs = extract_word_pairs("這個東西很漂亮", "这个东西很好看")
+        originals = [p[0] for p in pairs]
+        corrected = [p[1] for p in pairs]
+        # Should contain the real change
+        assert any("漂" in o or "亮" in o for o in originals)
+        assert any("好" in c or "看" in c for c in corrected)
+        # Should NOT contain trad/simp-only pairs
+        assert all("這" not in o for o in originals)
+        assert all("東" not in o for o in originals)
