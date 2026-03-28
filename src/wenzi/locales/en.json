@@ -440,6 +440,9 @@
   "preview.hotwords_table.hits": "Hits",
   "preview.hotwords_table.last_hit": "Last Hit",
   "preview.hotwords_table.first_seen": "First Seen",
+  "preview.context_panel.title": "Context & LLM Vocabulary",
+  "preview.context_panel.input_context": "Input Context",
+  "preview.context_panel.llm_vocab": "LLM Vocabulary",
 
   "history_web.search_placeholder": "Search history...",
   "history_web.time.all": "All Time",

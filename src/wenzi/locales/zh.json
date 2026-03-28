@@ -440,6 +440,9 @@
   "preview.hotwords_table.hits": "命中",
   "preview.hotwords_table.last_hit": "最后命中",
   "preview.hotwords_table.first_seen": "最早出现",
+  "preview.context_panel.title": "上下文 & LLM 词库",
+  "preview.context_panel.input_context": "输入上下文",
+  "preview.context_panel.llm_vocab": "LLM 词库",
 
   "history_web.search_placeholder": "搜索历史...",
   "history_web.time.all": "全部时间",

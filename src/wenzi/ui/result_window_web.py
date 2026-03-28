@@ -14,6 +14,7 @@ from wenzi.ui.templates import load_template
 from wenzi.ui.web_utils import cleanup_webview_handler
 
 if TYPE_CHECKING:
+    from wenzi.enhance.manual_vocabulary import ManualVocabEntry
     from wenzi.enhance.vocabulary import HotwordDetail
 
 logger = logging.getLogger(__name__)
@@ -62,41 +63,7 @@ def _ensure_edit_menu() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _build_hotwords_html(details: List[HotwordDetail]) -> str:
-    """Build an HTML page with a styled table of hotword details."""
-    from wenzi.i18n import t
-
-    rows: list[str] = []
-    for d in details:
-        term = html.escape(d.term)
-        variant = html.escape(d.variant)
-        source = html.escape(d.source)
-        last_hit_attr = html.escape(d.last_hit, quote=True)
-        first_seen_attr = html.escape(d.first_seen, quote=True)
-
-        rows.append(
-            f"<tr>"
-            f"<td class='cell-term'>{term}</td>"
-            f"<td class='cell-variant'>{variant}</td>"
-            f"<td class='cell-source'>{source}</td>"
-            f"<td class='cell-num'>{d.hit_count}</td>"
-            f'<td class="cell-time" data-ts="{last_hit_attr}"></td>'
-            f'<td class="cell-time" data-ts="{first_seen_attr}"></td>'
-            f"</tr>"
-        )
-
-    tbody = "\n".join(rows)
-    th_term = html.escape(t("preview.hotwords_table.term"))
-    th_variant = html.escape(t("preview.hotwords_table.variant"))
-    th_source = html.escape(t("preview.hotwords_table.source"))
-    th_hits = html.escape(t("preview.hotwords_table.hits"))
-    th_last_hit = html.escape(t("preview.hotwords_table.last_hit"))
-    th_first_seen = html.escape(t("preview.hotwords_table.first_seen"))
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<style>
+_VOCAB_TABLE_CSS = """\
 :root {{
     --bg: #ffffff; --text: #1d1d1f; --header-bg: #f0f0f2;
     --border: #d2d2d7; --secondary: #86868b;
@@ -119,7 +86,6 @@ body {{
 table {{
     width: 100%; border-collapse: collapse; table-layout: auto;
 }}
-thead {{ position: sticky; top: 0; z-index: 1; }}
 th {{
     background: var(--header-bg); font-weight: 600; font-size: 11px;
     padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border);
@@ -140,21 +106,9 @@ tr:hover {{ background: var(--hover); }}
 .cell-time {{
     color: var(--secondary); font-size: 11px;
     font-family: "SF Mono", Menlo, monospace;
-}}
-</style>
-</head>
-<body>
-<table>
-<thead>
-<tr>
-    <th>{th_term}</th><th>{th_variant}</th><th>{th_source}</th>
-    <th>{th_hits}</th><th>{th_last_hit}</th><th>{th_first_seen}</th>
-</tr>
-</thead>
-<tbody>
-{tbody}
-</tbody>
-</table>
+}}"""
+
+_FMTDATE_JS = """\
 <script>
 function fmtDate(ts) {{
     if (!ts || ts.length < 10) return '';
@@ -173,7 +127,145 @@ document.querySelectorAll('.cell-time[data-ts]').forEach(function(el) {{
     el.textContent = fmtDate(ts);
     if (ts) el.title = ts;
 }});
-</script>
+</script>"""
+
+
+def _build_vocab_table_html(entries: List[ManualVocabEntry]) -> tuple[str, str]:
+    """Build vocab table rows (tbody) and header row (thead tr) HTML."""
+    from wenzi.i18n import t
+
+    rows: list[str] = []
+    for e in entries:
+        term = html.escape(e.term)
+        variant = html.escape(e.variant)
+        source = html.escape(e.source)
+        last_hit_attr = html.escape(e.last_hit, quote=True)
+        first_seen_attr = html.escape(e.first_seen, quote=True)
+        rows.append(
+            f"<tr>"
+            f"<td class='cell-term'>{term}</td>"
+            f"<td class='cell-variant'>{variant}</td>"
+            f"<td class='cell-source'>{source}</td>"
+            f"<td class='cell-num'>{e.hit_count}</td>"
+            f'<td class="cell-time" data-ts="{last_hit_attr}"></td>'
+            f'<td class="cell-time" data-ts="{first_seen_attr}"></td>'
+            f"</tr>"
+        )
+
+    th_term = html.escape(t("preview.hotwords_table.term"))
+    th_variant = html.escape(t("preview.hotwords_table.variant"))
+    th_source = html.escape(t("preview.hotwords_table.source"))
+    th_hits = html.escape(t("preview.hotwords_table.hits"))
+    th_last_hit = html.escape(t("preview.hotwords_table.last_hit"))
+    th_first_seen = html.escape(t("preview.hotwords_table.first_seen"))
+    thead = (
+        f"<th>{th_term}</th><th>{th_variant}</th><th>{th_source}</th>"
+        f"<th>{th_hits}</th><th>{th_last_hit}</th><th>{th_first_seen}</th>"
+    )
+    return "\n".join(rows), thead
+
+
+def _build_hotwords_html(details: List[HotwordDetail]) -> str:
+    """Build an HTML page with a styled table of hotword details."""
+    tbody, thead = _build_vocab_table_html(details)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+{_VOCAB_TABLE_CSS}
+thead {{ position: sticky; top: 0; z-index: 1; }}
+</style>
+</head>
+<body>
+<table>
+<thead><tr>    {thead}
+</tr></thead>
+<tbody>
+{tbody}
+</tbody>
+</table>
+{_FMTDATE_JS}
+</body>
+</html>"""
+
+
+def _build_context_panel_html(
+    context_text: str, vocab_entries: List[ManualVocabEntry],
+) -> str:
+    """Build HTML page with input context and LLM vocabulary table."""
+    from wenzi.i18n import t
+
+    context_items: list[str] = []
+    if context_text:
+        for line in context_text.splitlines():
+            if ":" in line:
+                key, _, val = line.partition(":")
+                key = html.escape(key.strip())
+                val = html.escape(val.strip())
+                context_items.append(
+                    f'<div class="ctx-row">'
+                    f'<span class="ctx-key">{key}</span>'
+                    f'<span class="ctx-val">{val}</span>'
+                    f'</div>'
+                )
+            elif line.strip():
+                context_items.append(
+                    f'<div class="ctx-row">'
+                    f'<span class="ctx-val">{html.escape(line.strip())}</span>'
+                    f'</div>'
+                )
+
+    lbl_context = html.escape(t("preview.context_panel.input_context"))
+    lbl_vocab = html.escape(t("preview.context_panel.llm_vocab"))
+
+    context_section = ""
+    if context_items:
+        context_body = "\n".join(context_items)
+        context_section = f"""<div class="section">
+<div class="section-title">{lbl_context}</div>
+<div class="context-text">{context_body}</div>
+</div>"""
+
+    vocab_section = ""
+    if vocab_entries:
+        tbody, thead = _build_vocab_table_html(vocab_entries)
+        vocab_section = f"""<div class="section">
+<div class="section-title">{lbl_vocab} ({len(vocab_entries)})</div>
+<table>
+<thead><tr>    {thead}
+</tr></thead>
+<tbody>
+{tbody}
+</tbody>
+</table>
+</div>"""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+{_VOCAB_TABLE_CSS}
+.section {{ padding: 10px 12px; }}
+.section + .section {{ border-top: 1px solid var(--border); padding-top: 10px; }}
+.section-title {{
+    font-weight: 600; font-size: 11px; color: var(--secondary);
+    text-transform: uppercase; margin-bottom: 6px;
+}}
+.context-text {{ font-size: 12px; }}
+.ctx-row {{ display: flex; gap: 8px; padding: 2px 0; }}
+.ctx-key {{
+    flex-shrink: 0; width: 60px; text-align: right;
+    font-weight: 600; font-size: 11px; color: var(--secondary);
+}}
+.ctx-val {{ font-family: "SF Mono", Menlo, monospace; }}
+</style>
+</head>
+<body>
+{context_section}
+{vocab_section}
+{_FMTDATE_JS}
 </body>
 </html>"""
 
@@ -329,11 +421,13 @@ class ResultPreviewPanel:
         self._thinking_enabled: bool = False
         self._thinking_text: str = ""
         self._hotwords_detail: List[HotwordDetail] = []
+        self._llm_vocab_detail: List[ManualVocabEntry] = []
         self._loading_timer = None
         self._loading_seconds: int = 0
         self._playback_timer = None
         self._translate_webview = None
         self._hotwords_webview_panel = None
+        self._context_webview_panel = None
         self._page_loaded: bool = False
         self._pending_js: list[str] = []
         self._navigation_delegate = None
@@ -644,7 +738,7 @@ class ResultPreviewPanel:
             )
             if system_prompt:
                 self._eval_js("enablePromptButton()")
-            if self._input_context_text:
+            if self._input_context_text or self._llm_vocab_detail:
                 self._eval_js("enableContextButton()")
 
         AppHelper.callAfter(_update)
@@ -680,7 +774,7 @@ class ResultPreviewPanel:
             )
             if system_prompt:
                 self._eval_js("enablePromptButton()")
-            if self._input_context_text:
+            if self._input_context_text or self._llm_vocab_detail:
                 self._eval_js("enableContextButton()")
 
         AppHelper.callAfter(_update)
@@ -738,6 +832,10 @@ class ResultPreviewPanel:
         i.e. only after the webview is guaranteed to be ready.
         """
         self._input_context_text = text
+
+    def set_llm_vocab(self, entries: List[ManualVocabEntry]) -> None:
+        """Cache LLM vocabulary entries for display in the context panel."""
+        self._llm_vocab_detail = list(entries)
 
     def set_enhance_label(self, suffix: str, request_id: int = 0) -> None:
         """Update only the enhancement label text."""
@@ -984,8 +1082,8 @@ class ResultPreviewPanel:
                 self._show_info_panel("System Prompt", self._system_prompt)
 
         elif msg_type == "showContext":
-            if self._input_context_text:
-                self._show_info_panel("Input Context", self._input_context_text)
+            if self._input_context_text or self._llm_vocab_detail:
+                self._show_context_panel()
 
         elif msg_type == "toggleAudio":
             if self._asr_wav_data:
@@ -1437,8 +1535,11 @@ class ResultPreviewPanel:
         panel.contentView().addSubview_(scroll)
         panel.makeKeyAndOrderFront_(None)
 
-    def _show_hotwords_panel(self, details: List[HotwordDetail]) -> None:
-        """Display hotword details in a WKWebView-based table panel."""
+    def _open_webview_panel(self, title: str, html_content: str, old_panel=None):
+        """Open (or replace) a floating WKWebView panel.
+
+        Returns the new panel so the caller can store it.
+        """
         from AppKit import (
             NSBackingStoreBuffered,
             NSClosableWindowMask,
@@ -1450,13 +1551,11 @@ class ResultPreviewPanel:
         from Foundation import NSMakeRect, NSURL
         from WebKit import WKWebView, WKWebViewConfiguration
 
-        # Close existing hotwords panel to release resources
-        if self._hotwords_webview_panel is not None:
+        if old_panel is not None:
             try:
-                self._hotwords_webview_panel.close()
+                old_panel.close()
             except Exception:
                 pass
-            self._hotwords_webview_panel = None
 
         width, height = 700, 420
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -1465,7 +1564,7 @@ class ResultPreviewPanel:
             NSBackingStoreBuffered,
             False,
         )
-        panel.setTitle_(f"Hotwords ({len(details)})")
+        panel.setTitle_(title)
         panel.setLevel_(NSStatusWindowLevel)
         panel.setFloatingPanel_(True)
         panel.setHidesOnDeactivate_(False)
@@ -1477,10 +1576,28 @@ class ResultPreviewPanel:
         )
         webview.setAutoresizingMask_(0x12)
         webview.setValue_forKey_(False, "drawsBackground")
-
-        hotwords_html = _build_hotwords_html(details)
-        webview.loadHTMLString_baseURL_(hotwords_html, NSURL.fileURLWithPath_("/"))
+        webview.loadHTMLString_baseURL_(html_content, NSURL.fileURLWithPath_("/"))
 
         panel.contentView().addSubview_(webview)
         panel.makeKeyAndOrderFront_(None)
-        self._hotwords_webview_panel = panel
+        return panel
+
+    def _show_hotwords_panel(self, details: List[HotwordDetail]) -> None:
+        """Display hotword details in a WKWebView-based table panel."""
+        self._hotwords_webview_panel = self._open_webview_panel(
+            f"Hotwords ({len(details)})",
+            _build_hotwords_html(details),
+            self._hotwords_webview_panel,
+        )
+
+    def _show_context_panel(self) -> None:
+        """Display input context and LLM vocabulary in a WKWebView panel."""
+        from wenzi.i18n import t
+
+        self._context_webview_panel = self._open_webview_panel(
+            t("preview.context_panel.title"),
+            _build_context_panel_html(
+                self._input_context_text, self._llm_vocab_detail,
+            ),
+            self._context_webview_panel,
+        )

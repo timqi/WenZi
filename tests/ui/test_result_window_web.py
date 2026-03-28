@@ -1188,6 +1188,102 @@ class TestBuildHotwordsHtml:
         assert "prefers-color-scheme: dark" in html
 
 
+class TestBuildContextPanelHtml:
+    def _make_entry(self, **kwargs):
+        from wenzi.enhance.manual_vocabulary import ManualVocabEntry
+
+        defaults = dict(term="API", variant="a p i")
+        defaults.update(kwargs)
+        return ManualVocabEntry(**defaults)
+
+    def test_context_only(self):
+        from wenzi.ui.result_window_web import _build_context_panel_html
+
+        html = _build_context_panel_html("App:  iTerm2\nWindow:  zsh", [])
+        assert "iTerm2" in html
+        assert "<!DOCTYPE html>" in html
+        assert "<table>" not in html
+
+    def test_context_key_value_format(self):
+        from wenzi.ui.result_window_web import _build_context_panel_html
+
+        ctx = "App:      iTerm2\nWindow:   ~/work\nElement:  AXTextArea"
+        html = _build_context_panel_html(ctx, [])
+        assert "ctx-key" in html
+        assert "ctx-val" in html
+        assert "App" in html
+        assert "iTerm2" in html
+        assert "~/work" in html
+        assert "AXTextArea" in html
+
+    def test_vocab_only(self):
+        from wenzi.ui.result_window_web import _build_context_panel_html
+
+        entries = [self._make_entry(term="Claude", variant="克劳德")]
+        html = _build_context_panel_html("", entries)
+        assert "Claude" in html
+        assert "克劳德" in html
+        assert "<table>" in html
+
+    def test_both_sections(self):
+        from wenzi.ui.result_window_web import _build_context_panel_html
+
+        entries = [self._make_entry()]
+        html = _build_context_panel_html("App:  iTerm2", entries)
+        assert "iTerm2" in html
+        assert "<table>" in html
+        # Context should appear before vocab table
+        ctx_pos = html.index("iTerm2")
+        table_pos = html.index("<table>")
+        assert ctx_pos < table_pos
+
+    def test_html_escaping(self):
+        from wenzi.ui.result_window_web import _build_context_panel_html
+
+        entries = [self._make_entry(term="<b>bold</b>", variant="a&b")]
+        html = _build_context_panel_html("App:  <script>alert(1)</script>", entries)
+        assert "&lt;script&gt;" in html
+        assert "&lt;b&gt;bold&lt;/b&gt;" in html
+        assert "a&amp;b" in html
+
+    def test_time_rendered_via_js(self):
+        from wenzi.ui.result_window_web import _build_context_panel_html
+
+        entries = [self._make_entry(last_hit="2024-06-01T00:00:00")]
+        html = _build_context_panel_html("", entries)
+        assert "data-ts" in html
+        assert "fmtDate" in html
+
+    def test_dark_mode_css(self):
+        from wenzi.ui.result_window_web import _build_context_panel_html
+
+        html = _build_context_panel_html("test", [])
+        assert "prefers-color-scheme: dark" in html
+
+    def test_vocab_count_in_title(self):
+        from wenzi.ui.result_window_web import _build_context_panel_html
+
+        entries = [self._make_entry(), self._make_entry(term="B", variant="b")]
+        html = _build_context_panel_html("", entries)
+        assert "(2)" in html
+
+
+class TestSetLlmVocab:
+    def test_caches_entries(self):
+        from wenzi.ui.result_window_web import ResultPreviewPanel
+
+        panel = _build_panel(ResultPreviewPanel())
+        entries = [MagicMock(term="API")]
+        panel.set_llm_vocab(entries)
+        assert len(panel._llm_vocab_detail) == 1
+
+    def test_init_has_empty_llm_vocab(self):
+        from wenzi.ui.result_window_web import ResultPreviewPanel
+
+        panel = _build_panel(ResultPreviewPanel())
+        assert panel._llm_vocab_detail == []
+
+
 class TestSetHotwords:
     def test_caches_details(self):
         from wenzi.ui.result_window_web import ResultPreviewPanel

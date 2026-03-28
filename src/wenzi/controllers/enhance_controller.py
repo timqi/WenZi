@@ -249,6 +249,9 @@ class EnhanceController:
                     self._preview_panel.update_system_prompt(
                         self._enhancer.last_system_prompt
                     )
+                    self._preview_panel.set_llm_vocab(
+                        self._enhancer.last_llm_vocab
+                    )
                 if is_thinking == "retry" and chunk:
                     had_thinking = True
                     self._preview_panel.append_thinking_text(
