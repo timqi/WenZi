@@ -440,7 +440,6 @@ class WenZiApp(StatusBarApp):
             "Screenshot", callback=self._on_screenshot
         )
         self._screenshot_hotkey_listener = None
-        self._screenshot_overlay = None
         self._screenshot_annotation = None
 
         # Feedback toggle items
@@ -1049,49 +1048,48 @@ class WenZiApp(StatusBarApp):
         """Handle screenshot hotkey press or menu item click.
 
         May be called from a background thread (Quartz event tap).
-        capture_screen() runs on the calling thread; UI creation is
-        dispatched to the main thread via AppHelper.callAfter().
+        Runs macOS ``screencapture -i`` in a background thread, then
+        opens the annotation UI on the main thread.
         """
         import threading
 
-        from wenzi.screenshot import capture_screen
-
         def _capture_and_show():
-            try:
-                screen_data = capture_screen()
-            except Exception:
-                logger.exception("Screenshot capture failed")
+            import subprocess
+            import tempfile
+
+            tmp_dir = os.path.expanduser("~/.cache/WenZi/screenshot_tmp")
+            os.makedirs(tmp_dir, exist_ok=True)
+            fd, tmp_path = tempfile.mkstemp(suffix=".png", dir=tmp_dir)
+            os.close(fd)
+
+            result = subprocess.run(
+                ["screencapture", "-i", tmp_path],
+                capture_output=True,
+            )
+
+            if result.returncode != 0 or not os.path.isfile(tmp_path) or os.path.getsize(tmp_path) == 0:
+                # User cancelled or screencapture failed
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
                 return
 
             from PyObjCTools import AppHelper
 
-            AppHelper.callAfter(self._show_screenshot_ui, screen_data)
+            AppHelper.callAfter(self._show_annotation_ui, tmp_path)
 
         threading.Thread(target=_capture_and_show, daemon=True).start()
 
-    def _show_screenshot_ui(self, screen_data) -> None:
-        """Create and show screenshot overlay + annotation UI (main thread only)."""
-        from wenzi.screenshot import ScreenshotOverlay, AnnotationLayer
+    def _show_annotation_ui(self, image_path: str) -> None:
+        """Open the annotation UI for a captured screenshot (main thread)."""
+        from wenzi.screenshot import AnnotationLayer
 
-        self._screenshot_overlay = ScreenshotOverlay(screen_data)
         self._screenshot_annotation = AnnotationLayer()
-
-        def on_region_selected(region_rect, cropped_image):
-            self._screenshot_overlay.close()
-            self._screenshot_annotation.show(
-                region_rect=region_rect,
-                cropped_image=cropped_image,
-                on_done=self._on_screenshot_done,
-                on_cancel=self._on_screenshot_cancel,
-            )
-
-        def on_region_cancel():
-            self._screenshot_overlay.close()
-            self._screenshot_overlay = None
-
-        self._screenshot_overlay.show(
-            on_complete=on_region_selected,
-            on_cancel=on_region_cancel,
+        self._screenshot_annotation.show(
+            image_path=image_path,
+            on_done=self._on_screenshot_done,
+            on_cancel=self._on_screenshot_cancel,
         )
 
     def _on_screenshot_done(self) -> None:
@@ -1099,16 +1097,12 @@ class WenZiApp(StatusBarApp):
         if self._screenshot_annotation:
             self._screenshot_annotation.close()
             self._screenshot_annotation = None
-        self._screenshot_overlay = None
 
     def _on_screenshot_cancel(self) -> None:
         """Screenshot annotation cancelled."""
         if self._screenshot_annotation:
             self._screenshot_annotation.close()
             self._screenshot_annotation = None
-        if self._screenshot_overlay:
-            self._screenshot_overlay.close()
-            self._screenshot_overlay = None
 
     def _on_quit_click(self, _) -> None:
         self._update_controller.stop()

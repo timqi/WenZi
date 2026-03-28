@@ -1,9 +1,7 @@
 """WKWebView annotation layer for screenshot markup.
 
-Creates an NSPanel + WKWebView positioned over the selected region,
-loads the Fabric.js annotation canvas, and bridges JS events (confirm,
-cancel, save, exported) back to Python for clipboard writing or file
-export.
+Creates an NSPanel + WKWebView that loads a Fabric.js annotation canvas.
+The image comes from macOS ``screencapture -i`` (a PNG file on disk).
 
 All PyObjC / WebKit imports are deferred so the module can be imported
 (and its pure-logic helpers tested) without a running AppKit environment.
@@ -23,12 +21,8 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-# Height reserved for the toolbar area below (or above) the canvas.
-# This accounts for the toolbar (40px) + secondary panel (32px) + padding.
+# Height reserved for the toolbar area below the canvas.
 _TOOLBAR_HEIGHT = 80
-
-# Directory for temporary screenshot images
-_TMP_DIR = os.path.expanduser("~/.cache/WenZi/screenshot_tmp")
 
 # Path to the annotation HTML template
 _TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
@@ -129,87 +123,6 @@ _BRIDGE_JS = r"""
 # ---------------------------------------------------------------------------
 
 
-def compute_toolbar_position(
-    region_rect: Dict[str, float],
-    screen_height: float,
-    toolbar_height: float = _TOOLBAR_HEIGHT,
-) -> str:
-    """Decide whether the toolbar goes below or above the selection.
-
-    Returns ``"bottom"`` (toolbar below canvas) or ``"top"`` (toolbar above).
-    The toolbar is placed below by default.  If it would extend beyond the
-    screen bottom, it is placed above instead.
-    """
-    # In screen coordinates, Y increases downward (origin at top-left).
-    selection_bottom = region_rect["y"] + region_rect["height"]
-    space_below = screen_height - selection_bottom
-    if space_below >= toolbar_height:
-        return "bottom"
-    return "top"
-
-
-def compute_panel_frame(
-    region_rect: Dict[str, float],
-    toolbar_position: str,
-    toolbar_height: float = _TOOLBAR_HEIGHT,
-) -> Dict[str, float]:
-    """Compute the NSPanel frame in screen coordinates (Y-down).
-
-    The panel must be large enough for the canvas *plus* the toolbar.
-
-    Returns ``{"x", "y", "width", "height"}`` in screen coordinates.
-    """
-    x = region_rect["x"]
-    w = region_rect["width"]
-    h = region_rect["height"] + toolbar_height
-
-    if toolbar_position == "bottom":
-        # Canvas at top, toolbar extends below the selection
-        y = region_rect["y"]
-    else:
-        # Toolbar above — panel starts above the selection
-        y = region_rect["y"] - toolbar_height
-
-    return {"x": x, "y": y, "width": w, "height": h}
-
-
-def build_init_event_data(
-    image_url: str,
-    region_rect: Dict[str, float],
-    toolbar_position: str,
-) -> Dict[str, Any]:
-    """Build the data dict for the ``init`` event sent to JS."""
-    return {
-        "imageUrl": image_url,
-        "width": region_rect["width"],
-        "height": region_rect["height"],
-        "toolbarPosition": toolbar_position,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Temp image helpers
-# ---------------------------------------------------------------------------
-
-
-def save_cgimage_to_png(cg_image: Any, path: str) -> bool:
-    """Write a CGImage to a PNG file. Returns True on success."""
-    import Quartz
-    from Foundation import NSURL
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    url = NSURL.fileURLWithPath_(path)
-    dest = Quartz.CGImageDestinationCreateWithURL(url, "public.png", 1, None)
-    if dest is None:
-        logger.error("Failed to create image destination: %s", path)
-        return False
-    Quartz.CGImageDestinationAddImage(dest, cg_image, None)
-    ok = Quartz.CGImageDestinationFinalize(dest)
-    if not ok:
-        logger.error("Failed to finalize image: %s", path)
-    return bool(ok)
-
-
 def decode_data_url(data_url: str) -> Optional[bytes]:
     """Decode a ``data:image/png;base64,...`` URL to raw bytes."""
     prefix = "data:image/png;base64,"
@@ -221,6 +134,31 @@ def decode_data_url(data_url: str) -> Optional[bytes]:
     except Exception:
         logger.exception("Failed to decode data URL")
         return None
+
+
+def get_image_dimensions(image_path: str) -> tuple[int, int]:
+    """Read width and height of a PNG file without heavy dependencies.
+
+    Falls back to (800, 600) if the image cannot be read.
+    """
+    try:
+        # PNG header: first 8 bytes signature, then IHDR chunk
+        # IHDR starts at offset 16: 4 bytes width, 4 bytes height (big-endian)
+        import struct
+
+        with open(image_path, "rb") as f:
+            sig = f.read(8)
+            if sig[:4] != b"\x89PNG":
+                return (800, 600)
+            f.read(4)  # chunk length
+            f.read(4)  # chunk type "IHDR"
+            w_bytes = f.read(4)
+            h_bytes = f.read(4)
+            width = struct.unpack(">I", w_bytes)[0]
+            height = struct.unpack(">I", h_bytes)[0]
+            return (width, height)
+    except Exception:
+        return (800, 600)
 
 
 # ---------------------------------------------------------------------------
@@ -365,10 +303,10 @@ def _get_file_scheme_handler_class() -> Any:
 
 
 class AnnotationLayer:
-    """WKWebView-based annotation layer over a screenshot selection.
+    """WKWebView-based annotation layer for a screenshot image.
 
-    Creates an NSPanel with a WKWebView that loads the Fabric.js
-    annotation canvas, positioned over the selected region.
+    Opens an NSPanel with a WKWebView that loads the Fabric.js annotation
+    canvas, sized to the image from ``screencapture``.
     """
 
     def __init__(self) -> None:
@@ -380,8 +318,7 @@ class AnnotationLayer:
         self._on_done: Optional[Callable] = None
         self._on_cancel: Optional[Callable] = None
 
-        self._tmp_image_path: Optional[str] = None
-        self._toolbar_position: str = "bottom"
+        self._image_path: Optional[str] = None
 
         # Pending action: "clipboard" or "save" — set when waiting for
         # the JS "exported" event to arrive with canvas data.
@@ -395,75 +332,58 @@ class AnnotationLayer:
 
     def show(
         self,
-        region_rect: Dict[str, float],
-        cropped_image: Any,
+        image_path: str,
         on_done: Callable,
         on_cancel: Callable,
     ) -> None:
-        """Show annotation layer over the given region.
+        """Show annotation layer for the given screenshot image.
 
         Args:
-            region_rect: ``{"x", "y", "width", "height"}`` in screen coords
-                (Y-down, matching CGWindowList coordinate space).
-            cropped_image: CGImage of the selected region.
+            image_path: Path to the PNG file from screencapture.
             on_done: Called after the annotated image is copied to clipboard.
             on_cancel: Called when the user cancels.
         """
-        self._on_done = on_done
-        self._on_cancel = on_cancel
-
-        # 1. Save cropped image to temp PNG
-        os.makedirs(_TMP_DIR, exist_ok=True)
-        import tempfile
-
-        fd, tmp_path = tempfile.mkstemp(suffix=".png", dir=_TMP_DIR)
-        os.close(fd)
-        self._tmp_image_path = tmp_path
-
-        if not save_cgimage_to_png(cropped_image, tmp_path):
-            logger.error("Failed to save temp screenshot image")
-            if self._on_cancel:
-                self._on_cancel()
+        if not os.path.isfile(image_path):
+            logger.error("Screenshot image not found: %s", image_path)
+            on_cancel()
             return
 
-        # 2. Compute toolbar position and panel frame
-        screen_height = self._get_screen_height()
-        self._toolbar_position = compute_toolbar_position(
-            region_rect, screen_height
-        )
-        panel_frame = compute_panel_frame(
-            region_rect, self._toolbar_position
-        )
+        self._on_done = on_done
+        self._on_cancel = on_cancel
+        self._image_path = image_path
 
-        # 3. Build panel + WKWebView
-        self._build_panel(panel_frame, region_rect)
+        # Read image dimensions to size the window
+        img_w, img_h = get_image_dimensions(image_path)
+
+        # Cap window size to 80% of screen, scale down if needed
+        screen_w, screen_h = self._get_screen_size()
+        max_w = int(screen_w * 0.8)
+        max_h = int(screen_h * 0.8) - _TOOLBAR_HEIGHT
+        scale = min(1.0, max_w / max(img_w, 1), max_h / max(img_h, 1))
+        canvas_w = int(img_w * scale)
+        canvas_h = int(img_h * scale)
+        panel_w = canvas_w
+        panel_h = canvas_h + _TOOLBAR_HEIGHT
+
+        self._build_panel(panel_w, panel_h)
         self._open = True
-
-        # 4. Load annotation HTML
         self._load_annotation_html()
 
-        # 5. Send init event after a short delay to let the page load
+        # Send init event after a short delay for page load
         from PyObjCTools import AppHelper
 
-        init_data = build_init_event_data(
-            f"wz-file://{tmp_path}",
-            region_rect,
-            self._toolbar_position,
-        )
+        init_data = {
+            "imageUrl": f"wz-file://{image_path}",
+            "width": canvas_w,
+            "height": canvas_h,
+            "toolbarPosition": "bottom",
+        }
 
-        def _send_init():
-            self._send_event("init", init_data)
-
-        # Delay to give WKWebView time to load the page
-        AppHelper.callLater(0.3, _send_init)
+        AppHelper.callLater(0.3, self._send_event, "init", init_data)
 
         logger.debug(
-            "Annotation layer shown: %.0fx%.0f at (%.0f, %.0f), toolbar=%s",
-            region_rect["width"],
-            region_rect["height"],
-            region_rect["x"],
-            region_rect["y"],
-            self._toolbar_position,
+            "Annotation layer shown: %dx%d (image %dx%d, scale %.2f)",
+            panel_w, panel_h, img_w, img_h, scale,
         )
 
     def close(self) -> None:
@@ -483,7 +403,10 @@ class AnnotationLayer:
                 pass
 
         if self._panel is not None:
+            from AppKit import NSApp
+
             self._panel.orderOut_(None)
+            NSApp.setActivationPolicy_(1)  # Back to accessory
 
         self._panel = None
         self._webview = None
@@ -491,12 +414,12 @@ class AnnotationLayer:
         self._file_handler = None
 
         # Remove temp image
-        if self._tmp_image_path is not None:
+        if self._image_path is not None:
             try:
-                os.unlink(self._tmp_image_path)
+                os.unlink(self._image_path)
             except OSError:
                 pass
-            self._tmp_image_path = None
+            self._image_path = None
 
         self._pending_action = None
         logger.debug("Annotation layer closed")
@@ -505,25 +428,23 @@ class AnnotationLayer:
     # Panel construction
     # ------------------------------------------------------------------
 
-    def _get_screen_height(self) -> float:
-        """Return the main screen height in points."""
+    @staticmethod
+    def _get_screen_size() -> tuple[float, float]:
+        """Return (width, height) of the main screen in points."""
         try:
             from AppKit import NSScreen
 
-            screen = NSScreen.mainScreen()
-            return screen.frame().size.height
+            frame = NSScreen.mainScreen().frame()
+            return (frame.size.width, frame.size.height)
         except Exception:
-            return 1080.0  # reasonable fallback
+            return (1440.0, 900.0)
 
-    def _build_panel(
-        self,
-        panel_frame: Dict[str, float],
-        region_rect: Dict[str, float],
-    ) -> None:
-        """Build NSPanel + WKWebView with bridge injection."""
+    def _build_panel(self, width: int, height: int) -> None:
+        """Build NSPanel + WKWebView centered on screen."""
         from AppKit import (
+            NSApp,
             NSBackingStoreBuffered,
-            NSWindowCollectionBehaviorCanJoinAllSpaces,
+            NSPanel,
         )
         from Foundation import NSMakeRect
         from WebKit import (
@@ -533,32 +454,22 @@ class AnnotationLayer:
             WKWebView,
             WKWebViewConfiguration,
         )
-        import Quartz
 
-        # Convert screen coords (Y-down) to AppKit coords (Y-up from bottom)
-        screen_height = self._get_screen_height()
-        appkit_y = screen_height - panel_frame["y"] - panel_frame["height"]
-
-        from AppKit import NSPanel
+        # Center on screen
+        screen_w, screen_h = self._get_screen_size()
+        x = (screen_w - width) / 2
+        y = (screen_h - height) / 2
 
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(
-                panel_frame["x"],
-                appkit_y,
-                panel_frame["width"],
-                panel_frame["height"],
-            ),
+            NSMakeRect(x, y, width, height),
             0,  # NSBorderlessWindowMask
             NSBackingStoreBuffered,
             False,
         )
 
-        # Window level: CGShieldingWindowLevel + 1 (above the overlay)
-        shielding_level = Quartz.CGShieldingWindowLevel()
-        panel.setLevel_(shielding_level + 1)
-        panel.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces)
+        panel.setLevel_(3)  # NSFloatingWindowLevel
         panel.setOpaque_(False)
-        panel.setHasShadow_(False)
+        panel.setHasShadow_(True)
         panel.setHidesOnDeactivate_(False)
 
         # WKWebView configuration
@@ -588,9 +499,9 @@ class AnnotationLayer:
         # Register wz-file:// scheme handler
         file_handler_cls = _get_file_scheme_handler_class()
         file_handler = file_handler_cls.alloc().init()
-        # Allow access to temp dir and templates dir
+        image_dir = os.path.dirname(os.path.realpath(self._image_path)) if self._image_path else ""
         file_handler._allowed_prefixes = [
-            os.path.realpath(_TMP_DIR) + os.sep,
+            image_dir + os.sep,
             os.path.realpath(_TEMPLATES_DIR) + os.sep,
         ]
         config.setURLSchemeHandler_forURLScheme_(file_handler, "wz-file")
@@ -598,13 +509,10 @@ class AnnotationLayer:
 
         # Create WKWebView filling the panel
         webview = WKWebView.alloc().initWithFrame_configuration_(
-            NSMakeRect(
-                0, 0, panel_frame["width"], panel_frame["height"]
-            ),
+            NSMakeRect(0, 0, width, height),
             config,
         )
         webview.setAutoresizingMask_(0x12)  # Width + Height sizable
-        # Transparent background so the panel bg shows through
         webview.setValue_forKey_(False, "drawsBackground")
 
         panel.contentView().addSubview_(webview)
@@ -613,7 +521,9 @@ class AnnotationLayer:
         self._webview = webview
 
         # Show the panel
+        NSApp.setActivationPolicy_(0)  # Regular (foreground)
         panel.makeKeyAndOrderFront_(None)
+        NSApp.activateIgnoringOtherApps_(True)
 
     def _load_annotation_html(self) -> None:
         """Load the annotation HTML template into the WKWebView."""
@@ -690,8 +600,6 @@ class AnnotationLayer:
             logger.warning("Exported event with no data")
             return
 
-        # data may be a Python dict or an NSDictionary from the WKWebView bridge;
-        # both support .get(), so use hasattr rather than isinstance(data, dict).
         data_url = data.get("dataUrl") if hasattr(data, "get") else None
         if not data_url:
             logger.warning("Exported event missing dataUrl")
@@ -715,7 +623,6 @@ class AnnotationLayer:
 
         elif action == "save":
             self._save_to_file(png_bytes)
-            # Do NOT close — user may continue annotating
 
         else:
             logger.warning("Exported event with no pending action")
@@ -725,10 +632,7 @@ class AnnotationLayer:
     # ------------------------------------------------------------------
 
     def _copy_to_clipboard(self, png_bytes: bytes) -> None:
-        """Write the annotated image to the system clipboard.
-
-        Writes both PNG and TIFF for maximum compatibility.
-        """
+        """Write the annotated image to the system clipboard."""
         from AppKit import (
             NSData,
             NSImage,
@@ -740,11 +644,9 @@ class AnnotationLayer:
         pb = NSPasteboard.generalPasteboard()
         pb.clearContents()
 
-        # Write PNG
         png_data = NSData.dataWithBytes_length_(png_bytes, len(png_bytes))
         pb.setData_forType_(png_data, NSPasteboardTypePNG)
 
-        # Write TIFF for apps that prefer it
         ns_image = NSImage.alloc().initWithData_(png_data)
         if ns_image is not None:
             tiff_data = ns_image.TIFFRepresentation()
@@ -767,8 +669,8 @@ class AnnotationLayer:
         panel.setAllowedContentTypes_(self._png_content_types())
         panel.setCanCreateDirectories_(True)
 
-        # Bring save panel to the front
-        panel.setLevel_(self._panel.level() if self._panel else 0)
+        if self._panel:
+            panel.setLevel_(self._panel.level())
 
         result = panel.runModal()
         if result == 1:  # NSModalResponseOK
@@ -802,10 +704,9 @@ class AnnotationLayer:
         try:
             from AppKit import NSSound
 
-            # Use the macOS system glass sound
             sound = NSSound.soundNamed_("Glass")
             if sound is not None:
                 sound.setVolume_(0.3)
                 sound.play()
         except Exception:
-            pass  # Sound is non-critical
+            pass
