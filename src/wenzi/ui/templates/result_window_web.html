@@ -331,7 +331,7 @@ select {
 <!-- Button Bar -->
 <div class="button-bar">
     <div class="left-group" id="history-dropdown-wrap" style="position:relative;">
-        <button class="bar-btn" id="history-btn" onclick="toggleHistoryDropdown()" style="display:none;"></button>
+        <button class="bar-btn" id="history-btn" onclick="toggleHistoryDropdown()"></button>
         <button class="bar-btn" id="diff-toggle-btn" onclick="toggleDiffPanel()"></button>
         <div id="history-dropdown" style="display:none; position:absolute; bottom:100%; left:0; margin-bottom:4px;
             min-width:280px; max-width:360px; max-height:240px; overflow-y:auto;
@@ -486,12 +486,14 @@ function init() {
         postAction('thinkingToggle', { enabled: tcb.checked });
     });
 
-    // History button
+    // History button — always visible
+    const histBtn = document.getElementById('history-btn');
+    const histLabel = i18n('btn.history') || 'History';
     if (CONFIG.previewHistory && CONFIG.previewHistory.length > 0) {
-        const btn = document.getElementById('history-btn');
-        btn.style.display = '';
-        btn.textContent = i18n('btn.history') + ' (' + CONFIG.previewHistory.length + ')';
+        histBtn.textContent = histLabel + ' (' + CONFIG.previewHistory.length + ')';
         buildHistoryDropdown(CONFIG.previewHistory);
+    } else {
+        histBtn.textContent = histLabel;
     }
 
     // Final text edit tracking
@@ -876,14 +878,6 @@ document.addEventListener('click', (e) => {
 let diffPanelOpen = false;
 let manualVocabSet = {};  // "variant\0term" -> true
 let diffDebounceTimer = null;
-
-function setDiffEnabled(enabled) {
-    const btn = document.getElementById('diff-toggle-btn');
-    btn.style.display = enabled ? '' : 'none';
-    if (!enabled && diffPanelOpen) {
-        toggleDiffPanel();
-    }
-}
 
 function toggleDiffPanel() {
     diffPanelOpen = !diffPanelOpen;

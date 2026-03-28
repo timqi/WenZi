@@ -105,6 +105,77 @@ class TestEnhanceControllerInit:
 
 
 # ---------------------------------------------------------------------------
+# Tests: enhance_mode setter clears diffs
+# ---------------------------------------------------------------------------
+
+
+class TestEnhanceModeSetterDiffRefresh:
+    def test_clears_diffs_for_non_tracked_mode(self, controller, mock_enhancer, mock_panel):
+        mode_def = MagicMock()
+        mode_def.track_corrections = False
+        mock_enhancer.get_mode_definition.return_value = mode_def
+
+        controller.enhance_mode = "translate_en"
+        mock_panel.clear_diffs.assert_called()
+
+    def test_restores_diffs_for_tracked_mode(self, controller, mock_enhancer, mock_panel, monkeypatch):
+        """Switching to a tracked mode should recompute diffs from cached data."""
+        mode_def = MagicMock()
+        mode_def.track_corrections = True
+        mock_enhancer.get_mode_definition.return_value = mode_def
+
+        controller._last_pushed_asr_text = "ASR input"
+        mock_panel.enhanced_text = "Enhanced output"
+        mock_panel.reset_mock()
+
+        monkeypatch.setattr(
+            "wenzi.enhance.text_diff.extract_word_pairs",
+            lambda a, b: [("ASR", "Enhanced")],
+        )
+        controller.enhance_mode = "proofread"
+        mock_panel.set_asr_diffs.assert_called()
+
+    def test_no_restore_without_cached_data(self, controller, mock_enhancer, mock_panel):
+        """Switching to tracked mode with no cached data should not push diffs."""
+        mode_def = MagicMock()
+        mode_def.track_corrections = True
+        mock_enhancer.get_mode_definition.return_value = mode_def
+
+        controller._last_pushed_asr_text = ""
+        mock_panel.enhanced_text = ""
+        mock_panel.reset_mock()
+
+        controller.enhance_mode = "proofread"
+        mock_panel.set_asr_diffs.assert_not_called()
+
+    def test_clears_diffs_when_mode_def_is_none(self, controller, mock_enhancer, mock_panel):
+        mock_enhancer.get_mode_definition.return_value = None
+
+        controller.enhance_mode = "unknown"
+        mock_panel.clear_diffs.assert_called()
+
+    def test_no_record_hits_on_mode_switch(self, controller, mock_enhancer, mock_panel, monkeypatch):
+        """Mode switch should display diffs without recording vocab hits."""
+        mode_def = MagicMock()
+        mode_def.track_corrections = True
+        mock_enhancer.get_mode_definition.return_value = mode_def
+
+        mock_store = MagicMock()
+        mock_store.find_hits_in_text.return_value = []
+        controller._manual_vocab_store = mock_store
+        controller._last_pushed_asr_text = "text"
+        mock_panel.enhanced_text = "enhanced"
+        mock_panel.reset_mock()
+
+        monkeypatch.setattr(
+            "wenzi.enhance.text_diff.extract_word_pairs",
+            lambda a, b: [],
+        )
+        controller.enhance_mode = "proofread"
+        mock_store.record_hits.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Tests: cache operations
 # ---------------------------------------------------------------------------
 
@@ -455,44 +526,6 @@ class TestDiffSkipping:
             )
         )
         controller._push_diffs_and_hits.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Tests: set_diff_enabled notification
-# ---------------------------------------------------------------------------
-
-
-class TestDiffEnabledNotification:
-    """run() should notify the preview panel about diff enabled/disabled state."""
-
-    @patch("wenzi.controllers.enhance_controller.async_loop")
-    def test_diff_enabled_for_proofread(self, mock_async_loop, controller, mock_enhancer, mock_panel):
-        mode_def = MagicMock()
-        mode_def.track_corrections = True
-        mode_def.steps = []
-        mock_enhancer.get_mode_definition.return_value = mode_def
-
-        mock_async_loop.submit.side_effect = lambda coro: coro.close() or MagicMock()
-        controller._run_single_async = MagicMock()
-        controller._run_wrapper = MagicMock(return_value=asyncio.sleep(0))
-
-        controller.run("text", 1)
-        mock_panel.set_diff_enabled.assert_called_with(True)
-
-    @patch("wenzi.controllers.enhance_controller.async_loop")
-    def test_diff_disabled_for_translate(self, mock_async_loop, controller, mock_enhancer, mock_panel):
-        mode_def = MagicMock()
-        mode_def.track_corrections = False
-        mode_def.steps = []
-        mock_enhancer.get_mode_definition.return_value = mode_def
-
-        mock_async_loop.submit.side_effect = lambda coro: coro.close() or MagicMock()
-        controller._run_single_async = MagicMock()
-        controller._run_wrapper = MagicMock(return_value=asyncio.sleep(0))
-
-        controller.enhance_mode = "translate_en"
-        controller.run("text", 1)
-        mock_panel.set_diff_enabled.assert_called_with(False)
 
 
 # ---------------------------------------------------------------------------

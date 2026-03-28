@@ -273,9 +273,7 @@ class PreviewController:
         # Vocab hits are clear-only: they are detected live during enhancement
         # and recording them again here would inflate hit counts.
         panel = app._preview_panel
-        panel.set_asr_diffs([])
-        panel.set_user_diffs([])
-        panel.set_vocab_hits([])
+        panel.clear_diffs()
 
         try:
             pairs = extract_word_pairs(record.asr_text, record.enhanced_text)

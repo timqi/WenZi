@@ -1169,10 +1169,6 @@ class ResultPreviewPanel:
     def _pairs_to_dicts(pairs: list[tuple[str, str]]) -> list[dict]:
         return [{"variant": v, "term": t} for v, t in pairs]
 
-    def set_diff_enabled(self, enabled: bool) -> None:
-        """Show or hide the diff toggle button based on enhancement mode."""
-        self._push_js(f"setDiffEnabled({'true' if enabled else 'false'})")
-
     def set_asr_diffs(self, pairs: list[tuple[str, str]]) -> None:
         """Push ASR→Enhanced diff pairs to the diff panel."""
         self._push_js(f"setAsrDiffs({json.dumps(self._pairs_to_dicts(pairs))})")
@@ -1201,9 +1197,18 @@ class ResultPreviewPanel:
 
         AppHelper.callAfter(_update)
 
+    @property
+    def enhanced_text(self) -> str:
+        """Return the cached enhanced text."""
+        return self._enhanced_text_cache
+
     def cache_enhanced_text(self, text: str) -> None:
         """Cache enhanced text for computing user-edit diffs."""
         self._enhanced_text_cache = text
+
+    def clear_diffs(self) -> None:
+        """Clear all diff and vocab hit cards."""
+        self._push_js("setAsrDiffs([]); setUserDiffs([]); setVocabHits([])")
 
     def _resize_for_diff_panel(self, is_open: bool) -> None:
         """Instantly resize the NSPanel for diff panel open/close."""

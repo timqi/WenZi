@@ -409,8 +409,9 @@ class TestSelectHistory:
 
         ctrl.on_select_history(0)
 
-        # First call clears stale diffs, second pushes new ones
-        assert mock_app._preview_panel.set_asr_diffs.call_count == 2
+        # clear_diffs() clears all, then set_asr_diffs pushes new ones
+        mock_app._preview_panel.clear_diffs.assert_called_once()
+        mock_app._preview_panel.set_asr_diffs.assert_called_once()
         pairs = mock_app._preview_panel.set_asr_diffs.call_args[0][0]
         assert len(pairs) > 0
 
@@ -427,8 +428,9 @@ class TestSelectHistory:
 
         ctrl.on_select_history(0)
 
-        # First call clears, second pushes new diffs
-        assert mock_app._preview_panel.set_user_diffs.call_count == 2
+        # clear_diffs() clears all, then set_user_diffs pushes new diffs
+        mock_app._preview_panel.clear_diffs.assert_called_once()
+        mock_app._preview_panel.set_user_diffs.assert_called_once()
 
     @patch("wenzi.controllers.preview_controller.save_config")
     def test_no_user_diffs_when_final_equals_enhanced(self, _mock_save, ctrl, mock_app):
@@ -443,8 +445,9 @@ class TestSelectHistory:
 
         ctrl.on_select_history(0)
 
-        # Only the initial clear call, no actual diffs pushed
-        mock_app._preview_panel.set_user_diffs.assert_called_once_with([])
+        # clear_diffs() handles clearing; no separate set_user_diffs call
+        mock_app._preview_panel.clear_diffs.assert_called_once()
+        mock_app._preview_panel.set_user_diffs.assert_not_called()
 
     @patch("wenzi.controllers.preview_controller.save_config")
     def test_pushes_manual_vocab_state(self, _mock_save, ctrl, mock_app):
