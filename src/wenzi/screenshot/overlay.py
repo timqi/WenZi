@@ -651,7 +651,7 @@ def _get_overlay_view_class() -> Any:
             font = NSFont.monospacedDigitSystemFontOfSize_weight_(_LABEL_FONT_SIZE, 0.0)
             attrs = NSDictionary.dictionaryWithObjectsAndKeys_(
                 font, "NSFont",
-                NSColor.whiteColor(), "NSColor",
+                NSColor.colorWithSRGBRed_green_blue_alpha_(1.0, 1.0, 1.0, 1.0), "NSColor",
                 None,
             )
             ns_str = NSString.stringWithString_(label_text)
