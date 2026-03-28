@@ -410,9 +410,8 @@
 
   function mosaicEndStroke() {
     if (!mosaicState) return;
-    // Make the image selectable
-    mosaicState.img.set({ selectable: true, evented: true });
-    canvas.setActiveObject(mosaicState.img);
+    // Keep non-selectable while mosaic tool is active — deactivateTool
+    // will re-enable selection on all objects when user switches tools.
     mosaicState = null;
   }
 
