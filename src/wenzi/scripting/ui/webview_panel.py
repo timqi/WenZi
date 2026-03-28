@@ -564,6 +564,43 @@ class WebViewPanel:
             self._webview.evaluateJavaScript_completionHandler_(js, None)
 
     # ------------------------------------------------------------------
+    # Panel positioning
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _center_on_mouse_screen(panel) -> None:
+        """Center *panel* on the screen containing the mouse pointer.
+
+        Uses ``NSEvent.mouseLocation()`` to find the active screen so
+        the panel appears on the correct display / fullscreen Space.
+        Falls back to ``panel.center()`` if detection fails.
+        """
+        try:
+            from AppKit import NSEvent, NSScreen
+            from Foundation import NSMakeRect
+
+            mouse = NSEvent.mouseLocation()
+            target = None
+            for screen in NSScreen.screens():
+                if screen.frame().origin.x <= mouse.x < screen.frame().origin.x + screen.frame().size.width \
+                        and screen.frame().origin.y <= mouse.y < screen.frame().origin.y + screen.frame().size.height:
+                    target = screen
+                    break
+            if target is None:
+                target = NSScreen.mainScreen()
+            if target is None:
+                panel.center()
+                return
+            sf = target.visibleFrame()
+            pw = panel.frame().size.width
+            ph = panel.frame().size.height
+            x = sf.origin.x + (sf.size.width - pw) / 2
+            y = sf.origin.y + (sf.size.height - ph) / 2
+            panel.setFrame_display_(NSMakeRect(x, y, pw, ph), False)
+        except Exception:
+            panel.center()
+
+    # ------------------------------------------------------------------
     # Panel construction
     # ------------------------------------------------------------------
 
@@ -610,9 +647,9 @@ class WebViewPanel:
         if self._floating:
             panel.setLevel_(NSStatusWindowLevel)
             panel.setFloatingPanel_(True)
-            panel.setCollectionBehavior_(1 << 4)  # canJoinAllSpaces
+            panel.setCollectionBehavior_(1 << 1)  # moveToActiveSpace
         panel.setHidesOnDeactivate_(False)
-        panel.center()
+        self._center_on_mouse_screen(panel)
 
         if self._titlebar_hidden:
             panel.setTitlebarAppearsTransparent_(True)
