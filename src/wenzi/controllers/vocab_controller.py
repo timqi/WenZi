@@ -8,6 +8,15 @@ import os
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
+from wenzi.enhance.vocab_db import (
+    CTX_APP,
+    CTX_ASR,
+    CTX_LLM,
+    METRIC_ASR_HIT,
+    METRIC_ASR_MISS,
+    METRIC_LLM_HIT,
+    METRIC_LLM_MISS,
+)
 from wenzi.ui.web_utils import time_range_cutoff as _time_range_cutoff
 
 if TYPE_CHECKING:
@@ -15,6 +24,9 @@ if TYPE_CHECKING:
     from wenzi.enhance.manual_vocabulary import ManualVocabEntry
 
 logger = logging.getLogger(__name__)
+
+_ALL_METRICS = [METRIC_ASR_MISS, METRIC_ASR_HIT, METRIC_LLM_HIT, METRIC_LLM_MISS]
+_STATS_SORT_COLUMNS = frozenset({METRIC_ASR_MISS, METRIC_LLM_HIT})
 
 
 _TAG_FIELDS = ("source", "app_bundle_id", "asr_model", "llm_model")
@@ -55,6 +67,7 @@ class VocabController:
         self._active_tags: set[str] = set()
         self._sort_column: str = "last_updated"
         self._sort_asc: bool = False
+        self._context_key: str = ""
         self._page: int = 0
         self._page_size: int = 18
 
@@ -81,6 +94,7 @@ class VocabController:
             "on_batch_remove": self.on_batch_remove,
             "on_edit": self.on_edit_entry,
             "on_edit_field": self.on_edit_field,
+            "on_get_entry_stats": self.on_get_entry_stats,
             "on_export": self.on_export,
             "on_import": self.on_import,
             "on_close": self._on_panel_closed,
@@ -154,13 +168,22 @@ class VocabController:
                 )
             ]
 
+        self._context_key = self._resolve_context_key()
+
         col = self._sort_column
         reverse = not self._sort_asc
-        def _sort_key(e: ManualVocabEntry) -> tuple:
-            v = getattr(e, col, "")
-            if v is None:
-                v = ""
-            return (v, e.variant)
+
+        if col in _STATS_SORT_COLUMNS:
+            # Stats-based sort: batch-query the metric counts
+            stats_map = self._build_stats_sort_map(entries, col)
+            def _sort_key(e: ManualVocabEntry) -> tuple:
+                return (stats_map.get(e.id, 0), e.variant)
+        else:
+            def _sort_key(e: ManualVocabEntry) -> tuple:
+                v = getattr(e, col, "")
+                if v is None:
+                    v = ""
+                return (v, e.variant)
 
         entries.sort(key=_sort_key, reverse=reverse)
 
@@ -188,15 +211,51 @@ class VocabController:
             f"{total},{self._page},{total_pages},{filtered_count})"
         )
 
-    @staticmethod
-    def _serialize_page(entries: list[ManualVocabEntry]) -> list[dict]:
+    def _serialize_page(self, entries: list[ManualVocabEntry]) -> list[dict]:
         """Convert a page of entries to dicts for JS serialization."""
+        entry_ids = [e.id for e in entries if e.id]
+        stats = self._fetch_stats(entry_ids, _ALL_METRICS)
+
         result = []
         for e in entries:
             d = asdict(e)
             d["app_name"] = _app_display_name(d.get("app_bundle_id", ""))
+            d["asr_miss"] = stats.get((e.id, METRIC_ASR_MISS), 0)
+            d["asr_hit"] = stats.get((e.id, METRIC_ASR_HIT), 0)
+            d["llm_hit"] = stats.get((e.id, METRIC_LLM_HIT), 0)
+            d["llm_miss"] = stats.get((e.id, METRIC_LLM_MISS), 0)
             result.append(d)
         return result
+
+    def _fetch_stats(
+        self,
+        entry_ids: list[int],
+        metrics: list[str],
+    ) -> dict[tuple[int, str], int]:
+        """Batch-fetch stats, scoped to the active tag filter context."""
+        if not entry_ids:
+            return {}
+        return self._app._manual_vocab_store.get_stats_summary_batch(
+            entry_ids, metrics, self._context_key,
+        )
+
+    def _resolve_context_key(self) -> str:
+        """Derive a context_key from the currently active tag filters.
+
+        Returns a single context_key string (e.g. ``"asr:whisper-large-v3"``)
+        when a model/app tag is active, or ``""`` for global summary.
+        """
+        if not self._active_tags:
+            return ""
+        include_app = self._app._manual_vocab_store.stats_include_app
+        for e in self._all_entries:
+            if e.asr_model and e.asr_model in self._active_tags:
+                return f"{CTX_ASR}:{e.asr_model}"
+            if e.llm_model and e.llm_model in self._active_tags:
+                return f"{CTX_LLM}:{e.llm_model}"
+            if include_app and e.app_bundle_id and _app_display_name(e.app_bundle_id) in self._active_tags:
+                return f"{CTX_APP}:{e.app_bundle_id}"
+        return ""
 
     def _push_tag_options(self) -> None:
         """Send available tag options with counts to JS."""
@@ -237,9 +296,28 @@ class VocabController:
         }
         self._panel._eval_js(f"setAddOptions({json.dumps(add_opts)})")
 
+    def _build_stats_sort_map(
+        self, entries: list[ManualVocabEntry], metric: str,
+    ) -> dict[int, int]:
+        """Build entry_id → count map for stats-based sorting."""
+        entry_ids = [e.id for e in entries if e.id]
+        stats = self._fetch_stats(entry_ids, [metric])
+        return {eid: count for (eid, _), count in stats.items()}
+
     # ------------------------------------------------------------------
     # JS message handlers
     # ------------------------------------------------------------------
+
+    def on_get_entry_stats(self, variant: str, term: str) -> None:
+        """Query detailed bucketed stats for an entry and push to JS."""
+        store = self._app._manual_vocab_store
+        stats = store.get_entry_stats(variant, term)
+        if self._panel is not None:
+            self._panel._eval_js(
+                f"setEntryStats({json.dumps(variant)},"
+                f"{json.dumps(term)},"
+                f"{json.dumps(stats, ensure_ascii=False)})"
+            )
 
     def on_search(self, text: str, time_range: str) -> None:
         self._search_text = text
@@ -306,8 +384,10 @@ class VocabController:
         """Add a new vocabulary entry."""
         variant = variant.strip()
         term = term.strip()
-        if not variant or not term:
+        if not term:
             return
+        if not variant:
+            variant = term
         from wenzi.enhance.manual_vocabulary import SOURCE_USER
 
         self._app._manual_vocab_store.add(
@@ -347,28 +427,13 @@ class VocabController:
         store = self._app._manual_vocab_store
         old_entry = store.get(old_variant, old_term)
 
-        store.remove_batch([(old_variant, old_term)], persist=False)
-        if old_entry is not None:
-            entry = store.add(
-                variant=new_variant,
-                term=new_term,
-                source=old_entry.source,
-                app_bundle_id=old_entry.app_bundle_id,
-                asr_model=old_entry.asr_model,
-                llm_model=old_entry.llm_model,
-                enhance_mode=old_entry.enhance_mode,
-                persist=False,
-            )
-            entry.frequency = old_entry.frequency
-            entry.hit_count = old_entry.hit_count
-            entry.first_seen = old_entry.first_seen
-            entry.last_hit = old_entry.last_hit
-            store.save()
+        if old_entry is not None and old_entry.id:
+            store.rename_entry(old_entry.id, new_variant, new_term)
         else:
+            store.remove_batch([(old_variant, old_term)])
             from wenzi.enhance.manual_vocabulary import SOURCE_USER
 
-            store.add(variant=new_variant, term=new_term, source=SOURCE_USER, persist=False)
-            store.save()
+            store.add(variant=new_variant, term=new_term, source=SOURCE_USER)
 
         self._reload_data()
 
@@ -382,13 +447,9 @@ class VocabController:
         entry = store.get(variant, term)
         if entry is None:
             return
-        changed = False
-        for field, value in fields.items():
-            if field in self._EDITABLE_FIELDS:
-                setattr(entry, field, value)
-                changed = True
-        if changed:
-            store.save()
+        updates = {f: v for f, v in fields.items() if f in self._EDITABLE_FIELDS}
+        if updates:
+            store.update_fields(entry.id, updates)
             self._reload_data()
 
     # ------------------------------------------------------------------
@@ -396,7 +457,7 @@ class VocabController:
     # ------------------------------------------------------------------
 
     def on_export(self) -> None:
-        """Export vocabulary to JSON via NSSavePanel."""
+        """Export vocabulary with stats to JSON via NSSavePanel."""
         try:
             from AppKit import NSSavePanel
 
@@ -409,10 +470,11 @@ class VocabController:
                 return
             path = str(panel.URL().path())
 
-            entries = self._app._manual_vocab_store.get_all()
+            store = self._app._manual_vocab_store
+            entries = store.export_all_with_stats()
             data = {
-                "version": 1,
-                "entries": [asdict(e) for e in entries],
+                "version": 2,
+                "entries": entries,
             }
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -442,13 +504,13 @@ class VocabController:
             store = self._app._manual_vocab_store
             new_count = 0
             update_count = 0
+            stats_count = 0
             for raw in raw_entries:
                 variant = raw.get("variant", "").strip()
                 term = raw.get("term", "").strip()
                 if not variant or not term:
                     continue
-                existed = store.get(variant, term) is not None
-                store.add(
+                entry = store.add(
                     variant=variant,
                     term=term,
                     source=raw.get("source", "user"),
@@ -456,18 +518,20 @@ class VocabController:
                     asr_model=raw.get("asr_model", ""),
                     llm_model=raw.get("llm_model", ""),
                     enhance_mode=raw.get("enhance_mode", ""),
-                    persist=False,
                 )
-                if existed:
-                    update_count += 1
-                else:
+                if entry.frequency == 1:
                     new_count += 1
-            if new_count or update_count:
-                store.save()
+                else:
+                    update_count += 1
+
+                raw_stats = raw.get("stats", [])
+                if raw_stats:
+                    store.import_stats_by_id(entry.id, raw_stats)
+                    stats_count += len(raw_stats)
 
             logger.info(
-                "Imported vocabulary: %d new, %d updated from %s",
-                new_count, update_count, os.path.basename(path),
+                "Imported vocabulary: %d new, %d updated, %d stats rows from %s",
+                new_count, update_count, stats_count, os.path.basename(path),
             )
             self._reload_data()
         except Exception as exc:

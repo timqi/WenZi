@@ -8,6 +8,8 @@ import unicodedata
 from difflib import SequenceMatcher
 from typing import List
 
+from zhconv import convert as _zhconv_convert
+
 # ASCII words as whole units, each non-ASCII char individually,
 # whitespace runs, or any other single character.
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9]+|[^\x00-\x7f]|\s+|.")
@@ -41,6 +43,30 @@ def tokenize_for_diff(text: str) -> List[str]:
     mixed Chinese-English ASR text.
     """
     return _TOKEN_RE.findall(text)
+
+
+def _to_simplified(tokens: List[str]) -> List[str]:
+    """Convert tokens to Simplified Chinese so SequenceMatcher treats trad/simp
+    variants as equal.  Returns a same-length list (1:1 mapping) so opcodes
+    index correctly back into the original token lists.
+    """
+    joined = "".join(tokens)
+    if joined.isascii():
+        return tokens
+    converted = _zhconv_convert(joined, "zh-hans")
+    if converted == joined:
+        return tokens
+    # Fast path: zh-hans conversions are almost always char-to-char (same length)
+    if len(converted) == len(joined):
+        result: List[str] = []
+        pos = 0
+        for t in tokens:
+            end = pos + len(t)
+            result.append(converted[pos:end])
+            pos = end
+        return result
+    # Rare fallback: length changed, convert per-token to keep 1:1 mapping
+    return [_zhconv_convert(t, "zh-hans") for t in tokens]
 
 
 def _is_punctuation_only(text: str) -> bool:
@@ -161,7 +187,9 @@ def inline_diff(asr: str, final: str) -> str:
 
     asr_tokens = tokenize_for_diff(asr_norm)
     final_tokens = tokenize_for_diff(final_norm)
-    matcher = difflib.SequenceMatcher(None, asr_tokens, final_tokens)
+    matcher = difflib.SequenceMatcher(
+        None, _to_simplified(asr_tokens), _to_simplified(final_tokens),
+    )
     opcodes = _merge_adjacent_opcodes(
         matcher.get_opcodes(), asr_tokens, final_tokens,
     )
@@ -239,7 +267,9 @@ def extract_word_pairs(
         return []
     tokens_a = tokenize_for_diff(text_a)
     tokens_b = tokenize_for_diff(text_b)
-    matcher = SequenceMatcher(None, tokens_a, tokens_b)
+    matcher = SequenceMatcher(
+        None, _to_simplified(tokens_a), _to_simplified(tokens_b),
+    )
     pairs: list[tuple[str, str]] = []
     for op, i1, i2, j1, j2 in matcher.get_opcodes():
         if op != "replace":
@@ -250,6 +280,8 @@ def extract_word_pairs(
         corrected = _join_tokens(tokens_b[j1:j2])
         if _is_punctuation_only(original) or _is_punctuation_only(corrected):
             continue
-        if original.strip() and corrected.strip():
+        _, original, _ = _strip_boundary_punctuation(original.strip())
+        _, corrected, _ = _strip_boundary_punctuation(corrected.strip())
+        if original and corrected:
             pairs.append((original, corrected))
     return pairs

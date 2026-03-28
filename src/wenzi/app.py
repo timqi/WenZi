@@ -229,10 +229,11 @@ class WenZiApp(StatusBarApp):
 
         # Manual vocabulary store: user-curated correction pairs
         from wenzi.enhance.manual_vocabulary import ManualVocabularyStore
+        vocab_cfg = self._config.get("ai_enhance", {}).get("vocabulary", {})
         self._manual_vocab_store = ManualVocabularyStore(
-            path=os.path.join(self._data_dir, "manual_vocabulary.json"),
+            path=os.path.join(self._data_dir, "manual_vocabulary.db"),
+            stats_include_app=vocab_cfg.get("stats_include_app", False),
         )
-        self._manual_vocab_store.load()
 
         # Load vocabulary hotwords for ASR injection
         hotwords = self._load_hotwords()

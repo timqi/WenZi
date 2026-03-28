@@ -145,24 +145,43 @@ document.querySelectorAll('.cell-time[data-ts]').forEach(function(el) {
 </script>"""
 
 
-def _build_vocab_table_html(entries: List[ManualVocabEntry]) -> tuple[str, str]:
-    """Build vocab table rows (tbody) and header row (thead tr) HTML."""
+def _build_vocab_table_html(
+    entries: "List[HotwordDetail] | List[ManualVocabEntry]",
+) -> tuple[str, str]:
+    """Build vocab table rows (tbody) and header row (thead tr) HTML.
+
+    For HotwordDetail entries: shows ASR Miss and ASR Hit columns.
+    For ManualVocabEntry entries: shows LLM Miss and LLM Hit columns.
+    """
+    from wenzi.enhance.manual_vocabulary import ManualVocabEntry
     from wenzi.i18n import t
+
+    is_llm_vocab = bool(entries) and isinstance(entries[0], ManualVocabEntry)
+
+    if is_llm_vocab:
+        entries = sorted(entries, key=lambda e: e.llm_miss_count, reverse=True)
+    else:
+        entries = sorted(entries, key=lambda e: e.asr_miss_count, reverse=True)
 
     rows: list[str] = []
     for e in entries:
         term = html.escape(e.term)
         variant = html.escape(e.variant)
         source = html.escape(e.source)
-        last_hit_attr = html.escape(e.last_hit, quote=True)
         first_seen_attr = html.escape(e.first_seen, quote=True)
+        if is_llm_vocab:
+            col1 = e.llm_miss_count
+            col2 = e.llm_hit_count
+        else:
+            col1 = e.asr_miss_count
+            col2 = e.asr_hit_count
         rows.append(
             f"<tr>"
             f"<td class='cell-term'>{term}</td>"
             f"<td class='cell-variant'>{variant}</td>"
             f"<td class='cell-source'>{source}</td>"
-            f"<td class='cell-num'>{e.hit_count}</td>"
-            f'<td class="cell-time" data-ts="{last_hit_attr}"></td>'
+            f"<td class='cell-num'>{col1}</td>"
+            f"<td class='cell-num'>{col2}</td>"
             f'<td class="cell-time" data-ts="{first_seen_attr}"></td>'
             f"</tr>"
         )
@@ -170,12 +189,16 @@ def _build_vocab_table_html(entries: List[ManualVocabEntry]) -> tuple[str, str]:
     th_term = html.escape(t("preview.hotwords_table.term"))
     th_variant = html.escape(t("preview.hotwords_table.variant"))
     th_source = html.escape(t("preview.hotwords_table.source"))
-    th_hits = html.escape(t("preview.hotwords_table.hits"))
-    th_last_hit = html.escape(t("preview.hotwords_table.last_hit"))
     th_first_seen = html.escape(t("preview.hotwords_table.first_seen"))
+    if is_llm_vocab:
+        th_col1 = html.escape(t("preview.hotwords_table.llm_miss"))
+        th_col2 = html.escape(t("preview.hotwords_table.llm_hit"))
+    else:
+        th_col1 = html.escape(t("preview.hotwords_table.asr_miss"))
+        th_col2 = html.escape(t("preview.hotwords_table.asr_hit"))
     thead = (
         f"<th>{th_term}</th><th>{th_variant}</th><th>{th_source}</th>"
-        f"<th>{th_hits}</th><th>{th_last_hit}</th><th>{th_first_seen}</th>"
+        f"<th>{th_col1}</th><th>{th_col2}</th><th>{th_first_seen}</th>"
     )
     return "\n".join(rows), thead
 
