@@ -1367,9 +1367,9 @@ class WenZiApp(StatusBarApp):
             )
             self._script_engine._ua_controller = self._ua_controller
             self._script_engine.start()
-            self._script_engine.wz.chooser._event_handlers.setdefault(
-                "openSettings", []
-            ).append(lambda: self._on_open_settings(None))
+            self._script_engine.set_open_settings_callback(
+                lambda: self._on_open_settings(None)
+            )
 
             self._script_engine.set_system_settings_open_callback(
                 self._usage_stats.record_system_settings_open

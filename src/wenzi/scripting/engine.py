@@ -44,6 +44,7 @@ class ScriptEngine:
         self._snippet_expander = None
         self._system_settings_source = None
         self._system_settings_open_cb: Optional[Callable[[], None]] = None
+        self._open_settings_cb: Optional[Callable[[], None]] = None
         self._ua_controller = None
         self._reloading = False
         self._post_reload_callback: Optional[Callable[[], None]] = None
@@ -275,6 +276,17 @@ class ScriptEngine:
         """
         self._post_reload_callback = callback
 
+    def set_open_settings_callback(self, callback: Callable[[], None]) -> None:
+        """Set the callback for the built-in 'WenZi Settings' command.
+
+        The callback is stored and re-applied after reload() when the
+        ChooserAPI is recreated.
+        """
+        self._open_settings_cb = callback
+        self._wz.chooser._event_handlers.setdefault(
+            "openSettings", []
+        ).append(callback)
+
     def set_system_settings_open_callback(
         self, callback: Callable[[], None]
     ) -> None:
@@ -480,6 +492,14 @@ class ScriptEngine:
 
         # Command source (always registered when chooser is enabled)
         self._wz.chooser._ensure_command_source()
+
+        # Re-apply openSettings handler on the (possibly new) ChooserAPI
+        if self._open_settings_cb is not None:
+            handlers = self._wz.chooser._event_handlers.setdefault(
+                "openSettings", []
+            )
+            if self._open_settings_cb not in handlers:
+                handlers.append(self._open_settings_cb)
 
         # Switch-to-English setting
         panel = self._wz.chooser._get_panel()
