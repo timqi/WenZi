@@ -327,28 +327,35 @@ class ManualVocabularyStore:
     def get_llm_vocab(
         self,
         *,
+        llm_model: Optional[str] = None,
         app_bundle_id: Optional[str] = None,
         max_entries: int = MAX_LLM_ENTRIES,
     ) -> list[ManualVocabEntry]:
         """Return entries for LLM prompt injection.
 
-        Entries matching *app_bundle_id* are sorted first.
+        When *llm_model* or *app_bundle_id* is given, entries matching the
+        filter are returned first, followed by non-matching entries.  This
+        ensures context-specific vocabulary has higher priority while still
+        exposing the full manual vocabulary.
         At most *max_entries* are returned to keep the prompt concise.
         """
         with self._lock:
             entries = list(self._entries.values())
 
-        if app_bundle_id:
-            matching: list[ManualVocabEntry] = []
-            other: list[ManualVocabEntry] = []
-            for e in entries:
-                if e.app_bundle_id == app_bundle_id:
-                    matching.append(e)
-                else:
-                    other.append(e)
-            entries = matching + other
+        matching: list[ManualVocabEntry] = []
+        other: list[ManualVocabEntry] = []
+        for e in entries:
+            is_match = True
+            if app_bundle_id and e.app_bundle_id and e.app_bundle_id != app_bundle_id:
+                is_match = False
+            if llm_model and e.llm_model and e.llm_model != llm_model:
+                is_match = False
+            if is_match:
+                matching.append(e)
+            else:
+                other.append(e)
 
-        return entries[:max_entries]
+        return (matching + other)[:max_entries]
 
     @property
     def entry_count(self) -> int:

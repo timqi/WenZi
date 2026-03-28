@@ -204,6 +204,33 @@ class TestQueryHelpers:
         entries = store.get_llm_vocab()
         assert len(entries) == 1
 
+    def test_get_llm_vocab_llm_model_filter(self, store):
+        """Entries matching llm_model are prioritized."""
+        store.add("派森", "Python", "llm", llm_model="gpt-4o")
+        store.add("库伯尼特斯", "Kubernetes", "llm", llm_model="claude-3")
+        store.add("通用词", "General", "llm")  # no llm_model
+        entries = store.get_llm_vocab(llm_model="gpt-4o")
+        assert len(entries) == 3
+        # gpt-4o match and no-model entry first, mismatched last
+        assert entries[0].term == "Python"
+        assert entries[1].term == "General"
+        assert entries[2].term == "Kubernetes"
+
+    def test_get_llm_vocab_llm_model_and_app(self, store):
+        """Both llm_model and app_bundle_id filter together."""
+        store.add("a", "A", "llm", llm_model="gpt-4o", app_bundle_id="com.app")
+        store.add("b", "B", "llm", llm_model="claude-3", app_bundle_id="com.app")
+        store.add("c", "C", "llm", llm_model="gpt-4o", app_bundle_id="com.other")
+        store.add("d", "D", "llm")  # no model, no app
+        entries = store.get_llm_vocab(
+            llm_model="gpt-4o", app_bundle_id="com.app",
+        )
+        # A matches both; D matches (no constraints); B mismatches model; C mismatches app
+        terms = [e.term for e in entries]
+        assert terms[0] == "A"
+        assert "D" in terms[:2]  # D is also a match (no stored model/app)
+        assert set(terms[2:]) == {"B", "C"}
+
     def test_get_llm_vocab_max_entries_default(self, store):
         for i in range(8):
             store.add(f"var{i}", f"Term{i}", "llm")
@@ -219,7 +246,7 @@ class TestQueryHelpers:
     def test_get_llm_vocab_max_entries_app_priority(self, store):
         """App-matching entries should be prioritized before truncation."""
         for i in range(4):
-            store.add(f"other{i}", f"Other{i}", "llm")
+            store.add(f"other{i}", f"Other{i}", "llm", app_bundle_id="com.other")
         store.add("target", "Target", "llm", app_bundle_id="com.app")
         entries = store.get_llm_vocab(
             app_bundle_id="com.app", max_entries=3,

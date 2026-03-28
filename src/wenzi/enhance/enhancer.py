@@ -663,6 +663,7 @@ class TextEnhancer:
         if self._manual_vocab_store is not None:
             try:
                 manual_entries = self._manual_vocab_store.get_llm_vocab(
+                    llm_model=self._active_model,
                     app_bundle_id=app_bundle_id,
                 )
                 if manual_entries:
