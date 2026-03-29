@@ -364,3 +364,75 @@ class TestAppMenu:
         items = api._walk_ax_menu(ax_bar)
 
         assert items[0]["shortcut"] == "⇧⌘Z"
+
+    def test_app_menu_skips_apple_menu(self, monkeypatch):
+        """app_menu() should exclude the system Apple menu."""
+        import ApplicationServices as _as
+
+        api = MenuAPI()
+
+        # Build AX tree: Apple menu + File menu
+        ax_about = MagicMock()
+        ax_about._copy = lambda attr, _: {
+            "AXTitle": (0, "About"),
+            "AXEnabled": (0, True),
+            "AXMenuItemCmdChar": (0, ""),
+            "AXMenuItemCmdModifiers": (0, 0),
+            "AXChildren": (-25212, None),
+        }.get(attr, (-25212, None))
+
+        ax_apple_sub = MagicMock()
+        ax_apple_sub._copy = lambda attr, _: {
+            "AXChildren": (0, [ax_about]),
+        }.get(attr, (-25212, None))
+
+        ax_apple = MagicMock()
+        ax_apple._copy = lambda attr, _: {
+            "AXTitle": (0, "Apple"),
+            "AXChildren": (0, [ax_apple_sub]),
+        }.get(attr, (-25212, None))
+
+        ax_new_tab = MagicMock()
+        ax_new_tab._copy = lambda attr, _: {
+            "AXTitle": (0, "New Tab"),
+            "AXEnabled": (0, True),
+            "AXMenuItemCmdChar": (0, "T"),
+            "AXMenuItemCmdModifiers": (0, 0),
+            "AXChildren": (-25212, None),
+        }.get(attr, (-25212, None))
+
+        ax_file_sub = MagicMock()
+        ax_file_sub._copy = lambda attr, _: {
+            "AXChildren": (0, [ax_new_tab]),
+        }.get(attr, (-25212, None))
+
+        ax_file = MagicMock()
+        ax_file._copy = lambda attr, _: {
+            "AXTitle": (0, "File"),
+            "AXChildren": (0, [ax_file_sub]),
+        }.get(attr, (-25212, None))
+
+        ax_menu_bar = MagicMock()
+        ax_menu_bar._copy = lambda attr, _: {
+            "AXChildren": (0, [ax_apple, ax_file]),
+        }.get(attr, (-25212, None))
+
+        ax_app = MagicMock()
+        ax_app._copy = lambda attr, _: {
+            "AXMenuBar": (0, ax_menu_bar),
+        }.get(attr, (-25212, None))
+
+        monkeypatch.setattr(
+            _as, "AXUIElementCreateApplication", lambda pid: ax_app,
+        )
+        monkeypatch.setattr(
+            _as, "AXUIElementCopyAttributeValue",
+            lambda el, attr, _: el._copy(attr, _),
+        )
+
+        items = api.app_menu(pid=123)
+
+        titles = [i["title"] for i in items]
+        assert "About" not in titles  # Apple menu excluded
+        assert "New Tab" in titles
+        assert len(items) == 1

@@ -159,21 +159,54 @@ class MenuAPI:
 
     def app_menu(self, pid=None):
         """Return the menu items of an application as a flat list.
+
         Each dict has: title, path, enabled, shortcut, _ax_element.
         pid defaults to the app frontmost before chooser opened.
-        Returns empty list on failure.
+        The system Apple menu is excluded — only app-specific menus
+        are returned.  Returns empty list on failure.
         """
         if pid is None:
             pid = self._get_previous_pid()
         if pid is None:
             return []
         try:
-            from ApplicationServices import AXUIElementCreateApplication
+            from ApplicationServices import (
+                AXUIElementCopyAttributeValue,
+                AXUIElementCreateApplication,
+            )
+
             ax_app = AXUIElementCreateApplication(pid)
             ax_menu_bar = _ax_attr(ax_app, "AXMenuBar")
             if ax_menu_bar is None:
                 return []
-            return self._walk_ax_menu(ax_menu_bar)
+
+            # Walk only app-specific menus, skipping the Apple menu
+            err, top_items = AXUIElementCopyAttributeValue(
+                ax_menu_bar, "AXChildren", None,
+            )
+            if err != 0 or not top_items:
+                return []
+
+            results = []
+            for item in top_items:
+                err, title = AXUIElementCopyAttributeValue(
+                    item, "AXTitle", None,
+                )
+                if err != 0 or not title:
+                    continue
+                title_str = str(title)
+                # Skip the system Apple menu
+                if title_str == "Apple":
+                    continue
+                err, subs = AXUIElementCopyAttributeValue(
+                    item, "AXChildren", None,
+                )
+                if err == 0 and subs:
+                    for sub in subs:
+                        results.extend(
+                            self._walk_ax_menu(sub, _prefix=f"{title_str} > ")
+                        )
+            return results
         except Exception:
             logger.debug("Failed to read app menu for pid=%s", pid, exc_info=True)
             return []
