@@ -221,17 +221,100 @@ class MenuAPI:
             return []
 
     def app_menu_trigger(self, item):
-        """Trigger an app menu item from app_menu(). Returns True if dispatched."""
-        ax_element = item.get("_ax_element")
-        if ax_element is None:
+        """Trigger an app menu item obtained from ``app_menu()``.
+
+        Reactivates the previous application, waits for it to become
+        frontmost, then re-locates the menu item by path and performs
+        AXPress.  The stored ``_ax_element`` is not reused because it
+        becomes stale when the app loses focus.
+
+        Returns True if the action was dispatched.
+        """
+        path = item.get("path")
+        if not path:
             return False
+
+        pid = self._get_previous_pid()
+        if pid is None:
+            return False
+
+        # Activate the target app first
         try:
-            from ApplicationServices import AXUIElementPerformAction
-            AXUIElementPerformAction(ax_element, "AXPress")
+            from AppKit import NSRunningApplication
+
+            app = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+            if app:
+                app.activateWithOptions_(2)  # IgnoringOtherApps
+        except Exception:
+            logger.debug("Failed to activate app for menu trigger", exc_info=True)
+
+        import time
+        time.sleep(0.15)
+
+        # Re-find the menu item by path and press it
+        try:
+            from ApplicationServices import (
+                AXUIElementCreateApplication,
+                AXUIElementPerformAction,
+            )
+
+            ax_app = AXUIElementCreateApplication(pid)
+            ax_menu_bar = _ax_attr(ax_app, "AXMenuBar")
+            if ax_menu_bar is None:
+                return False
+
+            ax_item = self._find_ax_item(ax_menu_bar, path)
+            if ax_item is None:
+                logger.debug("Menu item not found: %s", path)
+                return False
+
+            AXUIElementPerformAction(ax_item, "AXPress")
             return True
         except Exception:
-            logger.debug("Failed to trigger app menu item", exc_info=True)
+            logger.debug("Failed to trigger app menu item: %s", path, exc_info=True)
             return False
+
+    def _find_ax_item(self, ax_menu_bar, path: str):
+        """Find an AXUIElement menu item by its path (e.g. ``"Tab > Pin Tab"``)."""
+        from ApplicationServices import AXUIElementCopyAttributeValue
+
+        parts = [p.strip() for p in path.split(" > ")]
+        current = ax_menu_bar
+
+        for i, part in enumerate(parts):
+            err, children = AXUIElementCopyAttributeValue(
+                current, "AXChildren", None,
+            )
+            if err != 0 or not children:
+                return None
+
+            found = None
+            for child in children:
+                err, title = AXUIElementCopyAttributeValue(
+                    child, "AXTitle", None,
+                )
+                if err != 0 or not title:
+                    continue
+                if str(title) == part:
+                    found = child
+                    break
+
+            if found is None:
+                return None
+
+            if i < len(parts) - 1:
+                # Intermediate level — descend into submenu
+                err, subs = AXUIElementCopyAttributeValue(
+                    found, "AXChildren", None,
+                )
+                if err != 0 or not subs or len(subs) == 0:
+                    return None
+                current = subs[0]  # AXMenu container
+            else:
+                # Final level — this is the target item
+                return found
+
+        return None
 
     def _get_previous_pid(self):
         """Get pid of app that was frontmost before chooser opened."""
