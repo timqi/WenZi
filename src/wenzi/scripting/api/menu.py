@@ -220,13 +220,18 @@ class MenuAPI:
             logger.debug("Failed to read app menu for pid=%s", pid, exc_info=True)
             return []
 
-    def app_menu_trigger(self, item):
+    def app_menu_trigger(self, item, pid=None):
         """Trigger an app menu item obtained from ``app_menu()``.
 
-        Reactivates the previous application, waits for it to become
+        Reactivates the target application, waits for it to become
         frontmost, then re-locates the menu item by path and performs
         AXPress.  The stored ``_ax_element`` is not reused because it
         becomes stale when the app loses focus.
+
+        Args:
+            item: A dict from ``app_menu()`` (must contain ``path``).
+            pid: Target process ID.  Must be provided — the chooser's
+                 ``_previous_app`` is cleared before the action runs.
 
         Returns True if the action was dispatched.
         """
@@ -234,7 +239,8 @@ class MenuAPI:
         if not path:
             return False
 
-        pid = self._get_previous_pid()
+        if pid is None:
+            pid = self._get_previous_pid()
         if pid is None:
             return False
 
