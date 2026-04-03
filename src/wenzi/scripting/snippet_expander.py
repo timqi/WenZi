@@ -148,10 +148,10 @@ class SnippetExpander:
             cg.CFRunLoopStop(self._loop)
             self._loop = None
         self._tap = None
-        self._ctypes_cb = None
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
+        self._ctypes_cb = None
         with self._lock:
             self._buffer = ""
         logger.info("SnippetExpander stopped")

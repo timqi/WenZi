@@ -364,6 +364,9 @@ class _QuartzAllKeysListener:
             cg.CFRunLoopStop(self._loop)
             self._loop = None
         self._tap = None
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
         self._ctypes_cb = None
         logger.info("Quartz all-keys listener stopped")
 
@@ -468,6 +471,9 @@ class TapHotkeyListener:
             cg.CFRunLoopStop(self._loop)
             self._loop = None
         self._tap = None
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
         self._ctypes_cb = None
         logger.info("TapHotkeyListener stopped")
 
@@ -600,6 +606,9 @@ class KeyRemapListener:
             cg.CFRunLoopStop(self._loop)
             self._loop = None
         self._tap = None
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
         self._ctypes_cb = None
         logger.info("KeyRemapListener stopped")
 
