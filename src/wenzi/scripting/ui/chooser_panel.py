@@ -700,6 +700,7 @@ class ChooserPanel:
         # cycle once the panel is already hidden).
         if self._webview is not None and self._page_loaded:
             self._webview.evaluateJavaScript_completionHandler_(
+                "_releasePreviewImages();"
                 "setResults([]);setInputValue('');"
                 "setPreviewVisible(false);setCompact(false);"
                 "setModifierHints({},null);setCreateButton(false);"

@@ -516,6 +516,10 @@ function _renderVisibleRows() {
     var endIdx = Math.min(items.length,
         Math.ceil((scrollTop + viewportHeight) / h) + BUFFER_COUNT);
 
+    // Release GPU-cached decoded bitmaps before replacing DOM nodes
+    var oldImgs = _spacer.querySelectorAll('img.icon');
+    for (var j = 0; j < oldImgs.length; j++) oldImgs[j].src = '';
+
     var htmlParts = [];
     for (var i = startIdx; i < endIdx; i++) {
         htmlParts.push(_buildRowHtml(items[i], i));
@@ -607,7 +611,13 @@ function updatePreview() {
     }
 }
 
+function _releasePreviewImages() {
+    var imgs = previewPanel.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) imgs[i].src = '';
+}
+
 function setPreview(data) {
+    _releasePreviewImages();
     if (!data) {
         previewPanel.className = 'preview-panel empty';
         previewPanel.textContent = i18n('preview.select_item');
