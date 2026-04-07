@@ -364,8 +364,7 @@ class RecordingIndicatorPanel:
             panel.setIgnoresMouseEvents_(True)
             panel.setHasShadow_(True)
             panel.setHidesOnDeactivate_(False)
-            # canJoinAllSpaces (1<<4) + stationary (1<<4 is same, use just canJoinAllSpaces)
-            panel.setCollectionBehavior_(1 << 4)
+            panel.setCollectionBehavior_((1 << 4) | (1 << 8))  # stationary | fullScreenAuxiliary
 
             # Position at center of main screen
             screen = NSScreen.mainScreen()
