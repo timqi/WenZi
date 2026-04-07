@@ -140,7 +140,7 @@ class QuickLookPanel:
             panel.setLevel_(NSStatusWindowLevel + 1)
             panel.setHidesOnDeactivate_(False)
             panel.setFloatingPanel_(True)
-            panel.setCollectionBehavior_(1 << 4)  # canJoinAllSpaces
+            panel.setCollectionBehavior_((1 << 4) | (1 << 8))  # stationary | fullScreenAuxiliary
 
             self._native_panel = panel
             self._data_source = data_source

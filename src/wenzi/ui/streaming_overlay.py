@@ -163,7 +163,7 @@ class StreamingOverlayPanel:
             panel.setBackgroundColor_(NSColor.clearColor())
             panel.setHasShadow_(True)
             panel.setHidesOnDeactivate_(False)
-            panel.setCollectionBehavior_(1 << 4)  # canJoinAllSpaces
+            panel.setCollectionBehavior_((1 << 4) | (1 << 8))  # stationary | fullScreenAuxiliary
 
             # WKWebView
             from wenzi.ui.web_utils import lightweight_webview_config
