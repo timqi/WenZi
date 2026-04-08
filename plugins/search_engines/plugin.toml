@@ -8,4 +8,6 @@ min_wenzi_version = "0.1.12"
 files = [
     "__init__.py",
     "engines.toml",
+    "README.md",
+    "README_zh.md",
 ]
