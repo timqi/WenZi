@@ -212,6 +212,7 @@ class ChooserPanel:
     def __init__(self, usage_tracker=None) -> None:
         self._panel = None
         self._webview = None
+        self._effect_view = None
         self._message_handler = None
         self._navigation_delegate = None
         self._panel_delegate = None
@@ -773,6 +774,11 @@ class ChooserPanel:
             # First show — build from scratch
             self._build_panel()
 
+        # Activate the blur backdrop just before showing the panel so macOS
+        # allocates the full-screen IOSurface only while visible.
+        if self._effect_view is not None:
+            self._effect_view.setState_(1)  # NSVisualEffectStateActive
+
         self._panel.makeKeyAndOrderFront_(None)
 
         from AppKit import NSApp
@@ -879,6 +885,11 @@ class ChooserPanel:
                 "clearContext()",
                 None,
             )
+
+        # Deactivate the blur backdrop to release the full-screen IOSurface
+        # that macOS allocates for behindWindow blending (~72 MB at retina).
+        if self._effect_view is not None:
+            self._effect_view.setState_(0)  # NSVisualEffectStateInactive
 
         if self._panel is not None:
             self._panel.orderOut_(None)
@@ -1923,6 +1934,10 @@ class ChooserPanel:
                 self._panel.setFrame_display_(
                     NSMakeRect(f.origin.x, f.origin.y, 1, 1), False,
                 )
+                # Clear cached screen so next show() repositions correctly
+                # instead of skipping because the screen hasn't changed.
+                # The 1×1 origin is stale after the shrink.
+                self._last_screen = None
             else:
                 self._panel.setAlphaValue_(1.0)
 
@@ -2058,7 +2073,7 @@ class ChooserPanel:
         effect_view.setAutoresizingMask_(0x12)  # Width + Height sizable
         effect_view.setBlendingMode_(1)  # NSVisualEffectBlendingModeBehindWindow
         effect_view.setMaterial_(0)  # NSVisualEffectMaterialAppearanceBased — bright glass
-        effect_view.setState_(1)  # NSVisualEffectStateActive (always active)
+        effect_view.setState_(0)  # NSVisualEffectStateInactive until show()
         effect_view.setWantsLayer_(True)
         effect_view.layer().setCornerRadius_(16.0)
         effect_view.layer().setMasksToBounds_(True)
