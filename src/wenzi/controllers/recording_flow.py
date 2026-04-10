@@ -1246,11 +1246,9 @@ class RecordingFlow:
             self._switch_active_mode(new_mode)
 
         label = modes[new_idx][1]
-        can_prev = new_idx > 0
-        can_next = new_idx < len(modes) - 1
         AppHelper.callAfter(
             self._app._recording_indicator.update_mode,
-            label, can_prev, can_next,
+            label,
         )
         logger.info(
             "Mode nav %s → %s", "prev" if delta < 0 else "next", new_mode
@@ -1271,11 +1269,9 @@ class RecordingFlow:
         if idx < 0:
             return
         label = modes[idx][1]
-        can_prev = idx > 0
-        can_next = idx < len(modes) - 1
         AppHelper.callAfter(
             self._app._recording_indicator.update_mode,
-            label, can_prev, can_next,
+            label,
         )
 
     # ------------------------------------------------------------------
