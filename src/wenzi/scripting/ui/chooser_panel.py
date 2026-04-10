@@ -952,14 +952,9 @@ class ChooserPanel:
 
     def _teardown_webview(self) -> None:
         """Release the webview, panel, and associated delegates."""
-        if self._webview is not None:
-            self._webview.setNavigationDelegate_(None)
-            try:
-                config = self._webview.configuration()
-                if config:
-                    config.userContentController().removeScriptMessageHandlerForName_("chooser")
-            except Exception:
-                pass
+        from wenzi.ui.web_utils import cleanup_webview
+
+        cleanup_webview(self._webview, handler_name="chooser")
         if self._panel is not None:
             self._panel.setDelegate_(None)
             self._panel.orderOut_(None)
@@ -1891,6 +1886,7 @@ class ChooserPanel:
 
         pending = self._pending_js[:]
         self._pending_js.clear()
+        was_preloading = self._recycle_preloading
         self._page_loaded = True
         self._recycle_preloading = False
         if pending and self._webview is not None:
@@ -1916,8 +1912,19 @@ class ChooserPanel:
 
         # Reveal the panel if it was hidden (alpha=0) during the warm-start
         # path.  This is a no-op on the cold path where alpha is already 1.
+        # For recycle preloads (panel not on screen), shrink to 1×1 instead
+        # to release IOSurface compositing layer buffers while keeping
+        # DOM/JS state alive for a fast hot-path re-show.
         if self._panel is not None:
-            self._panel.setAlphaValue_(1.0)
+            if was_preloading and not self._panel.isVisible():
+                from Foundation import NSMakeRect
+
+                f = self._panel.frame()
+                self._panel.setFrame_display_(
+                    NSMakeRect(f.origin.x, f.origin.y, 1, 1), False,
+                )
+            else:
+                self._panel.setAlphaValue_(1.0)
 
     @staticmethod
     def _ensure_edit_menu() -> None:
