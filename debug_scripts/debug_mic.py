@@ -183,7 +183,7 @@ def main():
     engine.stop()
 
     # --- Step 5: Analyze results ---
-    print(f"\n[5] Analysis:")
+    print("\n[5] Analysis:")
     print(f"  Total tap callbacks: {frame_count[0]}")
     print(f"  RMS samples collected: {len(rms_values)}")
 
