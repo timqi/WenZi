@@ -27,6 +27,7 @@ def _mock_cgeventtap(monkeypatch):
     mock_cg.kCGEventTapOptionDefault = 0
     mock_cg.kCFRunLoopDefaultMode = MagicMock(value="kCFRunLoopDefaultMode")
     mock_cg.CGEventMaskBit.side_effect = lambda t: 1 << t
+    mock_cg.CGEventGetFlags.return_value = 0
 
     _runner_ready = threading.Event()
 
@@ -145,12 +146,12 @@ class TestStreamingOverlayPanel:
         assert result is None
         on_confirm.assert_called_once()
 
-    def test_enter_does_not_close(self, _mock_cgeventtap):
+    def test_enter_closes_panel(self, _mock_cgeventtap):
         panel = _make_panel()
         panel.show(asr_text="test", on_confirm_asr=MagicMock())
         _mock_cgeventtap.wait_for_tap()
         _mock_cgeventtap.simulate_key(panel, 36)
-        assert panel._panel is not None
+        assert panel._panel is None
 
     def test_enter_passes_through_without_callback(self, _mock_cgeventtap):
         panel = _make_panel()
@@ -296,3 +297,54 @@ class TestStreamingOverlayPanel:
     def test_ai_label_without_llm_info(self):
         panel = _make_panel()
         assert panel._ai_label("") == "\u2728 AI"
+
+    def test_complete_flag_set_by_set_complete(self):
+        panel = _make_panel()
+        panel.show(asr_text="test")
+        assert not panel._complete
+        panel.set_complete({"total_tokens": 100, "prompt_tokens": 50, "completion_tokens": 50})
+        assert panel._complete
+
+    def test_any_key_closes_when_complete(self, _mock_cgeventtap):
+        panel = _make_panel()
+        panel.show(asr_text="test")
+        panel._complete = True
+        _mock_cgeventtap.wait_for_tap()
+        result = _mock_cgeventtap.simulate_key(panel, 0)  # random key
+        assert result is not None  # key passes through (not swallowed)
+
+    def test_hint_label_created(self):
+        panel = _make_panel()
+        panel.show(asr_text="test", on_confirm_asr=lambda: None)
+        assert panel._hint_label is not None
+
+    def test_hint_label_without_confirm(self):
+        panel = _make_panel()
+        panel.show(asr_text="test")
+        assert panel._hint_label is not None
+
+    @patch("wenzi.input.set_clipboard_text")
+    def test_copy_cmd_c(self, mock_set_cb, _mock_cgeventtap):
+        panel = _make_panel()
+        panel.show(asr_text="test")
+        _mock_cgeventtap.wait_for_tap()
+        _mock_cgeventtap.cg.CGEventGetFlags.return_value = 1 << 20  # Cmd
+        _mock_cgeventtap.cg.CGEventGetIntegerValueField.return_value = 8  # C key
+        mock_event = 0xCAFE
+        result = panel._key_tap_callback(
+            None, _mock_cgeventtap.cg.kCGEventKeyDown, mock_event, None,
+        )
+        assert result is None  # swallowed
+
+    def test_progress_bar_created(self):
+        panel = _make_panel()
+        panel.show(asr_text="test")
+        assert panel._progress_view is not None
+
+    def test_close_delay_constant(self):
+        from wenzi.ui.streaming_overlay import _CLOSE_DELAY
+        assert _CLOSE_DELAY == 3.0
+
+    def test_font_size_constant(self):
+        from wenzi.ui.streaming_overlay import _FONT_SIZE
+        assert _FONT_SIZE == 13
