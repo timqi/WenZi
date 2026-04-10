@@ -256,7 +256,6 @@ class ChooserPanel:
         self._last_screen = None  # last screen the panel was positioned on
 
     # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
     # Panel resize (driven by JS)
     # ------------------------------------------------------------------
 
@@ -405,6 +404,7 @@ class ChooserPanel:
                 return
             h = int(result) if result else self._INITIAL_HEIGHT
             self._apply_frame(self._INITIAL_WIDTH, h)
+            self._panel.setAlphaValue_(1.0)
 
         self._webview.evaluateJavaScript_completionHandler_(
             js, _on_reset_done
@@ -747,25 +747,26 @@ class ChooserPanel:
         self._previous_app = get_frontmost_app()
 
         if self._panel is not None and self._page_loaded:
-            # Hot path — reuse hidden panel.  Results were already cleared
-            # in close(), so we can show immediately without alpha dance.
+            # Hot path — reuse hidden panel.  Hide via alpha until
+            # _reset_panel_ui JS completes so stale results never flash.
             self._reconnect_panel_refs()
             self._position_on_mouse_screen()
+            self._panel.setAlphaValue_(0.0)
             self._reset_panel_ui(initial_query, placeholder)
         elif self._panel is not None and self._webview is not None:
-            # Warm path: panel + webview alive but page was unloaded
-            # (empty HTML) to reclaim IOSurface memory.  Reload the
-            # cached HTML — _on_page_loaded will handle pending query,
-            # placeholder, and context.  Hide the panel (alpha=0) until
-            # the page finishes loading to avoid a blank flash.
+            # Warm path: panel + webview alive but HTML not yet loaded
+            # (recycled in prebuild mode).  Load HTML — _on_page_loaded
+            # will handle pending query, placeholder, and context.
             self._reconnect_panel_refs()
             self._position_on_mouse_screen()
             self._panel.setAlphaValue_(0.0)
             if not self._recycle_preloading:
                 self._reload_chooser_html()
         else:
-            # First show — build from scratch
+            # First show — build from scratch.  Hide via alpha until
+            # _on_page_loaded reveals it after backdrop-filter is ready.
             self._build_panel()
+            self._panel.setAlphaValue_(0.0)
 
         self._panel.makeKeyAndOrderFront_(None)
 
@@ -859,18 +860,12 @@ class ChooserPanel:
         if self._panel_delegate is not None:
             self._panel_delegate._panel_ref = None
 
-        # Clear visible content while the webview is still on screen so
-        # that next show() won't flash stale results (evaluateJavaScript
-        # is async but executes before the next display
-        # cycle once the panel is already hidden).
+        # Release preview image blob URLs to free memory while hidden.
+        # UI state (results, input, etc.) is reset by _reset_panel_ui
+        # on the next show().
         if self._webview is not None and self._page_loaded:
             self._webview.evaluateJavaScript_completionHandler_(
-                "_releasePreviewImages();"
-                "setResults([]);setInputValue('');"
-                "setPreviewVisible(false);setCompact(false);"
-                "setModifierHints({},null);setCreateButton(false);"
-                "setLoading(false);"
-                "clearContext()",
+                "_releasePreviewImages()",
                 None,
             )
 
@@ -1555,17 +1550,34 @@ class ChooserPanel:
                     target=self._play_audio_url, args=(url,), daemon=True
                 ).start()
 
-    def _play_audio_url(self, url: str) -> None:
-        """Download and play an audio URL via NSSound (no Now Playing icon)."""
-        try:
-            from AppKit import NSSound
-            from Foundation import NSURL
+    _audio_player = None  # prevent GC during playback
 
-            sound = NSSound.alloc().initWithContentsOfURL_byReference_(
-                NSURL.URLWithString_(url), False
+    def _play_audio_url(self, url: str) -> None:
+        """Download and play an audio URL via AVAudioPlayer.
+
+        Uses AVFoundation instead of NSSound to avoid interfering with
+        AppKit window compositing (NSSound triggers window server
+        recomposition that breaks CSS backdrop-filter in WKWebView).
+        """
+        try:
+            from AVFoundation import AVAudioPlayer
+            from Foundation import NSURL, NSData
+
+            # Download on background thread
+            data = NSData.dataWithContentsOfURL_(NSURL.URLWithString_(url))
+            if not data:
+                return
+            player, error = AVAudioPlayer.alloc().initWithData_error_(
+                data, None
             )
-            if sound:
-                sound.play()
+            if player and not error:
+                from PyObjCTools import AppHelper
+
+                def _play():
+                    ChooserPanel._audio_player = player
+                    player.play()
+
+                AppHelper.callAfter(_play)
         except Exception:
             logger.debug("Failed to play audio: %s", url, exc_info=True)
 
@@ -1844,16 +1856,6 @@ class ChooserPanel:
 
     def _on_page_loaded(self) -> None:
         """Called when WKWebView finishes loading the HTML."""
-        # Guard against the blank-page navigation fired by close().
-        # If show() is called before the blank load completes,
-        # _reconnect_panel_refs restores the delegate ref and this
-        # callback would fire for the empty page.  Ignore it.
-        if self._webview is not None:
-            url = self._webview.URL()
-            url_str = str(url.absoluteString()) if url is not None else ""
-            if not url_str or url_str == "about:blank":
-                return
-
         # Inject i18n translations before flushing pending JS
         self._inject_i18n()
 

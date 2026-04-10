@@ -143,6 +143,22 @@ self._panel = None
 
 When re-showing, re-activate the effect view (`setState_(1)`) **just before** `orderFront_`/`makeKeyAndOrderFront_`, so the IOSurface is only allocated while the panel is visible.
 
+**Note:** The chooser panel (`ChooserPanel`) does **not** use `NSVisualEffectView`. It uses CSS `backdrop-filter` for frosted glass — see "CSS backdrop-filter in Transparent WKWebView" below.
+
+## CSS backdrop-filter in Transparent WKWebView
+
+The chooser panel uses CSS `backdrop-filter: blur() saturate()` instead of `NSVisualEffectView` for frosted glass. This is inherently fragile in transparent WKWebViews ([WebKit #275919](https://bugs.webkit.org/show_bug.cgi?id=275919)). System events (audio playback, compositing changes) can invalidate the backdrop-filter texture, causing the panel to appear transparent.
+
+**Required architecture** (see `chooser.html`):
+
+1. **Separate compositing layer** — `backdrop-filter` must be on `body::before` (pseudo-element), NOT on `body` itself. DOM changes in the content layer must not invalidate the blur layer.
+2. **Keepalive animation** — A perpetual micro-animation (`opacity: 0.999→1`) on `body::before` forces WebKit to re-composite every frame, preventing texture reclamation.
+3. **GPU hint** — `-webkit-backface-visibility: hidden` on `body::before` to force a separate compositing layer.
+4. **Matching border-radius** — `body` must have the same `border-radius` and `overflow: hidden` as the native panel's corner radius to prevent edge artifacts.
+5. **Transparent html** — `html { background: transparent }`, only `body::before` carries the `--bg` tinted overlay.
+
+**When adding a new panel with frosted glass**, prefer `NSVisualEffectView` (stable, native). Only use CSS `backdrop-filter` if you need fine-grained control over blur radius/saturation and can tolerate the fragility.
+
 ## LLM max_tokens Guard
 
 All `chat.completions.create` calls **must** include `max_tokens` to prevent runaway repetition (models sometimes loop the same tokens indefinitely). Current call sites and their limits:
@@ -156,11 +172,13 @@ When adding a new LLM call, always set `max_tokens` to a reasonable upper bound 
 
 ## Audio in WebViews — Use `wz.playAudio()`, Not `new Audio()`
 
-Playing audio via HTML5 `new Audio(url).play()` in WKWebView triggers macOS Now Playing, showing an unwanted playback icon in the menu bar. Use the built-in `wz.playAudio(url)` JS bridge method instead — it routes audio through native `NSSound`, which does not register with `MPNowPlayingInfoCenter`.
+Playing audio via HTML5 `new Audio(url).play()` in WKWebView triggers macOS Now Playing, showing an unwanted playback icon in the menu bar. Use the built-in `wz.playAudio(url)` JS bridge method instead — it routes audio through native playback, which does not register with `MPNowPlayingInfoCenter`.
 
 - **WebView panels** (`wz.ui.webview_panel`): use `wz.playAudio(url)` in JavaScript
 - **Chooser preview HTML** (no `wz` bridge): use `webkit.messageHandlers.chooser.postMessage({type: 'playAudio', url: url})`
 - The built-in handler is registered in `WebViewPanel._builtin_play_audio` and `ChooserPanel._play_audio_url`
+
+**ChooserPanel uses `AVAudioPlayer`** (AVFoundation) instead of `NSSound` (AppKit). `NSSound` operations interfere with AppKit window server compositing, which breaks CSS `backdrop-filter` in the chooser's transparent WKWebView. Download happens on a background thread; `play()` is dispatched to the main thread via `AppHelper.callAfter`.
 
 ## CGEventTap — Use ctypes, Not PyObjC
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root {
-    --bg: rgba(255, 255, 255, 0.65);
+    --bg: rgba(255, 255, 255, 0.70);
     --text: #1d1d1f;
     --secondary: #86868b;
     --border: rgba(0, 0, 0, 0.08);
@@ -15,12 +15,11 @@
     --item-selected-text: #003d99;
     --input-bg: transparent;
     --shadow: rgba(0, 0, 0, 0.06);
-    --specular: rgba(255, 255, 255, 0.85);
     --glass-badge: rgba(0, 0, 0, 0.06);
 }
 @media (prefers-color-scheme: dark) {
     :root {
-        --bg: rgba(50, 50, 55, 0.55);
+        --bg: rgba(50, 50, 55, 0.70);
         --text: #e5e5e7;
         --secondary: #98989d;
         --border: rgba(255, 255, 255, 0.10);
@@ -30,7 +29,6 @@
         --item-selected-text: #64d2ff;
         --input-bg: transparent;
         --shadow: rgba(0, 0, 0, 0.3);
-        --specular: rgba(255, 255, 255, 0.12);
         --glass-badge: rgba(255, 255, 255, 0.10);
     }
 }
@@ -44,9 +42,29 @@ html, body {
 html { background: transparent; }
 body {
     display: flex; flex-direction: column;
+    position: relative;
+    background: transparent;
+    border-radius: 18px;
+    overflow: hidden;
+}
+body::before {
+    content: '';
+    position: fixed; inset: 0;
+    border-radius: 18px;
     background: var(--bg);
     -webkit-backdrop-filter: blur(40px) saturate(1.8);
     backdrop-filter: blur(40px) saturate(1.8);
+    -webkit-backface-visibility: hidden;
+    z-index: -1;
+    pointer-events: none;
+    /* Micro-animation keeps the compositing layer alive so the
+       window server doesn't reclaim the backdrop-filter texture
+       during audio playback or other system events (WebKit #275919). */
+    animation: keepCompositing 1s linear infinite;
+}
+@keyframes keepCompositing {
+    from { opacity: 0.999; }
+    to   { opacity: 1; }
 }
 
 /* Main content: left panel + preview */
@@ -606,17 +624,10 @@ resultList.addEventListener('mousemove', function(e) {
     if (_mouseHoverTimer) clearTimeout(_mouseHoverTimer);
     _mouseHoverTimer = setTimeout(function() {
         _mouseHoverTimer = null;
-        // Re-check the element under cursor is still the same row
-        var el = document.elementFromPoint(e.clientX, e.clientY);
-        if (!el) return;
-        var curRow = el.closest('.result-item');
-        if (!curRow) return;
-        var curIdx = parseInt(curRow.getAttribute('data-idx'), 10);
-        if (isNaN(curIdx) || curIdx === selectedIndex) return;
         var prev = _spacer.querySelector('.result-item.selected');
         if (prev) prev.className = 'result-item';
-        curRow.className = 'result-item selected';
-        selectedIndex = curIdx;
+        row.className = 'result-item selected';
+        selectedIndex = idx;
         updatePreview();
     }, 180);
 }, false);
