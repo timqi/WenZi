@@ -80,7 +80,7 @@ class TestStreamingOverlayPanel:
     def test_initial_state(self):
         panel = _make_panel()
         assert panel._panel is None
-        assert panel._vfx_view is None
+        assert panel._content_box is None
         assert panel._tap_runner is None
         assert panel._stream_text_view is None
 
@@ -88,7 +88,7 @@ class TestStreamingOverlayPanel:
         panel = _make_panel()
         panel.show(asr_text="hello")
         assert panel._panel is not None
-        assert panel._vfx_view is not None
+        assert panel._content_box is not None
         assert panel._asr_text_view is not None
         assert panel._stream_text_view is not None
 
@@ -104,7 +104,7 @@ class TestStreamingOverlayPanel:
         panel.close()
         mock_ns_panel.orderOut_.assert_called_with(None)
         assert panel._panel is None
-        assert panel._vfx_view is None
+        assert panel._content_box is None
         assert panel._stream_text_view is None
 
     def test_show_registers_key_tap(self, _mock_cgeventtap):

@@ -36,11 +36,6 @@ _FONT_WEIGHT_MEDIUM = 0.23  # NSFontWeightMedium
 # Background
 _BG_CORNER_RADIUS = 12
 
-# NSVisualEffectView constants (avoid AppKit import at module level)
-_VFX_MATERIAL_HUD = 13       # NSVisualEffectMaterialHUDWindow
-_VFX_BLENDING_BEHIND = 0     # NSVisualEffectBlendingModeBehindWindow
-_VFX_STATE_ACTIVE = 1        # NSVisualEffectStateActive
-
 
 class RecordingIndicatorView:
     """Custom NSView that draws the recording indicator."""
@@ -97,7 +92,7 @@ class RecordingIndicatorView:
     def draw(self, rect: object) -> None:
         """Draw the indicator contents.
 
-        Background is provided by NSVisualEffectView — this method only draws
+        Background is provided by NSGlassEffectView — this method only draws
         the pulsing dot, waveform, and optional subtitle label.
         """
         from AppKit import (
@@ -279,40 +274,26 @@ class RecordingIndicatorPanel:
         self._show_device_name = value
 
     @staticmethod
-    def _make_vfx_view(width: int, height: int):
-        """Create an NSVisualEffectView with frosted-glass HUD appearance."""
-        from AppKit import NSBezierPath, NSColor, NSImage, NSVisualEffectView
+    def _make_glass_view(width: int, height: int):
+        """Create an NSGlassEffectView with Liquid Glass appearance."""
+        from AppKit import NSColor, NSGlassEffectView
         from Foundation import NSMakeRect
 
-        vfx = NSVisualEffectView.alloc().initWithFrame_(
+        glass = NSGlassEffectView.alloc().initWithFrame_(
             NSMakeRect(0, 0, width, height)
         )
-        vfx.setMaterial_(_VFX_MATERIAL_HUD)
-        vfx.setBlendingMode_(_VFX_BLENDING_BEHIND)
-        vfx.setState_(_VFX_STATE_ACTIVE)
-
-        # Use maskImage instead of layer cornerRadius — the latter leaves
-        # white corners because NSVisualEffectView's private blur sublayers
-        # don't respect CALayer masksToBounds.
-        r = _BG_CORNER_RADIUS
-        mask = NSImage.alloc().initWithSize_((width, height))
-        mask.lockFocus()
-        NSColor.blackColor().setFill()
-        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-            NSMakeRect(0, 0, width, height), r, r,
-        ).fill()
-        mask.unlockFocus()
-        mask.setCapInsets_((r, r, r, r))
-        vfx.setMaskImage_(mask)
-
-        return vfx
+        glass.setCornerRadius_(_BG_CORNER_RADIUS)
+        glass.setTintColor_(
+            NSColor.colorWithSRGBRed_green_blue_alpha_(1.0, 1.0, 1.0, 0.15)
+        )
+        return glass
 
     def _panel_height(self) -> int:
         """Compute current panel height based on whether a subtitle is shown."""
         has_sub = _build_subtitle(self._mode_name, self._device_name) is not None
         return _PANEL_HEIGHT + (_LABEL_HEIGHT if has_sub else 0)
 
-    def show(self, device_name: str | None = None) -> None:
+    def show(self, device_name: str | None = None, mode_name: str | None = None) -> None:
         """Create and show the floating indicator panel."""
         if not self._enabled:
             return
@@ -330,7 +311,7 @@ class RecordingIndicatorPanel:
                 self.hide()
 
             self._smoothed_level = 0.0
-            self._mode_name = None
+            self._mode_name = mode_name
             self._device_name = device_name
             self._indicator_view = RecordingIndicatorView()
             self._update_subtitle()
@@ -362,11 +343,11 @@ class RecordingIndicatorPanel:
                 y = sf.origin.y + (sf.size.height - panel_height) / 2.0
                 panel.setFrameOrigin_((x, y))
 
-            # Frosted-glass background + indicator drawing view
-            vfx = self._make_vfx_view(_PANEL_WIDTH, panel_height)
+            # Liquid Glass background + indicator drawing view
+            glass = self._make_glass_view(_PANEL_WIDTH, panel_height)
             indicator = self._indicator_view.create_view(_PANEL_WIDTH, panel_height)
-            vfx.addSubview_(indicator)
-            panel.setContentView_(vfx)
+            glass.setContentView_(indicator)
+            panel.setContentView_(glass)
 
             panel.orderFront_(None)
 
@@ -406,8 +387,6 @@ class RecordingIndicatorPanel:
     def hide(self) -> None:
         """Hide and clean up the indicator panel."""
         try:
-            from wenzi.ui_helpers import release_panel_surfaces
-
             if self._timer is not None:
                 self._timer.invalidate()
                 self._timer = None
@@ -415,7 +394,6 @@ class RecordingIndicatorPanel:
             self._clear_view_backref()
 
             if self._panel is not None:
-                release_panel_surfaces(self._panel)
                 self._panel.orderOut_(None)
                 self._panel = None
 
@@ -448,12 +426,12 @@ class RecordingIndicatorPanel:
         self._clear_view_backref()
 
         new_height = self._panel_height()
-        vfx = self._make_vfx_view(_PANEL_WIDTH, new_height)
+        glass = self._make_glass_view(_PANEL_WIDTH, new_height)
         indicator = self._indicator_view.create_view(_PANEL_WIDTH, new_height)
-        vfx.addSubview_(indicator)
+        glass.setContentView_(indicator)
 
         self._panel.setContentSize_((float(_PANEL_WIDTH), float(new_height)))
-        self._panel.setContentView_(vfx)
+        self._panel.setContentView_(glass)
 
         # Re-centre on screen
         from AppKit import NSScreen
@@ -557,9 +535,6 @@ class RecordingIndicatorPanel:
             panel = self._panel
 
             def _on_complete():
-                from wenzi.ui_helpers import release_panel_surfaces
-
-                release_panel_surfaces(panel)
                 panel.orderOut_(None)
                 self._clear_view_backref()
                 self._panel = None

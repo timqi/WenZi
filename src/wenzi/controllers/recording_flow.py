@@ -237,8 +237,10 @@ class RecordingFlow:
                 if app._recording_indicator.show_device_name
                 else None
             )
-            AppHelper.callAfter(app._recording_indicator.show, initial_dev)
-            self._show_mode_on_indicator()
+            initial_mode = self._get_mode_label()
+            AppHelper.callAfter(
+                app._recording_indicator.show, initial_dev, initial_mode,
+            )
 
             if app._transcriber.supports_streaming:
                 AppHelper.callAfter(self._show_live_overlay, False)
@@ -1311,21 +1313,27 @@ class RecordingFlow:
             "Mode nav %s → %s", "prev" if delta < 0 else "next", new_mode
         )
 
-    def _show_mode_on_indicator(self) -> None:
+    def _get_mode_label(self) -> str | None:
+        """Return the current enhance-mode label, or None if not applicable."""
         if self._no_preview_override:
-            return
-        from PyObjCTools import AppHelper
-
+            return None
         modes = self._build_mode_list()
         if len(modes) <= 1:
-            return
+            return None
         current = self._app._enhance_mode
         idx = next(
             (i for i, (mid, _) in enumerate(modes) if mid == current), -1
         )
         if idx < 0:
+            return None
+        return modes[idx][1]
+
+    def _show_mode_on_indicator(self) -> None:
+        label = self._get_mode_label()
+        if label is None:
             return
-        label = modes[idx][1]
+        from PyObjCTools import AppHelper
+
         AppHelper.callAfter(
             self._app._recording_indicator.update_mode,
             label,

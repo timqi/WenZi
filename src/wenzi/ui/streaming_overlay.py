@@ -1,6 +1,6 @@
 """Floating overlay panel for Direct mode streaming AI enhancement output.
 
-Uses native AppKit views (NSVisualEffectView + NSTextView) for instant
+Uses native AppKit views (NSGlassEffectView + NSTextView) for instant
 rendering, dynamic height, and seamless visual transition from the
 recording indicator.
 """
@@ -38,11 +38,6 @@ _CLOSE_DELAY = 3.0
 _HOVER_RECHECK_INTERVAL = 0.5
 _FADE_OUT_DURATION = 0.3
 
-# NSVisualEffectView constants
-_VFX_MATERIAL_HUD = 13
-_VFX_BLENDING_BEHIND = 0
-_VFX_STATE_ACTIVE = 1
-
 # Height recalc debounce
 _RECALC_DEBOUNCE = 0.05
 
@@ -57,7 +52,7 @@ class StreamingOverlayPanel:
 
     def __init__(self) -> None:
         self._panel: object = None
-        self._vfx_view: object = None
+        self._content_box: object = None
         self._asr_title_label: object = None
         self._asr_text_view: object = None
         self._asr_scroll: object = None
@@ -169,10 +164,10 @@ class StreamingOverlayPanel:
         try:
             from AppKit import (
                 NSColor,
+                NSGlassEffectView,
                 NSPanel,
                 NSScreen,
                 NSStatusWindowLevel,
-                NSVisualEffectView,
             )
             from Foundation import NSMakeRect
 
@@ -250,32 +245,38 @@ class StreamingOverlayPanel:
                 (1 << 0) | (1 << 4) | (1 << 8)
             )
 
-            # -- VFX background --
-            vfx = NSVisualEffectView.alloc().initWithFrame_(
+            # -- Liquid Glass background --
+            glass = NSGlassEffectView.alloc().initWithFrame_(
                 NSMakeRect(0, 0, _PANEL_WIDTH, init_h)
             )
-            vfx.setMaterial_(_VFX_MATERIAL_HUD)
-            vfx.setBlendingMode_(_VFX_BLENDING_BEHIND)
-            vfx.setState_(_VFX_STATE_ACTIVE)
-            vfx.setWantsLayer_(True)
-            vfx.layer().setCornerRadius_(_CORNER_RADIUS)
-            vfx.layer().setMasksToBounds_(True)
-            vfx.setAutoresizingMask_(0x12)  # flex W+H
-            panel.setContentView_(vfx)
-            self._vfx_view = vfx
+            glass.setCornerRadius_(_CORNER_RADIUS)
+            glass.setTintColor_(
+                NSColor.colorWithSRGBRed_green_blue_alpha_(1.0, 1.0, 1.0, 0.2)
+            )
+            panel.setContentView_(glass)
+
+            # Container for subviews inside glass
+            from AppKit import NSView as _NSView
+
+            box = _NSView.alloc().initWithFrame_(
+                NSMakeRect(0, 0, _PANEL_WIDTH, init_h)
+            )
+            box.setAutoresizingMask_(0x12)  # flex W+H
+            glass.setContentView_(box)
+            self._content_box = box
 
             self._panel = panel
 
             # -- Add subviews once (repositioned by _layout_subviews) --
-            vfx.addSubview_(self._asr_title_label)
-            vfx.addSubview_(self._asr_scroll)
-            vfx.addSubview_(self._separator)
-            vfx.addSubview_(self._status_label)
-            vfx.addSubview_(self._stream_scroll)
+            box.addSubview_(self._asr_title_label)
+            box.addSubview_(self._asr_scroll)
+            box.addSubview_(self._separator)
+            box.addSubview_(self._status_label)
+            box.addSubview_(self._stream_scroll)
             if self._hint_label is not None:
-                vfx.addSubview_(self._hint_label)
+                box.addSubview_(self._hint_label)
             if self._progress_view is not None:
-                vfx.addSubview_(self._progress_view)
+                box.addSubview_(self._progress_view)
 
             # -- Position at screen centre --
             screen = NSScreen.mainScreen()
@@ -326,7 +327,7 @@ class StreamingOverlayPanel:
         """
         from Foundation import NSMakeRect
 
-        if self._vfx_view is None:
+        if self._content_box is None:
             return
 
         cw = _PANEL_WIDTH - _PADDING_H * 2
@@ -433,11 +434,6 @@ class StreamingOverlayPanel:
         def _after_resize():
             try:
                 self._layout_subviews(new_h)
-                self._vfx_view.setFrame_(
-                    self._panel.contentView().bounds()
-                    if self._panel
-                    else self._vfx_view.frame()
-                )
             except Exception:
                 logger.error("After-resize completion error", exc_info=True)
 
@@ -922,13 +918,10 @@ class StreamingOverlayPanel:
             self._recalc_timer = None
 
         if self._panel is not None:
-            from wenzi.ui_helpers import release_panel_surfaces
-
-            release_panel_surfaces(self._panel)
             self._panel.orderOut_(None)
             self._panel = None
 
-        self._vfx_view = None
+        self._content_box = None
         self._asr_title_label = None
         self._asr_text_view = None
         self._asr_scroll = None
