@@ -254,6 +254,7 @@ class ChooserPanel:
         self._debounce_state: dict[str, _DebounceEntry] = {}  # source_name -> pending debounce
         self._static_cache: dict[str, list[ChooserItem]] = {}  # source_name -> loaded items
         self._recycle_timer = None  # deferred webview recycle timer
+        self._tile_release_timer = None  # deferred WKWebView tile-cache blank
         self._recycle_mode: str = self._DEFAULT_RECYCLE_MODE
         self._recycle_preloading: bool = False
         self._last_screen = None  # last screen the panel was positioned on
@@ -749,6 +750,7 @@ class ChooserPanel:
             placeholder: If set, override the search input placeholder text.
         """
         self._cancel_recycle_timer()
+        self._cancel_tile_release_timer()
 
         if self._panel is not None and self._panel.isVisible():
             same_session = (
@@ -919,6 +921,10 @@ class ChooserPanel:
                 "_releasePreviewImages()",
                 None,
             )
+            # Defer tile-cache release so rapid Cmd+Space stays on the hot
+            # path.  After 5 s idle, blank the webview to free ~80 MB of
+            # WebKit LayerBacking IOSurfaces; show() reloads via warm path.
+            self._schedule_tile_release()
 
         if self._panel is not None:
             self._deactivate_glass()
@@ -947,6 +953,35 @@ class ChooserPanel:
 
         if _schedule_recycle:
             self._schedule_recycle()
+
+    # ------------------------------------------------------------------
+    # Deferred tile-cache release
+    # ------------------------------------------------------------------
+
+    _TILE_RELEASE_DELAY = 5.0  # seconds before blanking webview tiles
+
+    def _schedule_tile_release(self) -> None:
+        """Blank the WKWebView after a short idle to free tile IOSurfaces."""
+        self._cancel_tile_release_timer()
+        from PyObjCTools import AppHelper
+
+        self._tile_release_timer = AppHelper.callLater(
+            self._TILE_RELEASE_DELAY, self._do_tile_release,
+        )
+
+    def _cancel_tile_release_timer(self) -> None:
+        if self._tile_release_timer is not None:
+            self._tile_release_timer.cancel()
+            self._tile_release_timer = None
+
+    def _do_tile_release(self) -> None:
+        """Navigate the webview to blank to release tile backing stores."""
+        self._tile_release_timer = None
+        if self._panel is not None and self._panel.isVisible():
+            return  # user re-opened before timer fired
+        if self._webview is not None and self._page_loaded:
+            self._webview.loadHTMLString_baseURL_("", None)
+            self._page_loaded = False
 
     # ------------------------------------------------------------------
     # Deferred webview recycle
@@ -1021,6 +1056,7 @@ class ChooserPanel:
         This method is called by the recycle timer — *not* by user code.
         """
         self._recycle_timer = None
+        self._cancel_tile_release_timer()
         if self._panel is not None and self._panel.isVisible():
             return  # user re-opened before timer fired
 
@@ -1057,6 +1093,9 @@ class ChooserPanel:
         # Close first to handle hide + state cleanup (skip recycle —
         # we're tearing down fully).
         self.close(_schedule_recycle=False)
+        # Cancel tile-release timer scheduled by close() — we're
+        # tearing down the webview entirely.
+        self._cancel_tile_release_timer()
 
         self._teardown_webview()
         self._last_screen = None

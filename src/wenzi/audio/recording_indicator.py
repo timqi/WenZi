@@ -558,6 +558,8 @@ class RecordingIndicatorPanel:
             panel = self._panel
 
             def _on_complete():
+                from wenzi.ui_helpers import release_panel_surfaces
+                release_panel_surfaces(panel)
                 panel.orderOut_(None)
                 self._clear_view_backref()
                 self._panel = None

@@ -326,6 +326,7 @@ def run_multiline_window(title: str, message: str, default_text: str = "",
                 result_holder["clicked"] = clicked
                 result_holder["text"] = text_val
                 panel.setDelegate_(None)
+                release_panel_surfaces(panel)
                 panel.orderOut_(None)
                 restore_accessory()
                 done_event.set()

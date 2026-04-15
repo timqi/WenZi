@@ -6,7 +6,7 @@ pure-Python logic: source registration, search dispatch, item execution.
 
 import json
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from wenzi.scripting.sources import ChooserItem, ChooserSource, ModifierAction
 from wenzi.scripting.sources.query_history import QueryHistory
@@ -1742,9 +1742,9 @@ class TestDeferredRecycle:
              patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)), \
              patch("wenzi.scripting.ui.chooser_panel.reactivate_app"):
             panel.close()
-        mock_later.assert_called_once_with(
-            ChooserPanel._RECYCLE_DELAY, panel._do_recycle,
-        )
+        # close() schedules both tile-release (5s) and recycle (60s) timers
+        calls = mock_later.call_args_list
+        assert any(c == call(ChooserPanel._RECYCLE_DELAY, panel._do_recycle) for c in calls)
         assert panel._recycle_timer is not None
 
     def test_close_releases_hidden_panel_surfaces(self):
@@ -1777,7 +1777,9 @@ class TestDeferredRecycle:
              patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)), \
              patch("wenzi.scripting.ui.chooser_panel.reactivate_app"):
             panel.close()
-        mock_later.assert_not_called()
+        # Tile-release timer may fire, but recycle timer must not
+        calls = mock_later.call_args_list
+        assert not any(c == call(ChooserPanel._RECYCLE_DELAY, panel._do_recycle) for c in calls)
         assert panel._recycle_timer is None
 
     def test_show_cancels_recycle_timer(self):
@@ -1795,11 +1797,12 @@ class TestDeferredRecycle:
         panel._webview = MagicMock()
         with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)), \
              patch("wenzi.scripting.ui.chooser_panel.reactivate_app"), \
-             patch("PyObjCTools.AppHelper.callLater") as mock_later:
+             patch("PyObjCTools.AppHelper.callLater"):
             panel.destroy()
-        # close() inside destroy() should NOT schedule a recycle timer
-        mock_later.assert_not_called()
+        # close() inside destroy() should NOT leave any active timers —
+        # destroy() cancels both tile-release and recycle timers after close().
         assert panel._recycle_timer is None
+        assert panel._tile_release_timer is None
 
     def test_destroy_cancels_existing_recycle_timer(self):
         panel = _make_panel()
