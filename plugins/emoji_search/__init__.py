@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -99,18 +100,28 @@ def _parse_query(
         return before, None
 
     parts = after.split()
+
+    # 1. Exact match (prefer longer candidates)
     for i in range(len(parts), 0, -1):
         candidate = " ".join(parts[:i])
-        # Exact match
         if candidate in group_map:
             keyword = " ".join([before] + parts[i:]).strip()
             return keyword, candidate
-        # Fuzzy match
+
+    # 2. Fuzzy match: collect all matches and pick the highest score.
+    best_score = -1
+    best_i = 0
+    for i in range(len(parts), 0, -1):
+        candidate = " ".join(parts[:i])
         for key in group_map:
-            matched, _ = _fuzzy_match(candidate, key)
-            if matched:
-                keyword = " ".join([before] + parts[i:]).strip()
-                return keyword, candidate
+            matched, score = _fuzzy_match(candidate, key)
+            if matched and score > best_score:
+                best_score = score
+                best_i = i
+
+    if best_score >= 0:
+        keyword = " ".join([before] + parts[best_i:]).strip()
+        return keyword, " ".join(parts[:best_i])
 
     # Fallback: treat the whole after-@ text as the group filter.
     return before, after
@@ -189,16 +200,39 @@ def _copy_and_alert(wz, char: str) -> None:
     wz.alert("Emoji copied", duration=1.2)
 
 
+def _wrap_preview_html(content: str) -> str:
+    """Wrap preview HTML with CSS variables for dark mode support."""
+    return (
+        '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
+        ":root{--text:#1d1d1f;--secondary:#86868b}"
+        "@media(prefers-color-scheme:dark)"
+        "{:root{--text:#e5e5e7;--secondary:#98989d}}"
+        "html,body{height:100%;margin:0;}"
+        "body{font-family:-apple-system,sans-serif;color:var(--text);}"
+        "</style></head><body>" + content + "</body></html>"
+    )
+
+
 def _emoji_item(wz, rec: dict[str, str]) -> dict[str, Any]:
     char = rec["char"]
     subtitle = f"{rec['name_zh']} | {rec['name_en']} · {rec['group_zh']}"
-    preview_html = (
-        f"<div style='font-size:120px;text-align:center;padding-top:40px'>{char}</div>"
-        f"<div style='text-align:center;color:#666;padding:10px 0 40px'>"
-        f"{rec['name_zh']}<br>{rec['name_en']}<br>"
-        f"{rec['group_zh']} / {rec['subgroup_zh']}"
-        f"</div>"
+    inner_html = (
+        "<div style='display:flex;flex-direction:column;align-items:center;"
+        "justify-content:center;min-height:100%;padding:16px 0;"
+        "box-sizing:border-box;'>"
+        "<div style='font-size:110px;line-height:1;text-align:center;'>"
+        f"{html.escape(char)}"
+        "</div>"
+        "<div style='text-align:center;color:var(--secondary);"
+        "margin-top:12px;font-size:13px;line-height:1.5;max-width:100%;'>"
+        f"<div style='font-weight:600;color:var(--text);font-size:16px;"
+        f"margin-bottom:4px;'>{html.escape(rec['name_zh'])}</div>"
+        f"{html.escape(rec['name_en'])}<br>"
+        f"{html.escape(rec['group_zh'])} / {html.escape(rec['subgroup_zh'])}"
+        "</div>"
+        "</div>"
     )
+    preview_html = _wrap_preview_html(inner_html)
     return {
         "title": char,
         "subtitle": subtitle,
