@@ -238,12 +238,7 @@ def _emoji_item(wz, rec: dict[str, str]) -> dict[str, Any]:
         "subtitle": subtitle,
         "item_id": f"emoji:{char}",
         "action": lambda c=char: wz.type_text(c, method="paste"),
-        "modifiers": {
-            "alt": {
-                "subtitle": "Copy to clipboard",
-                "action": lambda c=char: _copy_and_alert(wz, c),
-            }
-        },
+        "secondary_action": lambda c=char: _copy_and_alert(wz, c),
         "preview": {"type": "html", "content": preview_html},
     }
 
@@ -258,7 +253,7 @@ def setup(wz) -> None:
         priority=5,
         description="Search and paste emoji (prefix: e)",
         show_preview=True,
-        action_hints={"enter": "Paste emoji", "alt_enter": "Copy to clipboard"},
+        action_hints={"enter": "Paste emoji", "cmd_enter": "Copy to clipboard"},
         universal_action=True,
     )
     def search(query: str) -> list[dict[str, Any]]:

@@ -11,7 +11,7 @@ Type `e ` followed by a keyword in the launcher:
 - `e huo che` → 🚄
 
 Press **Enter** to paste the selected emoji into the active application.  
-Press **Alt+Enter** to copy it to the clipboard.
+Press **Cmd+Enter** to copy it to the clipboard.
 
 ### Search by group
 

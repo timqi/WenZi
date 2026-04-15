@@ -241,9 +241,7 @@ class TestEmojiItem:
         item["action"]()
         assert wz.last_typed == ("🐱", "paste")
 
-        # Alt copies
-        alt = item["modifiers"]["alt"]
-        assert alt["subtitle"] == "Copy to clipboard"
-        alt["action"]()
+        # Cmd+Enter copies via secondary_action
+        item["secondary_action"]()
         assert wz.pasteboard.last == "🐱"
         assert wz.alerts == [("Emoji copied", 1.2)]
