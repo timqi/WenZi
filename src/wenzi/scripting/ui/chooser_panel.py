@@ -356,9 +356,13 @@ class ChooserPanel:
             if self._glass_view.superview() is None:
                 cv.addSubview_(self._glass_view)
             self._glass_view.setFrame_(cv.bounds())
-            from wenzi.ui_helpers import configure_glass_appearance
+            from wenzi.ui_helpers import configure_glass_appearance, dynamic_color
 
             configure_glass_appearance(self._glass_view)
+            self._glass_view.setTintColor_(dynamic_color(
+                (1.0, 1.0, 1.0, 0.2),
+                (0.0, 0.0, 0.0, 0.15),
+            ))
 
     def _reconnect_panel_refs(self) -> None:
         """Restore ``_panel_ref`` back-references broken by :meth:`close`."""
@@ -2176,7 +2180,7 @@ class ChooserPanel:
 
         # NSGlassEffectView for Liquid Glass background (subview, not contentView,
         # to preserve NSPanel's focus / responder-chain management)
-        from wenzi.ui_helpers import configure_glass_appearance
+        from wenzi.ui_helpers import configure_glass_appearance, dynamic_color
 
         glass = NSGlassEffectView.alloc().initWithFrame_(
             NSMakeRect(0, 0, initial_width, initial_height),
@@ -2186,6 +2190,10 @@ class ChooserPanel:
         glass.layer().setMasksToBounds_(True)  # clip webview to rounded corners
         glass.setAutoresizingMask_(0x12)  # Width + Height sizable
         configure_glass_appearance(glass)
+        glass.setTintColor_(dynamic_color(
+            (1.0, 1.0, 1.0, 0.2),   # light: brighter glass
+            (0.0, 0.0, 0.0, 0.15),  # dark: darker glass
+        ))
         panel.contentView().addSubview_(glass)
         self._glass_view = glass
 
