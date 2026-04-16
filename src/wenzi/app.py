@@ -1121,6 +1121,16 @@ class WenZiApp(StatusBarApp):
                 pass
             self._screenshot_annotation = None
 
+        # Dismiss the chooser if it's visible — it sits at
+        # NSStatusWindowLevel+1 and would prevent the annotation window
+        # (normal level) from becoming key window.
+        if (
+            getattr(self, "_script_engine", None) is not None
+            and self._script_engine.wz._chooser_api is not None
+            and self._script_engine.wz._chooser_api.panel.is_visible
+        ):
+            self._script_engine.wz._chooser_api.panel.close()
+
         from wenzi.screenshot import AnnotationLayer
 
         self._screenshot_annotation = AnnotationLayer()
