@@ -614,31 +614,22 @@ class TestUsageTrackerIntegration:
 
 
 class TestCloseReactivation:
-    def test_close_reactivates_previous_app(self):
-        """close() should reactivate the saved previous app without raising all windows."""
+    def test_close_reactivates_current_frontmost_app(self):
+        """close() should reactivate the current frontmost app, not a stale saved one."""
         panel = _make_panel()
         mock_app = MagicMock()
-        panel._previous_app = mock_app
 
         with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)):
-            with patch("wenzi.scripting.ui.chooser_panel.reactivate_app") as mock_reactivate:
-                panel.close()
-                mock_reactivate.assert_called_once_with(mock_app)
+            with patch("wenzi.scripting.ui.chooser_panel.get_frontmost_app", return_value=mock_app):
+                with patch("wenzi.scripting.ui.chooser_panel.reactivate_app") as mock_reactivate:
+                    panel.close()
+                    mock_reactivate.assert_called_once_with(mock_app)
 
-    def test_close_clears_previous_app(self):
-        """close() should clear _previous_app after use."""
+    def test_close_when_no_frontmost_app(self):
+        """close() should not crash when get_frontmost_app returns None."""
         panel = _make_panel()
-        panel._previous_app = MagicMock()
         with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)), \
-             patch("wenzi.scripting.ui.chooser_panel.reactivate_app"):
-            panel.close()
-        assert panel._previous_app is None
-
-    def test_close_without_previous_app(self):
-        """close() should not crash when _previous_app is None."""
-        panel = _make_panel()
-        panel._previous_app = None
-        with patch("PyObjCTools.AppHelper.callAfter", side_effect=lambda fn, *a, **kw: fn(*a, **kw)), \
+             patch("wenzi.scripting.ui.chooser_panel.get_frontmost_app", return_value=None), \
              patch("wenzi.scripting.ui.chooser_panel.reactivate_app") as mock_reactivate:
             panel.close()
         mock_reactivate.assert_called_once_with(None)
@@ -1200,7 +1191,6 @@ class TestCalcMode:
         panel._start_esc_tap = MagicMock()
         panel._enter_calc_mode()
         assert panel._calc_mode is True
-        assert panel._previous_app is None
         panel._start_esc_tap.assert_called_once()
 
     def test_enter_calc_mode_idempotent(self):

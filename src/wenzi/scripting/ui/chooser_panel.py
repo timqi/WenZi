@@ -236,7 +236,6 @@ class ChooserPanel:
         self._pending_placeholder: str | None = None
         self._event_callback: Callable | None = None  # (event, *args)
         self._snippet_expander = None  # SnippetExpander to suppress on show
-        self._previous_app = None  # NSRunningApplication saved on show()
         self._ql_panel = None  # Quick Look preview panel
         self._calc_mode: bool = False  # Calculator pin mode
         self._calc_sticky: bool = False  # Sticky: keep pinned for incomplete expressions
@@ -645,7 +644,6 @@ class ChooserPanel:
         if self._calc_mode:
             return
         self._calc_mode = True
-        self._previous_app = None  # Don't reactivate a stale app on close
         self._start_esc_tap()
         logger.debug("Entered calculator pin mode")
 
@@ -793,7 +791,6 @@ class ChooserPanel:
         self._session_placeholder = placeholder
         self._pending_initial_query = initial_query
         self._pending_placeholder = placeholder
-        self._previous_app = get_frontmost_app()
 
         if self._panel is not None and self._page_loaded:
             # Hot path — reuse hidden panel.  Hide via alpha until
@@ -938,14 +935,13 @@ class ChooserPanel:
             select_input_source(self._saved_input_source)
             self._saved_input_source = None
 
-        # Reactivate the previous app's focused window.
-        # No need to restore accessory mode — we never left it.
+        # Reactivate the current frontmost app's focused window so it
+        # regains key status after the accessory panel orders out.
+        # Query frontmost *now* instead of using a value saved at show-time,
+        # so that apps launched while the chooser was open keep focus.
         from PyObjCTools import AppHelper
 
-        previous_app = self._previous_app
-        self._previous_app = None
-
-        AppHelper.callAfter(reactivate_app, previous_app)
+        AppHelper.callAfter(reactivate_app, get_frontmost_app())
 
         self._fire_event("close")
 
