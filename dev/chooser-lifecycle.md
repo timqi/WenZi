@@ -27,3 +27,13 @@ After close, a 60s timer fires `_do_recycle()` which destroys the old panel/webv
 ## IOSurface Memory Management
 
 The glass view is detached from the view hierarchy on close (`removeFromSuperview()`) and re-added on show (`addSubview_()`). This is required to release the CA Whippet Drawable IOSurface (~63 MB+ at retina). See [`dev/memory-leak-debug.md`](memory-leak-debug.md) for full investigation history.
+
+## Anti-pattern: saving state at show time to restore at close time
+
+Do NOT save volatile system state (frontmost app, key window, active document, etc.) when the panel shows and then restore it when the panel closes. The saved value becomes stale: while the chooser is open, plugins, global hotkeys, or other processes can legitimately change that state, and forcibly restoring the snapshot on close yanks the user back from where they now want to be.
+
+Concrete example (fixed in `a390004`): `close()` used to call `reactivate_app(self._previous_app)` where `_previous_app` was captured in `_show_internal()`. If a launcher-plugin hotkey launched another app while the chooser was visible, close would steal focus back to the original app.
+
+**Rule:** query the live state at the moment you need it. For the chooser's post-close focus restoration, call `get_frontmost_app()` inside `close()` — whatever is frontmost right now is what should keep focus.
+
+Applies to any accessory-mode panel in this project (quick-edit, snippet-editor, webview, preview, etc.). If you catch yourself writing `self._saved_X = get_X()` in a `show()` and `restore(self._saved_X)` in a `close()`, stop and query live instead.
