@@ -1568,6 +1568,9 @@ class WenZiApp(StatusBarApp):
 
         AppHelper.callAfter(self._warmup)
 
+        from . import memory_monitor
+        AppHelper.callAfter(memory_monitor.start)
+
         # Start background update checker
         if not self._config_degraded:
             AppHelper.callAfter(self._update_controller.start)
