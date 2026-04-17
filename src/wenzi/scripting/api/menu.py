@@ -63,7 +63,6 @@ class MenuAPI:
 
     def __init__(self) -> None:
         self._root = None  # StatusMenuItem (app's root menu)
-        self._wz_ns = None  # _WZNamespace for accessing current chooser
 
     def _set_root(self, root: Any) -> None:
         """Inject the app's root StatusMenuItem. Called by ScriptEngine."""
@@ -172,24 +171,13 @@ class MenuAPI:
     # AX-based app menu introspection
     # ------------------------------------------------------------------
 
-    def _set_chooser_api(self, chooser_api):
-        """Inject the ChooserAPI for accessing previous-app pid."""
-        # Kept for tests that inject a mock directly
-        self._chooser_api_direct = chooser_api
-
-    def _set_wz_ns(self, wz_ns):
-        """Inject the wz namespace for dynamic chooser access.
-
-        This ensures we always use the *current* ChooserAPI instance,
-        even after script reloads that recreate it.
-        """
-        self._wz_ns = wz_ns
-
     def app_menu(self, pid=None):
         """Return the menu items of an application as a flat list.
 
         Each dict has: title, path, enabled, shortcut, _ax_element.
-        pid defaults to the app frontmost before chooser opened.
+        pid defaults to the currently frontmost app (WenZi itself is
+        excluded — the chooser panel is non-activating so the user's
+        previous app remains frontmost while the chooser is open).
         The system Apple menu is excluded — only app-specific menus
         are returned.  Returns empty list on failure.
         """
@@ -251,8 +239,9 @@ class MenuAPI:
 
         Args:
             item: A dict from ``app_menu()``.
-            pid: Target process ID.  Must be provided — the chooser's
-                 ``_previous_app`` is cleared before the action runs.
+            pid: Target process ID.  Should be captured at source-load
+                 time — by the time the action runs, the chooser has
+                 closed and focus may have shifted elsewhere.
 
         Returns True if the action was dispatched.
         """
@@ -377,24 +366,27 @@ class MenuAPI:
             return False
 
     def _get_previous_pid(self):
-        """Get pid of app that was frontmost before chooser opened."""
-        chooser = None
-        if self._wz_ns is not None:
-            try:
-                chooser = self._wz_ns.chooser
-            except Exception:
-                pass
-        if chooser is None:
-            chooser = getattr(self, "_chooser_api_direct", None)
-        if chooser is None:
+        """Get pid of app that was frontmost before chooser opened.
+
+        The chooser panel is non-activating, so the live frontmost app
+        is still the user's previous app. Returns None if the query
+        fails or if WenZi itself is frontmost (no other app to target).
+        """
+        import os
+
+        from wenzi.ui_helpers import get_frontmost_app
+
+        app = get_frontmost_app()
+        if app is None:
             return None
         try:
-            prev_app = chooser.panel._previous_app
-            if prev_app is not None:
-                return prev_app.processIdentifier()
+            pid = app.processIdentifier()
         except Exception:
-            logger.debug("Failed to get previous app pid", exc_info=True)
-        return None
+            logger.debug("Failed to read frontmost pid", exc_info=True)
+            return None
+        if pid == os.getpid():
+            return None
+        return pid
 
     def _walk_ax_menu(self, ax_menu_bar, _prefix=""):
         """Recursively walk an AX menu bar, returning a flat list."""

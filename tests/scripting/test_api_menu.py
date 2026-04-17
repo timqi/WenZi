@@ -305,13 +305,15 @@ class TestAppMenu:
         assert "" not in titles
         assert len(items) == 1
 
-    def test_app_menu_uses_previous_app_pid(self, monkeypatch):
+    def test_app_menu_uses_frontmost_app_pid(self, monkeypatch):
         import ApplicationServices as _as
 
+        from wenzi import ui_helpers
+
         api = MenuAPI()
-        mock_chooser = MagicMock()
-        mock_chooser.panel._previous_app.processIdentifier.return_value = 99
-        api._set_chooser_api(mock_chooser)
+        mock_app = MagicMock()
+        mock_app.processIdentifier.return_value = 99
+        monkeypatch.setattr(ui_helpers, "get_frontmost_app", lambda: mock_app)
 
         mock_create = MagicMock()
         monkeypatch.setattr(_as, "AXUIElementCreateApplication", mock_create)
@@ -322,6 +324,24 @@ class TestAppMenu:
 
         api.app_menu()
         mock_create.assert_called_once_with(99)
+
+    def test_app_menu_ignores_own_pid(self, monkeypatch):
+        import os
+
+        import ApplicationServices as _as
+
+        from wenzi import ui_helpers
+
+        api = MenuAPI()
+        mock_app = MagicMock()
+        mock_app.processIdentifier.return_value = os.getpid()
+        monkeypatch.setattr(ui_helpers, "get_frontmost_app", lambda: mock_app)
+
+        mock_create = MagicMock()
+        monkeypatch.setattr(_as, "AXUIElementCreateApplication", mock_create)
+
+        assert api.app_menu() == []
+        mock_create.assert_not_called()
 
     def test_shortcut_with_shift(self, monkeypatch):
         import ApplicationServices as _as

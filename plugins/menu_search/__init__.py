@@ -14,9 +14,9 @@ def setup(wz) -> None:
         action_hints={"enter": "Trigger"},
     )
     def search(query: str) -> list:
-        # Capture pid NOW while _previous_app is still valid.
-        # By the time the action runs, chooser.close() will have
-        # cleared _previous_app.
+        # Capture pid NOW while the previous app is still frontmost.
+        # By the time the action runs, chooser.close() may have
+        # shifted focus.
         pid = wz.menu._get_previous_pid()
 
         # Primary: frontmost app's menu bar (via Accessibility API)
