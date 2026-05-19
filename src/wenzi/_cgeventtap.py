@@ -89,6 +89,10 @@ _cg.CGEventSourceFlagsState.argtypes = [c_int32]
 _cg.CGEventCreateKeyboardEvent.restype = c_void_p
 _cg.CGEventCreateKeyboardEvent.argtypes = [c_void_p, c_uint32, c_bool]
 
+# CGEventCreateCopy(event) -> CGEventRef
+_cg.CGEventCreateCopy.restype = c_void_p
+_cg.CGEventCreateCopy.argtypes = [c_void_p]
+
 # CGEventPost(tap, event)
 _cg.CGEventPost.restype = None
 _cg.CGEventPost.argtypes = [c_uint32, c_void_p]
@@ -148,6 +152,10 @@ def CGEventSourceFlagsState(state_id):
 
 def CGEventCreateKeyboardEvent(source, virtual_key, key_down):
     return _cg.CGEventCreateKeyboardEvent(source, virtual_key, key_down)
+
+
+def CGEventCreateCopy(event):
+    return _cg.CGEventCreateCopy(event)
 
 
 def CGEventPost(tap, event):
@@ -266,6 +274,10 @@ class CGEventTapRunner:
         """Disable the tap, stop the run loop, release CF objects."""
         if self.tap is None and self._thread is None:
             return
+        # Wait for the bg thread to finish init so self._loop is set —
+        # otherwise a stop() racing with start() skips CFRunLoopStop and
+        # the thread leaks once CFRunLoopRun is finally entered.
+        self._ready.wait(timeout=1.0)
         try:
             if self.tap is not None:
                 CGEventTapEnable(self.tap, False)

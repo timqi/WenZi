@@ -1220,6 +1220,12 @@ class WenZiApp(StatusBarApp):
             shutdown_hotkey_executor()
         except Exception:
             logger.debug("Hotkey executor shutdown failed", exc_info=True)
+        # Tear down the persistent chooser key-buffer tap
+        try:
+            from wenzi.scripting.ui.chooser_key_buffer import shared as _kb
+            _kb.shutdown()
+        except Exception:
+            logger.debug("Chooser key buffer shutdown failed", exc_info=True)
         # Close AI provider clients and shut down the shared asyncio loop
         if self._enhancer:
             try:

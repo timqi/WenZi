@@ -9,6 +9,7 @@ from collections.abc import Callable
 from wenzi.scripting.api._async_util import wrap_async
 from wenzi.scripting.sources import ChooserItem, ChooserSource, ModifierAction
 from wenzi.scripting.sources.command_source import CommandEntry, CommandSource
+from wenzi.scripting.ui.chooser_key_buffer import shared as _key_buffer
 from wenzi.scripting.ui.chooser_panel import ChooserPanel
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,10 @@ class ChooserAPI:
         self._panel._event_callback = self._fire_event
         self._event_handlers: dict[str, list[Callable]] = {}
         self._command_source = CommandSource()
+        # Install the persistent key-buffer tap BEFORE any hotkey tap
+        # registers, so the hotkey tap sits at HEAD and swallows the
+        # launcher hotkey before our buffer sees it.
+        _key_buffer.install()
 
     @property
     def panel(self) -> ChooserPanel:
@@ -162,12 +167,45 @@ class ChooserAPI:
         try:
             from PyObjCTools import AppHelper
 
+            self._arm_key_buffer()
             AppHelper.callAfter(
                 self._panel.show,
                 initial_query=initial_query,
             )
         except Exception:
             logger.exception("Failed to show chooser")
+
+    def _panel_already_ready(self) -> bool:
+        # Key window + fully faded-in (alpha=1) means the webview can
+        # accept keystrokes.
+        ns_panel = self._panel._panel
+        if ns_panel is None or not ns_panel.isKeyWindow():
+            return False
+        return ns_panel.alphaValue() >= 0.999
+
+    def _focus_search_input(self) -> None:
+        webview = getattr(self._panel, "_webview", None)
+        if webview is None:
+            return
+        webview.evaluateJavaScript_completionHandler_(
+            "try{searchInput.focus();"
+            "searchInput.setSelectionRange("
+            "searchInput.value.length,searchInput.value.length"
+            ")}catch(e){}",
+            None,
+        )
+
+    def _arm_key_buffer(self) -> None:
+        """Buffer keystrokes typed before the panel is key + rendered."""
+        if self._panel_already_ready():
+            return
+        try:
+            _key_buffer.arm(
+                self._panel_already_ready,
+                on_ready=self._focus_search_input,
+            )
+        except Exception:
+            logger.warning("arm key buffer failed", exc_info=True)
 
     def show_source(self, prefix: str) -> None:
         """Show the chooser with a specific source activated.
@@ -200,6 +238,7 @@ class ChooserAPI:
         try:
             from PyObjCTools import AppHelper
 
+            self._arm_key_buffer()
             AppHelper.callAfter(
                 self._panel.show_universal_action,
                 context_text=context_text,
@@ -226,6 +265,8 @@ class ChooserAPI:
         try:
             from PyObjCTools import AppHelper
 
+            if not self.is_visible:
+                self._arm_key_buffer()
             AppHelper.callAfter(self._panel.toggle)
         except Exception:
             logger.exception("Failed to toggle chooser")
